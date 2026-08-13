@@ -50,6 +50,9 @@ def build_args():
     ap.add_argument("--latent-phase-rate-ref", type=float, default=0.6)
     ap.add_argument("--latent-phase-rate-max", type=float, default=2.0)
     ap.add_argument("--stillness-vx-scale", type=float, default=0.05)
+    # E29: latent KL prior. "zero" = N(0,I) (E27); "walk" = N(z_walk, I) keeps z
+    # on the SONIC walk manifold instead of pulling it toward the origin.
+    ap.add_argument("--latent-kl-prior", choices=["zero", "walk"], default="zero")
     ap.add_argument("--aux-scale", type=float, default=0.2)
     ap.add_argument("--aux-l2", type=float, default=0.0)
     ap.add_argument("--aux-rate", type=float, default=0.0)
@@ -178,12 +181,17 @@ def main():
             use_phase=not cfg.use_gate_sel and not cfg.latent_mode,
             latent_dim=16 if cfg.latent_mode else 0,
         ).to("cuda:0")
+    latent_prior_mean = None
+    if cli.latent_mode and cli.latent_kl_prior == "walk":
+        zw = np.load(str(Path(cli.latent_vae_path).parent / "z_walk.npy"))
+        latent_prior_mean = torch.from_numpy(zw).float().to("cuda:0")
     trainer = PPOTrainer(
         policy,
         lr=cli.lr,
         entropy_coef=cli.entropy,
         latent_kl_coef=cli.latent_kl,
         latent_expl_coef=cli.latent_expl,
+        latent_prior_mean=latent_prior_mean,
         max_iters=cli.iters,
         device="cuda:0",
     )

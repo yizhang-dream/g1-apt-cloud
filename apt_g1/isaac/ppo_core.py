@@ -114,6 +114,19 @@ def kl_normal_std_normal(mean: torch.Tensor, log_std: torch.Tensor) -> torch.Ten
     return 0.5 * (mean.pow(2) + var - 2.0 * log_std - 1.0).sum(-1)
 
 
+def kl_normal(
+    mean: torch.Tensor, log_std: torch.Tensor, prior_mean: torch.Tensor
+) -> torch.Tensor:
+    """D_KL(N(mean, sigma^2) || N(prior_mean, I)), summed over latent dims.
+
+    E29: a non-zero prior mean (e.g. the walk posterior z_walk) keeps the policy's
+    latent on the SONIC skill manifold instead of pulling it toward the origin.
+    """
+    var = torch.exp(2.0 * log_std)
+    d = mean - prior_mean
+    return 0.5 * (d.pow(2) + var - 2.0 * log_std - 1.0).sum(-1)
+
+
 class PPOTrainer:
     def __init__(
         self,
@@ -128,6 +141,7 @@ class PPOTrainer:
         entropy_coef: float = 0.001,
         latent_kl_coef: float = 2.5e-6,
         latent_expl_coef: float = 0.01,
+        latent_prior_mean: "torch.Tensor | None" = None,
         max_grad_norm: float = 0.5,
         max_iters: int = 500,
         value_coef: float = 0.5,
@@ -144,6 +158,11 @@ class PPOTrainer:
         self.entropy_coef = entropy_coef
         self.latent_kl_coef = latent_kl_coef
         self.latent_expl_coef = latent_expl_coef
+        # E29: prior mean for the latent KL. None -> N(0, I) (E27 behavior).
+        if latent_prior_mean is not None:
+            self.latent_prior_mean = latent_prior_mean.to(self.device)
+        else:
+            self.latent_prior_mean = None
         self.max_grad_norm = max_grad_norm
         self.max_iters = max_iters
         self.value_coef = value_coef
@@ -232,7 +251,12 @@ class PPOTrainer:
                 - self.entropy_coef * ent.mean()
             )
             if phase is not None:
-                kl = kl_normal_std_normal(p["phase_mean"], p["phase_log_std"])
+                if self.latent_prior_mean is not None:
+                    kl = kl_normal(
+                        p["phase_mean"], p["phase_log_std"], self.latent_prior_mean
+                    )
+                else:
+                    kl = kl_normal_std_normal(p["phase_mean"], p["phase_log_std"])
                 loss = (
                     loss
                     - expl_coef * pd.entropy().sum(-1).mean()

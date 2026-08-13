@@ -976,3 +976,50 @@ E28c（仅奖励重调、不解冻步频）按计划为条件项；a/b 已不歧
 `e28{a,b}_train.log`、`e28a_eval.log`（B/C/D 段因结论已定提前终止）。
 代码改动见 commit（`apt_flat_env.py` + `train/eval_apt_isaac.py` 的 E28
 config 开关）。
+
+### E29：latent KL 先验对齐 walk 流形（首个正向杠杆，2026-08-13）
+
+**动机**：E28 排除了时钟/奖励，但留了一个未测且更可疑的轴——**KL 先验设错**。
+E27 的 latent KL 先验是 N(0,I)，但 walk 流形中心是 z_walk（≠0，||z_walk||²≈100）。
+所以 KL 把 z 往原点拉 = **往 walk 流形外拉**；E27 用极小 coef 2.5e-6 致 KL=56（z
+严重漂离流形）。论文 APT-RL 的 KL=0.1 是配它自洽的潜空间先验。这里先验与流形
+不一致。
+
+**改动（config 开关，默认 = E27）**：`ppo_core.py` 加 `kl_normal(mean,log_std,
+prior_mean)` 与 PPOTrainer 的 `latent_prior_mean` 缓冲；`train_apt_isaac.py` 加
+`--latent-kl-prior {zero,walk}`（walk 时加载 z_walk.npy 作先验中心）。
+
+**E29 = E27 + `--latent-kl-prior walk --latent-kl 1e-2`**（其余不变，孤立先验变量）。
+A_walk60（6 seed，latent 模式 aux/noaux 同值）：
+
+| Run | KL 先验 | KL coef | mean vx | mean disp | 结论 |
+|---|---|---|---|---|---|
+| E27 | N(0,I) | 2.5e-6 | 0.317 | 19.1m | 基线 |
+| E28a | N(0,I) | 2.5e-6 | 0.342 | 13.1m | 解冻步频→漂移 |
+| E28b | N(0,I) | 2.5e-6 | 0.253 | 14.9m | 奖励重调→更慢 |
+| **E29** | **N(z_walk,I)** | **1e-2** | **0.348** | **18.3m** | **最佳 vx，不漂移** |
+
+**观察**：训练中 KL 仍 ~55–58（ coef 1e-2 不足以把 z 钉死在 z_walk——奖励仍主导），
+但 coef 比 E27 大 4000×，把 z 拉得**更靠近 walk 流形** → vx +10%（0.317→0.348）
+且位移稳定不漂移（18.3m，远好于 E28a 的 13m）。这是 E28 之后的**首个正向杠杆**。
+
+**结论**：
+1. "z 靠近 walk 流形 → 更快更稳"方向**成立**（E29 是 E27/E28a/E28b 中最快且无回退的）。
+2. 但天花板仍 ~0.35（数据 walk 速度 0.6 仍不可达）——解码器保真度硬上限依旧；
+   流形对齐只能逼近它，不能突破。
+3. KL 没钉死 z 说明 1e-2 还偏小；要进一步逼近流形需更大 coef 或**按相位**钉 z
+   （z_walk 是窗口均值，丢失了逐相位细节）。
+
+**下一步候选（E30）**：把 KL coef 加大到 1e-1/1.0 看能否把 vx 再推高一档，或改用
+逐相位 walk 后验作先验（而非均值）。
+
+**渲染缺口**：`render_walk.py` 已加 latent 支持（cfg/policy/action 循环），但 Isaac
+Sim 在本服务器开相机（`enable_cameras=True`）时于 stage 创建阶段段错误
+（viewport hydra 引擎 `__enable_hydra_engine`，崩溃在 AppLauncher 初始化、
+业务代码之前；重试复现；服务器历史上从无 Isaac 渲染产物，仅 MuJoCo router 视频）。
+故本阶段未产出 E29 行走视频，待渲染环境修复。
+
+产出：`outputs/isaac_e29_klwalk/`、`outputs/isaac_eval_e29.json`（A 段 6 seed）、
+`e29_train.log`、`e29_eval.log`。代码：`ppo_core.py`（`kl_normal` +
+`latent_prior_mean`）、`train_apt_isaac.py`（`--latent-kl-prior`）、
+`render_walk.py`（latent 支持）。

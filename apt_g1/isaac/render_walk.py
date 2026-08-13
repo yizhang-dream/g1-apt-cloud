@@ -37,6 +37,11 @@ def main():
             "gear_sonic_deploy/policy/release/model_decoder.onnx"
         ),
     )
+    ap.add_argument("--latent-mode", action="store_true")
+    ap.add_argument(
+        "--latent-vae-path",
+        default="/home/cvgluser/ros2_data/apt_g1/outputs/token_vae_e27/vae.pt",
+    )
     cli = ap.parse_args()
 
     from isaaclab.app import AppLauncher
@@ -71,12 +76,23 @@ def main():
     if cfg.use_elevation:
         cfg.observation_space += cfg.elev_grid * cfg.elev_grid
     cfg.episode_length_s = 120.0
+    if cli.latent_mode:
+        cfg.latent_mode = True
+        cfg.latent_vae_path = cli.latent_vae_path
+        cfg.action_space = 16  # latent z only (no aux / gate)
+        cfg.observation_space += 14  # _last_phase 2 -> 16 in the observation
     np.random.seed(cli.terrain_seed)
     env = AptFlatG1Env(cfg)
 
     policy = None
     if cli.checkpoint:
-        policy = AptPPOPolicy(obs_dim=cfg.observation_space, aux_dim=12).to("cuda:0")
+        policy = AptPPOPolicy(
+            obs_dim=cfg.observation_space,
+            aux_dim=12,
+            hidden_dim=256,
+            use_phase=not cfg.use_gate_sel and not cfg.latent_mode,
+            latent_dim=16 if cfg.latent_mode else 0,
+        ).to("cuda:0")
         policy.load_state_dict(torch.load(cli.checkpoint, map_location="cuda:0"))
         policy.eval()
 
@@ -111,19 +127,25 @@ def main():
     frame_dir.mkdir(parents=True, exist_ok=True)
 
     # fixed command: walk 0.8 m/s
-    env.router_commands[0] = None
+    if not cli.latent_mode:
+        env.router_commands[0] = None
     env._commands[0] = torch.tensor([0.8, 0.0, 0.0], dtype=torch.float32, device=env.device)
 
     save_every = 3  # 50 Hz -> 16.7 fps
     count = 0
     for i in range(cli.steps):
-        if policy is not None and cli.use_aux:
+        if policy is not None:
             with torch.no_grad():
                 act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
-            action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
-            action[:, 2:] = act["aux"]
+            if cli.latent_mode:
+                action = act["phase"]  # (1, 16) latent z -> VAE -> token -> SONIC
+            elif cli.use_aux:
+                action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
+                action[:, 2:] = act["aux"]
+            else:
+                action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
         else:
-            action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
+            action = torch.zeros(1, cfg.action_space, dtype=torch.float32, device=env.device)
         obs_dict, rew, term, trunc, _ = env.step(action)
         env._last_obs = obs_dict["policy"]
         if term.any():
