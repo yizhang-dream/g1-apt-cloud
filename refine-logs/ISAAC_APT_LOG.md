@@ -1013,6 +1013,35 @@ A_walk60（6 seed，latent 模式 aux/noaux 同值）：
 **下一步候选（E30）**：把 KL coef 加大到 1e-1/1.0 看能否把 vx 再推高一档，或改用
 逐相位 walk 后验作先验（而非均值）。
 
+### E30：流形 KL coef 扫描的第二点（coef 1e-1，2026-08-13）
+
+E29 的 coef 1e-2 把 KL 压到 ~55（z 更靠流形，vx 0.348）。E30 把 coef 再 ×10 到
+1e-1（其余同 E29），测"更硬钉向流形"是否再提速。A_walk60 6 seed：
+
+- **E30（coef 1e-1）**：vx **0.336**、disp 16.0m、实测 KL **46.7**（比 E29 的 55 更低，
+  z 更靠 z_walk）。
+- 对比 E29（coef 1e-2）：vx 0.348、disp 18.3m、KL 55。
+
+**KL 扫描非单调，峰值在 E29**：
+
+| KL coef | 实测 KL | mean vx | mean disp |
+|---|---|---|---|
+| 2.5e-6（E27） | ~56 | 0.317 | 19.1m |
+| **1e-2（E29）** | ~55 | **0.348** | **18.3m** |
+| 1e-1（E30） | ~47 | 0.336 | 16.0m |
+
+**结论**：过度把 z 钉向 z_walk（E30，KL 47）反而比温和钉（E29，KL 55）略差——因为
+z_walk 是 walk 窗口的**均值**，丢失逐相位细节；过度约束让策略无法利用相位结构。
+**流形对齐 KL 的峰值在 E29（coef 1e-2，vx 0.348）**，是本系列最快配置。
+
+综合 E28–E30：时钟/奖励/流形-KL 三轴均无法把 vx 推过 ~0.35（数据 walk 0.6 仍不可达），
+**解码器保真度硬上限稳固**。要真正突破需动作表征层的改动——**速度条件化 VAE 解码器**
+D(z, φ, v_cmd)→token（让流形本身编码速度维度），是下一阶段候选。
+
+产出：`outputs/isaac_e30_klwalk_h1/`、`outputs/isaac_eval_e30.json`、`e30_train.log`、
+`e30_eval.log`、`apt_g1/plot_latent_cmp.py`（E27–E30 对比图脚本，产出
+`outputs/latent_cmp.png`）。
+
 **渲染缺口**：`render_walk.py` 已加 latent 支持（cfg/policy/action 循环），但 Isaac
 Sim 在本服务器开相机（`enable_cameras=True`）时于 stage 创建阶段段错误
 （viewport hydra 引擎 `__enable_hydra_engine`，崩溃在 AppLauncher 初始化、
