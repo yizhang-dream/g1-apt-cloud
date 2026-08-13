@@ -1052,3 +1052,53 @@ Sim 在本服务器开相机（`enable_cameras=True`）时于 stage 创建阶段
 `e29_train.log`、`e29_eval.log`。代码：`ppo_core.py`（`kl_normal` +
 `latent_prior_mean`）、`train_apt_isaac.py`（`--latent-kl-prior`）、
 `render_walk.py`（latent 支持）。
+
+### E31：速度条件化 VAE 解码器（D(z, φ, v_bin)→token，首个破速度上限，2026-08-13）
+
+**动机**：E28-E30 证明冻结 walk 解码器流形有 ~0.35 m/s 保真度上限（时钟/奖励/KL
+三轴都无法突破）。要真正破上限需**动作表征层**改动：让流形本身编码速度。
+
+**改动**：
+- `train_token_vae_e31.py`：`SpeedPhaseTokenVAE`——decoder 输入加 v_bin embedding
+  （3 档，由 walk 数据实测相位速率三分位分 bin：慢<0.08/中/快>0.14 rad/步）；
+  encoder 不变（窗口→z∈ℝ16）。**val recon MAE 0.0753**（≈E27 的 0.079，速度条件化
+  未损重建）。
+- env：`latent_speed_bins` cfg——命令 vx 经 `torch.bucketize` 映射到 v_bin 喂 decoder。
+- `token_window_vae.py` 加 `SpeedPhaseTokenVAE`；train/eval 加 `--latent-speed-bins`。
+
+**E31 = E29 配方 + speed-bins**（64 envs × 800 iters）。A_walk60 6 seed：
+
+| Run | 表征 | mean vx | mean disp | vx/disp 比 |
+|---|---|---|---|---|
+| E29 | E27 流形 | 0.348 | 18.3m | 0.88（直） |
+| **E31** | **速度条件化流形** | **0.535** | ~10m | **0.31（漂移）** |
+
+**突破**：vx **0.535（+54% vs E29）**——**速度条件化流形确实打破了 ~0.35 上限**！
+这是 E27 以来的首个架构级正向突破。但 disp 仅 ~10m（若直应 ~32m）→ 严重偏航。
+
+**漂移分析**（rollout base_xyz/quat）：**持续左转，yaw 从 0 线性漂到 -27°（~4°/s）**
+——是**系统性转向偏置**（速度条件化的快速技能自带固定偏航，像未校准步态），
+非打转、非命令问题（A 段命令固定 (0.8,0,0)）。
+
+### E32：yaw×2 + heading 奖励修复漂移（失败，2026-08-13）
+
+**动机**：E31 快但偏。尝试用奖励修方向：`yaw_scale`（track_yaw 权重 0.5→2.0）+
+`heading_scale`（新增速度方向 vs 命令朝向的 cos 对齐奖励 0.8）。
+
+**E32 = E31 + 方向奖励**（其余同）。A_walk60：**vx 0.354、disp ~10.3m**——
+heading 强化把速度**压回 0.35**（训练 vx 0.26-0.35，远低于 E31 的 0.45），但
+**漂移没修好**（disp/vx 比仍 0.5）。
+
+**结论**：系统性转向偏置**不是奖励可修的**——policy 已把转向当"技能的一部分"，
+奖励只能逼它慢下来换方向，不能消除偏置。E32 负结果（heading 奖励无效 + 速度被压）。
+
+**下一步（E33）**：系统性偏置适合**外部开环补偿**——在 eval/部署层把命令 yaw
+设为 +偏航率（≈+4°/s）抵消 E31 的 -4°/s 左转。若成立，E31+补偿 = 快且直。
+
+产出：`outputs/token_vae_e31/`（vae.pt/pca.npz/z_walk.npy/vbin_meta.json）、
+`outputs/isaac_e31_speedvae/`、`outputs/isaac_eval_e31.json`、
+`outputs/isaac_e32_speedvae_heading/`、`outputs/isaac_eval_e32.json`、
+`e31{eval,rollout,train}.log`、`e32_{train,eval}.log`。
+代码：`train_token_vae_e31.py`、`token_window_vae.py`（SpeedPhaseTokenVAE）、
+`apt_flat_env.py`（latent_speed_bins + yaw_scale/heading_scale）、
+`train/eval_apt_isaac.py`（--latent-speed-bins/--yaw-scale/--heading-scale）。

@@ -44,6 +44,9 @@ def build_args():
     ap.add_argument("--stillness-vx-scale", type=float, default=0.05)
     # E31: speed-conditioned VAE decoder (must mirror training)
     ap.add_argument("--latent-speed-bins", action="store_true")
+    # E32: heading/yaw reward (rollout dynamics only; no effect on eval metrics)
+    ap.add_argument("--yaw-scale", type=float, default=0.5)
+    ap.add_argument("--heading-scale", type=float, default=0.0)
     ap.add_argument("--terrain", choices=["plane", "rough"], default="plane")
     ap.add_argument("--terrain-noise", type=float, default=0.04)
     ap.add_argument("--terrain-seed", type=int, default=0)
@@ -295,6 +298,8 @@ def main():
     cfg.latent_mode = cli.latent_mode
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_speed_bins = cli.latent_speed_bins
+    cfg.yaw_scale = cli.yaw_scale
+    cfg.heading_scale = cli.heading_scale
     cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
     cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
     cfg.latent_phase_rate_max = cli.latent_phase_rate_max

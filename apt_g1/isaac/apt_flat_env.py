@@ -165,6 +165,11 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # the manifold itself encodes gait speed (vs E27/E29's single-speed manifold).
     latent_speed_bins: bool = False
     latent_vae_n_bins: int = 3
+    # E32: heading/velocity-direction reward. yaw_scale multiplies the base
+    # track_yaw term; heading_scale adds exp(-(vy/vx vs cmd heading)^2)-style
+    # alignment reward to fight the high-speed yaw drift E31 showed.
+    yaw_scale: float = 0.5  # default = E31 base behavior
+    heading_scale: float = 0.0
 
     # privileged local elevation map (teacher-style terrain observation)
     use_elevation: bool = False
@@ -652,11 +657,26 @@ class AptFlatG1Env(DirectRLEnv):
         )
         reward = (
             1.0 * track_xy
-            + 0.5 * track_yaw
+            + self.cfg.yaw_scale * track_yaw
             + 0.1 * upright
             + 0.5 * height
             + stillness
         )
+        if self.cfg.heading_scale > 0.0:
+            # E32: reward velocity direction aligned with commanded heading.
+            # world-frame vx/vy vs command frame (yaw from root quat).
+            yaw = torch.atan2(
+                2.0 * (self.robot.data.root_quat_w[:, 0] * self.robot.data.root_quat_w[:, 3]
+                       + self.robot.data.root_quat_w[:, 1] * self.robot.data.root_quat_w[:, 2]),
+                1.0 - 2.0 * (self.robot.data.root_quat_w[:, 2] ** 2
+                             + self.robot.data.root_quat_w[:, 3] ** 2),
+            )
+            # rotate world vel into command frame (cmd heading = +x of cmd frame)
+            v_cx = base_lin_vel[:, 0] * torch.cos(yaw) + base_lin_vel[:, 1] * torch.sin(yaw)
+            v_cy = -base_lin_vel[:, 0] * torch.sin(yaw) + base_lin_vel[:, 1] * torch.cos(yaw)
+            sp = torch.clamp(torch.sqrt(v_cx ** 2 + v_cy ** 2), min=1e-3)
+            heading = torch.clamp(v_cx / sp, -1.0, 1.0)  # 1 = moving along +x cmd
+            reward = reward + self.cfg.heading_scale * (0.5 + 0.5 * heading)
         if self.cfg.progress_scale > 0.0:
             reward = reward + self.cfg.progress_scale * torch.clamp(
                 base_lin_vel[:, 0], 0.0, 1.0
