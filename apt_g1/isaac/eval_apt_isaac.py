@@ -37,6 +37,11 @@ def build_args():
         "--latent-vae-path",
         default="/home/cvgluser/ros2_data/apt_g1/outputs/token_vae_e27/vae.pt",
     )
+    # E28: command-conditioned gait cadence (must mirror training for consistency)
+    ap.add_argument("--latent-cmd-phase-rate", action="store_true")
+    ap.add_argument("--latent-phase-rate-ref", type=float, default=0.6)
+    ap.add_argument("--latent-phase-rate-max", type=float, default=2.0)
+    ap.add_argument("--stillness-vx-scale", type=float, default=0.05)
     ap.add_argument("--terrain", choices=["plane", "rough"], default="plane")
     ap.add_argument("--terrain-noise", type=float, default=0.04)
     ap.add_argument("--terrain-seed", type=int, default=0)
@@ -287,6 +292,10 @@ def main():
     cfg.phase_anchor = cli.phase_anchor
     cfg.latent_mode = cli.latent_mode
     cfg.latent_vae_path = cli.latent_vae_path
+    cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
+    cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
+    cfg.latent_phase_rate_max = cli.latent_phase_rate_max
+    cfg.stillness_vx_scale = cli.stillness_vx_scale
     cfg.aux_scale = cli.aux_scale
     cfg.disturbance_prob = 0.0
     cfg.episode_length_s = 120.0

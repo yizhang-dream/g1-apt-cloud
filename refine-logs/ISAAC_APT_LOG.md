@@ -920,3 +920,59 @@ terrain-seed 0，同一评测 harness）：
 产出：`outputs/token_vae_e27/`（vae.pt/pca.npz/z_walk.npy/meta.json）、
 `outputs/isaac_e27_latent/`、`outputs/isaac_eval_e27.json`、
 `train_token_vae_e27.py`、`isaac/token_window_vae.py`。
+
+### E28：E27 速度天花板的归因消融（2026-08-13）
+
+**动机**：E27 得 0.32 m/s（先验满速 0.8），结论文写"半速是无行为先验的
+样本效率代价"。但代码审查发现两个更具体的可疑瓶颈，需用消融定责：
+
+1. **冻结相位时钟**（`apt_flat_env.py` latent 分支）：φ 以**标量固定速率**
+   0.121 rad/步推进，全 episode/全 env 不变 → 策略无法改变步频，命令
+   vx∈[0,0.8] 跟不上高命令。
+2. **奖励地形**：`anti_stop_thresh=0.1`（>0.1 无前进激励）+ 硬编码
+   `stillness=-0.05·vx²`（二次罚前进速度）→ 跟不上时停在 ~0.35 是舒适最优。
+
+（旁证：E27 训练曲线 iter 700 后 rew/vx 平台、expl 退火到 0；latent KL=56
+而 coef 仅 2.5e-6——流形约束形同虚设，但非速度主因。）
+
+**改动（全部 config 开关，默认值保持 E27，可 bit-for-bit 复现）**：
+`apt_flat_env.py` 加 `latent_cmd_phase_rate`（命令条件化步频：rate =
+base·clamp(cmd_vx/0.6, 0, 2.0)）/`latent_phase_rate_ref`/`_max` +
+`stillness_vx_scale`；`train/eval_apt_isaac.py` 加对应 4 个 CLI flag。
+
+**消融（64 envs × 800 iters，A_walk60 = 60s 前进，6 seed）**：
+
+| Run | 改动 | mean vx | mean disp | fall | 解读 |
+|---|---|---|---|---|---|
+| E27（基线） | 冻结时钟 + 基线奖励 | 0.317 | **19.1m** | 0/3 | — |
+| E28a | + 解冻步频 | 0.342 | 13.1m | 0/6 | vx 微涨(+8%)但 disp 暴跌(-31%)→**方向漂移** |
+| E28b | + 解冻步频 + 奖励重调* | **0.253** | 14.9m | 0/6 | **更慢**(-20%) |
+
+\* E28b 奖励重调：`anti_stop_thresh 0.1→0.6`、`progress 0.3→0.5`、
+`stillness_vx_scale 0.05→0`。
+
+**结论（细化 E27 结论 #2，且推翻了上述两个假设）**：
+
+1. **解冻步频不够**（E28a）：策略有自由调速却不快，且更快播放冻结 walk
+   token 会**破坏直行**（disp 13<0.342×60≈20.5，即大量偏航）。说明
+   SONIC walk token 序列在非原始步频下不保直。
+2. **奖励重调反而更慢**（E28b）：若速度是"激励不足"，加权应变快；它变慢
+   → 速度**不是奖励激励问题**。策略被推向达不到的 0.6（anti_stop_thresh
+   抬高）反而失稳降速。
+3. **三者一致收敛到 ~0.25–0.34 m/s**，与样本效率/时钟/奖励都无关 →
+   **~0.3 m/s 是冻结 SONIC walk 解码器流形的固有前进速度上限**（先验本身的
+   速度）。walk 数据虽录于 0.6 m/s，但 RL 找到的 z + 冻结 D(z,φ) 复现出的
+   步态动力学上只到 ~0.3（足部滑动/顺应/解码重建误差），这正是"冻结先验是
+   跟踪/稳定先验、非速度优化先验"的又一佐证。
+4. E27 结论 #2 原说"半速是无行为先验的样本效率代价"——**E28 修正为**：
+   半速是解码器流形的固有速度天花板，不是样本效率（加探索/加 iters 也无效，
+   E28a/b 用了全新探索退火仍封顶）。要突破需：更忠实的 walk 解码器、或
+   aux/残差通道（即项目一贯的 aux 破坏源）、或更高速度的 walk 数据。
+
+E28c（仅奖励重调、不解冻步频）按计划为条件项；a/b 已不歧义，**跳过**。
+
+产出：`outputs/isaac_e28a_cadence/`、`outputs/isaac_e28b_cadence_rew/`、
+`outputs/isaac_eval_e28a.json`（A 段 6 seed）/`isaac_eval_e28b.json`、
+`e28{a,b}_train.log`、`e28a_eval.log`（B/C/D 段因结论已定提前终止）。
+代码改动见 commit（`apt_flat_env.py` + `train/eval_apt_isaac.py` 的 E28
+config 开关）。

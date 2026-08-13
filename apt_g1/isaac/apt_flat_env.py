@@ -152,6 +152,14 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     latent_mode: bool = False  # True: policy outputs 16-d latent -> VAE -> token -> SONIC
     latent_vae_path: str = ""  # frozen TokenWindowVAE checkpoint
     latent_phase_rate: float = 0.0  # 0 -> read from pca.npz (walk cadence)
+    # E28: command-conditioned gait cadence. When True, the latent phase clock
+    # advances per-env at base_rate * clamp(cmd_vx / ref, 0, max) instead of a
+    # fixed scalar, letting the policy speed up/slow down the cycle to track the
+    # commanded vx (the frozen decoder D(z, phi) already generalizes over phi).
+    latent_cmd_phase_rate: bool = False
+    latent_phase_rate_ref: float = 0.6  # cmd vx at which cadence == base walk rate
+    latent_phase_rate_max: float = 2.0  # clamp on (cmd_vx / ref) multiplier
+    stillness_vx_scale: float = 0.05  # forward-speed (vx^2) penalty weight in stillness
 
     # privileged local elevation map (teacher-style terrain observation)
     use_elevation: bool = False
@@ -419,14 +427,25 @@ class AptFlatG1Env(DirectRLEnv):
         cmds = self._build_commands_list()
         proprio = self._proprio_np()
         if self.cfg.latent_mode:
-            # E27: the policy's latent z (passed as "phase") is decoded by the
-            # frozen phase-conditioned VAE at the current walk-clock phase;
-            # the clock advances every control step (measured cadence).
+            # E27/E28: the policy's latent z (passed as "phase") is decoded by
+            # the frozen phase-conditioned VAE at the current walk-clock phase.
             with torch.no_grad():
                 phi = self._latent_phase
                 sc = torch.stack([torch.sin(phi), torch.cos(phi)], dim=1)
                 tokens = self._vae.decode(phase, sc).detach().cpu().numpy()
-                self._latent_phase = (phi + self._latent_phase_rate) % math.tau
+                if self.cfg.latent_cmd_phase_rate:
+                    # E28: advance the clock per-env scaled by commanded vx so
+                    # the gait cadence can track the speed command (the policy
+                    # sees cmd vx as obs[0] and picks z accordingly).
+                    mult = torch.clamp(
+                        self._commands[:, 0] / self.cfg.latent_phase_rate_ref,
+                        min=0.0,
+                        max=self.cfg.latent_phase_rate_max,
+                    )
+                    self._latent_phase = (phi + self._latent_phase_rate * mult) % math.tau
+                else:
+                    # E27: fixed scalar walk cadence.
+                    self._latent_phase = (phi + self._latent_phase_rate) % math.tau
         elif self.cfg.phase_mode:
             groups = self._router_groups(cmds)
             tokens = np.zeros((self.num_envs, 64), dtype=np.float32)
@@ -608,8 +627,10 @@ class AptFlatG1Env(DirectRLEnv):
         )
         upright = torch.exp(-(gravity[:, :2].norm(dim=1) ** 2) / 0.1)
         height = torch.exp(-((self.robot.data.root_pos_w[:, 2] - 0.76) ** 2) / 0.02)
-        stillness = -0.05 * (base_lin_vel[:, 0] ** 2 + base_lin_vel[:, 1] ** 2) - 0.05 * (
-            base_ang_vel[:, 0] ** 2 + base_ang_vel[:, 1] ** 2
+        stillness = (
+            -self.cfg.stillness_vx_scale * base_lin_vel[:, 0] ** 2
+            - 0.05 * base_lin_vel[:, 1] ** 2
+            - 0.05 * (base_ang_vel[:, 0] ** 2 + base_ang_vel[:, 1] ** 2)
         )
         reward = (
             1.0 * track_xy

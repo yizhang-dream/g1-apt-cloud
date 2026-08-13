@@ -45,6 +45,11 @@ def build_args():
     ap.add_argument("--latent-warmstart-iters", type=int, default=0)
     ap.add_argument("--latent-kl", type=float, default=2.5e-6)
     ap.add_argument("--latent-expl", type=float, default=0.01)
+    # E28: command-conditioned gait cadence + forward-speed reward shaping
+    ap.add_argument("--latent-cmd-phase-rate", action="store_true")
+    ap.add_argument("--latent-phase-rate-ref", type=float, default=0.6)
+    ap.add_argument("--latent-phase-rate-max", type=float, default=2.0)
+    ap.add_argument("--stillness-vx-scale", type=float, default=0.05)
     ap.add_argument("--aux-scale", type=float, default=0.2)
     ap.add_argument("--aux-l2", type=float, default=0.0)
     ap.add_argument("--aux-rate", type=float, default=0.0)
@@ -137,6 +142,10 @@ def main():
     cfg.phase_anchor = cli.phase_anchor
     cfg.latent_mode = cli.latent_mode
     cfg.latent_vae_path = cli.latent_vae_path
+    cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
+    cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
+    cfg.latent_phase_rate_max = cli.latent_phase_rate_max
+    cfg.stillness_vx_scale = cli.stillness_vx_scale
     if cli.latent_mode:
         cfg.action_space = 16  # latent z only (no aux / gate)
         cfg.observation_space += 14  # _last_phase 2 -> 16 in the observation
