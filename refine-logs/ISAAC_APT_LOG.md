@@ -1126,3 +1126,56 @@ disp ~7.4m（漂移未修，disp/vx 比 ~0.31 甚至更差）**。
 `outputs/isaac_eval_e34.json`、`e33_eval.log`、`e34_{train,eval}.log`。
 代码：`eval_apt_isaac.py`（--yaw-bias-comp + rollout yaw_bias）、
 `train_apt_isaac.py`（--yaw-min/max）。
+
+### E35：方向条件化 VAE 解码器（D(z, φ, v, ψ)→token，修复 E31 漂移，2026-08-13）
+
+**动机**：E32-E34 证明 E31 的转向偏置非奖励/补偿/DR 可修——因为**方向不在流形里**，
+policy 只能选一个隐式编码方向（带偏置）的 z。正解：把方向变成显式条件，方向完全
+由命令决定，policy 的 z 只选速度。
+
+**改动**：
+- `train_token_vae_e35.py`：`DirSpeedPhaseTokenVAE`——decoder 加 ψ_bin embedding
+  （8 档方向，angle_bin 公式 `floor((atan2(mdir.y,mdir.x)+π)/2π×8)%8`，bin 4=+x 前进；
+  数据 walk 覆盖全 8 方向）。**val recon MAE 0.062**（优于 E31 的 0.0753/E27 的 0.079
+  ——方向不再由 z 隐式编码，重建更干净）。
+- env：`latent_dir_bins` cfg——命令 (vx,vy) → atan2 → ψ_bin，decode 传 4 参。
+- `token_window_vae.py` 加 `DirSpeedPhaseTokenVAE`；train/eval 加 `--latent-dir-bins`。
+
+**E35 = E31 配方 + dir bins**（64 envs × 800 iters）。A_walk60（6 seed）：
+
+| Run | 表征 | mean vx | mean disp | disp/vx 比 | 解读 |
+|---|---|---|---|---|---|
+| E29 | E27 流形 | 0.348 | 18.3m | 0.88 | 慢但直 |
+| E31 | +速度条件 | 0.535 | ~10m | 0.31 | 快但漂（左转 4°/s） |
+| **E35** | **+方向条件** | **0.295** | **16.3m** | **0.93** | **漂移修复，速度回落** |
+
+**结论**：**方向条件化修好了漂移**（disp/vx 比 0.31→0.93，接近直行；理论直行
+0.295×60=17.7m vs 实际 16.3m）。代价：速度回落到 ~0.3（低于 E31 的 0.535）——
+policy 没被激励选"快 bin"的 z（训练命令 vx 均值 0.4，z 收敛到中速技能）。方向
+条件化证明了"方向是流形显式轴"的机制正确，但**快且直**仍需速度激励（E36 候选：
+E35 + 提高 progress/anti-stop 阈值推选快 bin）。
+
+### 渲染管道升级：MuJoCo 3D 真实模型视频（2026-08-13）
+
+**问题**：早期阶段视频是 matplotlib 2D 骨架（`animate_skeleton.py`），因 Isaac Sim
+的 GPU 渲染（viewport/hydra）在服务器段错误。用户指出骨架视频不真实。
+
+**解决**：`replay_render_mujoco.py`——把 Isaac rollout 的 npz（base 位姿 + 29 关节角，
+SONIC order）回放到 MuJoCo G1 模型（`scene_43dof.xml`），`mujoco.Renderer` offscreen
+（**MUJOCO_GL=egl**，NVIDIA 驱动带 libEGL，无需显示服务器）渲染真实 3D 模型帧，
+imageio-ffmpeg 编码 mp4（.venv_mjlab 自带）。关节映射复用 `G1_ISAACLAB_TO_MUJOCO_DOF`。
+
+**产物（本地 `apt_g1/outputs/`，均 400 帧/25fps/640×360 已验证可解码）**：
+- `e29_mujoco.mp4`（慢而稳）
+- `e31_mujoco.mp4`（快但可见左转漂移）
+- `e35_mujoco.mp4`（方向条件化后直行）
+
+之后每版实验按 `rollout_log_joints.py`（无相机）→ `replay_render_mujoco.py`（3D 渲染）
+管道产出真实模型视频。骨架动画降级为调试辅助。
+
+产出（E35）：`outputs/token_vae_e35/`（vae.pt/pca.npz/z_walk.npy/vbin_meta.json/
+dbin_meta.json）、`outputs/isaac_e35_dirvae/`、`outputs/isaac_eval_e35.json`、
+`outputs/e35_rollout.npz`、`outputs/e35_mujoco.mp4`、`e35_{train,eval,rollout}.log`。
+代码：`train_token_vae_e35.py`、`token_window_vae.py`（DirSpeedPhaseTokenVAE）、
+`apt_flat_env.py`（latent_dir_bins）、`train/eval/rollout_log_joints.py`
+（--latent-dir-bins）、`replay_render_mujoco.py`（MuJoCo 3D 渲染）。

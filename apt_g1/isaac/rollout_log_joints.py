@@ -24,6 +24,7 @@ def main():
         default="/home/cvgluser/ros2_data/apt_g1/outputs/token_vae_e27/vae.pt",
     )
     ap.add_argument("--latent-speed-bins", action="store_true")
+    ap.add_argument("--latent-dir-bins", action="store_true")
     ap.add_argument("--steps", type=int, default=400)
     ap.add_argument("--command-vx", type=float, default=0.8)
     ap.add_argument("--seed", type=int, default=0)
@@ -66,6 +67,7 @@ def main():
         cfg.latent_mode = True
         cfg.latent_vae_path = cli.latent_vae_path
         cfg.latent_speed_bins = cli.latent_speed_bins
+        cfg.latent_dir_bins = cli.latent_dir_bins
         cfg.action_space = 16
         cfg.observation_space += 14
 

@@ -44,6 +44,8 @@ def build_args():
     ap.add_argument("--stillness-vx-scale", type=float, default=0.05)
     # E31: speed-conditioned VAE decoder (must mirror training)
     ap.add_argument("--latent-speed-bins", action="store_true")
+    # E35: direction+speed-conditioned VAE decoder (must mirror training)
+    ap.add_argument("--latent-dir-bins", action="store_true")
     # E32: heading/yaw reward (rollout dynamics only; no effect on eval metrics)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -303,6 +305,7 @@ def main():
     cfg.latent_mode = cli.latent_mode
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_speed_bins = cli.latent_speed_bins
+    cfg.latent_dir_bins = cli.latent_dir_bins
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
     cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate

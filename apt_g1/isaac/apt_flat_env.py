@@ -165,6 +165,13 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # the manifold itself encodes gait speed (vs E27/E29's single-speed manifold).
     latent_speed_bins: bool = False
     latent_vae_n_bins: int = 3
+    # E35: direction+speed-conditioned VAE decoder. When True the frozen decoder
+    # takes (z, phase, v_bin, psi_bin) where psi_bin is the 8-bin heading of the
+    # commanded direction (bin 4 = +x forward, build_exp3_dataset formula). The
+    # heading is fully determined by the command condition, so the policy's z
+    # only picks speed — fixing E31's systematic yaw drift.
+    latent_dir_bins: bool = False
+    latent_vae_n_dbins: int = 8
     # E32: heading/velocity-direction reward. yaw_scale multiplies the base
     # track_yaw term; heading_scale adds exp(-(vy/vx vs cmd heading)^2)-style
     # alignment reward to fight the high-speed yaw drift E31 showed.
@@ -259,12 +266,20 @@ class AptFlatG1Env(DirectRLEnv):
                 import numpy as _np
 
                 from apt_g1.isaac.token_window_vae import (
+                    DirSpeedPhaseTokenVAE,
                     PhaseTokenVAE,
                     SpeedPhaseTokenVAE,
                 )
 
-                vae_cls = SpeedPhaseTokenVAE if self.cfg.latent_speed_bins else PhaseTokenVAE
-                vae = vae_cls(n_bins=self.cfg.latent_vae_n_bins).to(self.device)
+                if self.cfg.latent_dir_bins:
+                    vae = DirSpeedPhaseTokenVAE(
+                        n_vbins=self.cfg.latent_vae_n_bins,
+                        n_dbins=self.cfg.latent_vae_n_dbins,
+                    ).to(self.device)
+                elif self.cfg.latent_speed_bins:
+                    vae = SpeedPhaseTokenVAE(n_bins=self.cfg.latent_vae_n_bins).to(self.device)
+                else:
+                    vae = PhaseTokenVAE().to(self.device)
                 vae.load_state_dict(
                     torch.load(self.cfg.latent_vae_path, map_location=self.device),
                     strict=False,  # checkpoint also carries the encoder; only the decoder is needed
@@ -446,7 +461,17 @@ class AptFlatG1Env(DirectRLEnv):
             with torch.no_grad():
                 phi = self._latent_phase
                 sc = torch.stack([torch.sin(phi), torch.cos(phi)], dim=1)
-                if self.cfg.latent_speed_bins:
+                if self.cfg.latent_dir_bins:
+                    # E35: speed bin from commanded vx + direction bin from the
+                    # commanded heading (atan2 of cmd vx/vy, bin 4 = +x fwd).
+                    n = self.cfg.latent_vae_n_bins
+                    cmd_v = self._commands[:, 0]
+                    edges = torch.linspace(0.0, self.cfg.vx_max, n + 1)[1:-1].to(cmd_v.device)
+                    vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
+                    ang = torch.atan2(self._commands[:, 1], self._commands[:, 0])
+                    db = torch.floor((ang + math.pi) / (2.0 * math.pi) * 8).long() % 8
+                    tokens = self._vae.decode(phase, sc, vb, db).detach().cpu().numpy()
+                elif self.cfg.latent_speed_bins:
                     # E31: pick the speed bin from the commanded vx (bins
                     # trained on walk phase-rate thirds: slow/mid/fast).
                     n = self.cfg.latent_vae_n_bins
