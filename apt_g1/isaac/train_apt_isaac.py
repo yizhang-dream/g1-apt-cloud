@@ -32,6 +32,11 @@ def build_args():
     ap.add_argument("--rollout", type=int, default=24)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--vx-max", type=float, default=0.8)
+    # E34: randomize commanded yaw during training (domain randomization) so
+    # the policy learns to steer toward the commanded heading. Default 0,0 =
+    # E31 behavior (constant yaw=0, which caused the systematic drift).
+    ap.add_argument("--yaw-min", type=float, default=0.0)
+    ap.add_argument("--yaw-max", type=float, default=0.0)
     ap.add_argument("--disturbance-prob", type=float, default=0.0)
     ap.add_argument("--disturbance-ramp-iters", type=int, default=0)
     ap.add_argument("--use-2hz-gate", type=int, default=1)
@@ -135,6 +140,8 @@ def main():
     cfg.sonic_decoder_path = cli.decoder_path
     cfg.router_model_dir = cli.router_model_dir
     cfg.vx_max = cli.vx_max
+    cfg.yaw_min = cli.yaw_min
+    cfg.yaw_max = cli.yaw_max
     cfg.disturbance_prob = 0.0 if cli.disturbance_ramp_iters > 0 else cli.disturbance_prob
     cfg.use_2hz_gate = bool(cli.use_2hz_gate)
     cfg.use_elevation = bool(cli.use_elevation)

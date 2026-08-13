@@ -1102,3 +1102,27 @@ heading 强化把速度**压回 0.35**（训练 vx 0.26-0.35，远低于 E31 的
 代码：`train_token_vae_e31.py`、`token_window_vae.py`（SpeedPhaseTokenVAE）、
 `apt_flat_env.py`（latent_speed_bins + yaw_scale/heading_scale）、
 `train/eval_apt_isaac.py`（--latent-speed-bins/--yaw-scale/--heading-scale）。
+
+### E33/E34：修 E31 漂移的两次尝试（均失败，2026-08-13）
+
+**E33（开环 yaw 补偿）**：eval 加 `--yaw-bias-comp`（rollout 命令 yaw 设 +0.07 rad/s
+抵消 E31 的 -4°/s 左转）。结果：**disp 仍 ~9.6m（无变化）**。根因：**policy 观测里
+含命令 yaw**（`_commands` 是 obs 一部分），把命令 yaw 设 0.07 时 policy 当作
+"右转 0.07"指令主动抵消 → **开环补偿被 policy 的闭环吃掉**。
+
+**E34（yaw 域随机化）**：train 加 `--yaw-min/max`（命令 yaw 训练时 U(-0.4,0.4)，
+标准 domain randomization，让 policy 学"按命令转向"）。发现根因：**E31 训练时
+`yaw_min/yaw_max=0.0`（命令 yaw 恒 0）**——policy 从没见过非零 yaw 命令，默认
+输出带固定偏置的"直线"。E34 训练 vx 0.42-0.52、fall=0，但 A_walk60：**vx 0.395、
+disp ~7.4m（漂移未修，disp/vx 比 ~0.31 甚至更差）**。
+
+**结论（E31 漂移定论）**：速度条件化快速技能的转向偏置**不是奖励、开环补偿、
+命令随机化可修的**——它是该流形技能本身的固有特征（E34 的 yaw-DR 让 policy 学会
+"响应命令转向"，但命令=0 时仍默认偏）。E31（vx 0.535）仍是本系列最快配置；
+其漂移要修需**动作表征层**（如给解码器加方向条件、或训带方向命令的 VAE），
+属于 E35+ 方向。
+
+产出：`outputs/isaac_eval_e33_comp.json`、`outputs/isaac_e34_speedvae_yawdr/`、
+`outputs/isaac_eval_e34.json`、`e33_eval.log`、`e34_{train,eval}.log`。
+代码：`eval_apt_isaac.py`（--yaw-bias-comp + rollout yaw_bias）、
+`train_apt_isaac.py`（--yaw-min/max）。

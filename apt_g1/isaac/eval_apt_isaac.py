@@ -47,6 +47,9 @@ def build_args():
     # E32: heading/yaw reward (rollout dynamics only; no effect on eval metrics)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
+    # E33: open-loop yaw-bias compensation (rad/s). Cancels a systematic
+    # turning bias (e.g. E31's ~-0.07 rad/s = -4 deg/s left drift).
+    ap.add_argument("--yaw-bias-comp", type=float, default=0.0)
     ap.add_argument("--terrain", choices=["plane", "rough"], default="plane")
     ap.add_argument("--terrain-noise", type=float, default=0.04)
     ap.add_argument("--terrain-seed", type=int, default=0)
@@ -134,6 +137,8 @@ def rollout(
     phase_zero=False,
     aux_zero=False,
     latent_policy=False,
+    yaw_bias=0.0,  # E33: open-loop yaw command offset (rad/s) to cancel a
+    # systematic turning bias (e.g. E31's -4 deg/s left drift)
 ):
     """schedule: list of (vx, vy, seconds) or (Command, seconds) pairs."""
     from apt_g1.encoder import Command
@@ -160,7 +165,7 @@ def rollout(
             vx, vy = item
             env.router_commands[0] = None
             env._commands[0] = torch.tensor(
-                [vx, vy, 0.0], dtype=torch.float32, device=env.device
+                [vx, vy, yaw_bias], dtype=torch.float32, device=env.device
             )
         for _ in range(int(secs * 50)):
             if t in imp:
@@ -339,7 +344,7 @@ def main():
             out["A_walk60"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(0.8, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp)
+                r = rollout(env, policy, [(0.8, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
                 out["A_walk60"][key][f"seed{seed}"] = r
                 print(f"A walk60 {key} seed{seed} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
 
@@ -353,7 +358,7 @@ def main():
             for dname, dvec in dirs.items():
                 for seed in [0, 1, 2]:
                     imp = [(500, dvec), (1250, dvec)]
-                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp)
+                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
                     out["B_disturbance"][key][f"{dname}_seed{seed}"] = r
                     print(f"B {dname} {key} seed{seed} done={r['completed']} h_min={r['h_min']}", flush=True)
 
@@ -369,7 +374,7 @@ def main():
             out["C_switch"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp)
+                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
                 out["C_switch"][key][f"seed{seed}"] = r
                 print(f"C switch {key} seed{seed} done={r['completed']} fall={r['fall_step']} h_min={r['h_min']}", flush=True)
 
@@ -385,7 +390,7 @@ def main():
             out["D_jump"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp)
+                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
                 out["D_jump"][key][f"seed{seed}"] = r
                 print(f"D jump {key} seed{seed} done={r['completed']} h_min={r['h_min']} vx={r['vx']}", flush=True)
 
