@@ -53,6 +53,8 @@ def build_args():
     # E29: latent KL prior. "zero" = N(0,I) (E27); "walk" = N(z_walk, I) keeps z
     # on the SONIC walk manifold instead of pulling it toward the origin.
     ap.add_argument("--latent-kl-prior", choices=["zero", "walk"], default="zero")
+    # E31: speed-conditioned VAE decoder (D(z, phase, v_bin) -> token)
+    ap.add_argument("--latent-speed-bins", action="store_true")
     ap.add_argument("--aux-scale", type=float, default=0.2)
     ap.add_argument("--aux-l2", type=float, default=0.0)
     ap.add_argument("--aux-rate", type=float, default=0.0)
@@ -145,6 +147,7 @@ def main():
     cfg.phase_anchor = cli.phase_anchor
     cfg.latent_mode = cli.latent_mode
     cfg.latent_vae_path = cli.latent_vae_path
+    cfg.latent_speed_bins = cli.latent_speed_bins
     cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
     cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
     cfg.latent_phase_rate_max = cli.latent_phase_rate_max

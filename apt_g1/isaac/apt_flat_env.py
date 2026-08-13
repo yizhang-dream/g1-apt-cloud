@@ -160,6 +160,11 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     latent_phase_rate_ref: float = 0.6  # cmd vx at which cadence == base walk rate
     latent_phase_rate_max: float = 2.0  # clamp on (cmd_vx / ref) multiplier
     stillness_vx_scale: float = 0.05  # forward-speed (vx^2) penalty weight in stillness
+    # E31: speed-conditioned VAE decoder. When True the frozen decoder takes a
+    # speed bin derived from the commanded vx (D(z, phase, v_bin) -> token), so
+    # the manifold itself encodes gait speed (vs E27/E29's single-speed manifold).
+    latent_speed_bins: bool = False
+    latent_vae_n_bins: int = 3
 
     # privileged local elevation map (teacher-style terrain observation)
     use_elevation: bool = False
@@ -248,9 +253,13 @@ class AptFlatG1Env(DirectRLEnv):
             if self.cfg.latent_mode:
                 import numpy as _np
 
-                from apt_g1.isaac.token_window_vae import PhaseTokenVAE
+                from apt_g1.isaac.token_window_vae import (
+                    PhaseTokenVAE,
+                    SpeedPhaseTokenVAE,
+                )
 
-                vae = PhaseTokenVAE().to(self.device)
+                vae_cls = SpeedPhaseTokenVAE if self.cfg.latent_speed_bins else PhaseTokenVAE
+                vae = vae_cls(n_bins=self.cfg.latent_vae_n_bins).to(self.device)
                 vae.load_state_dict(
                     torch.load(self.cfg.latent_vae_path, map_location=self.device),
                     strict=False,  # checkpoint also carries the encoder; only the decoder is needed
@@ -432,7 +441,16 @@ class AptFlatG1Env(DirectRLEnv):
             with torch.no_grad():
                 phi = self._latent_phase
                 sc = torch.stack([torch.sin(phi), torch.cos(phi)], dim=1)
-                tokens = self._vae.decode(phase, sc).detach().cpu().numpy()
+                if self.cfg.latent_speed_bins:
+                    # E31: pick the speed bin from the commanded vx (bins
+                    # trained on walk phase-rate thirds: slow/mid/fast).
+                    n = self.cfg.latent_vae_n_bins
+                    cmd_v = self._commands[:, 0]
+                    edges = torch.linspace(0.0, self.cfg.vx_max, n + 1)[1:-1].to(cmd_v.device)
+                    vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
+                    tokens = self._vae.decode(phase, sc, vb).detach().cpu().numpy()
+                else:
+                    tokens = self._vae.decode(phase, sc).detach().cpu().numpy()
                 if self.cfg.latent_cmd_phase_rate:
                     # E28: advance the clock per-env scaled by commanded vx so
                     # the gait cadence can track the speed command (the policy
