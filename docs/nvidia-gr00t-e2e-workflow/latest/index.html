@@ -1,0 +1,758 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>End-to-End Physical AI With the Unitree G1 &#8212; How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=df3ac72c" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/nvlearning.css?v=d3374dad" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinxcontrib-images/LightBox2/lightbox2/dist/css/lightbox.min.css?v=6e7d0de0" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinxcontrib-images/LightBox2/lightbox2-customize/pointer.css?v=c97663ff" />
+    <link rel="stylesheet" type="text/css" href="_static/checklist.css?v=0c588c95" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script src="_static/sphinxcontrib-images/LightBox2/lightbox2/dist/js/lightbox-plus-jquery.min.js?v=f0ca4bb6"></script>
+    <script src="_static/sphinxcontrib-images/LightBox2/lightbox2-customize/jquery-noconflict.js?v=12818e64"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'index';</script>
+    <script src="_static/checklist.js?v=d4c019e1"></script>
+    <link rel="icon" href="_static/favicon.png"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Concepts Overview" href="getting-started/concepts-overview.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+
+
+    <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" ></script>
+    
+
+
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="#">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="#">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="getting-started/concepts-overview.html">Getting Started</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting-started/concepts-overview.html">Concepts Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started/prerequisites.html">Prerequisites</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="simulation-workflow/sim-overview.html">Simulation Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-overview.html">Simulation Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-setup-isaac-lab-arena.html">Sim Setup: Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-environment-code-review.html">Sim Environment Code Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-teleop-and-wbc.html">Sim Teleop and WBC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-data-export.html">Sim Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/groot-fine-tuning-sim.html">GR00T Fine-Tuning on Sim Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-evaluation.html">Sim Evaluation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="real-robot-workflow/real-overview.html">Real Robot Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-overview.html">Robot Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/isaac-ros-setup.html">Isaac ROS Setup on Thor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/g1-introduction-and-safety.html">G1 Introduction and Safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-teleop.html">Teleoperation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-record.html">Data Recording</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-data-export.html">Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-fine-tuning-and-leapp.html">Fine-Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-leapp-export.html">LEAPP Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-deployment.html">Deployment</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="conclusion.html">Conclusion</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="shared/teleoperation-data-collection-guide.html">Teleop Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="resources/models-and-datasets.html">Models and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="resources/repos.html">Repos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/isaac-sim/IsaacLab-Arena">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/IsaacTeleop">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA-ISAAC-ROS">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T">Isaac GR00T</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="resources/documentation.html">Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://isaac-sim.github.io/IsaacLab-Arena/main/index.html">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia-isaac-ros.github.io/">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://developer.nvidia.com/isaac/gr00t">Isaac GR00T</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://support.unitree.com/home/en/G1_developer/about_G1">Unitree G1 Developer Guide</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none"></div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="end-to-end-physical-ai-with-the-unitree-g1">
+<h1>End-to-End Physical AI With the Unitree G1<a class="headerlink" href="#end-to-end-physical-ai-with-the-unitree-g1" title="Link to this heading">#</a></h1>
+<p><strong>Physical AI is redefining how robots interact with the world.</strong></p>
+<p>Humanoid robots are uniquely suited to operate in environments built for people, including reaching across tables and grasping everyday objects.</p>
+<p>This course introduces the GR00T reference workflow: a validated, open, and reproducible sim-first to deployment workflow for Unitree G1 manipulation policy learning with Jetson Thor.</p>
+<p>This is not a standalone demo or a general humanoid platform kit. It is a reference workflow for humanoid enablement that packages supported NVIDIA models, libraries, and frameworks into one reproducible workflow:</p>
+<ul class="simple">
+<li><p>Teleoperation in simulation or on the real robot</p></li>
+<li><p>Demonstration data collection</p></li>
+<li><p>GR00T Vision-Language-Action (VLA) post-training</p></li>
+<li><p>Evaluation in Isaac Lab-Arena</p></li>
+<li><p>Deployment back to the G1</p></li>
+</ul>
+<p>The workflow is productized, validated, open, and reproducible. It gives developers a simplified onboarding path for using NVIDIA’s stack on common humanoid robot manipulation workflows, with the Unitree G1.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-1 sd-row-cols-xs-1 sd-row-cols-sm-1 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row sd-col-12 sd-col-xs-12 sd-col-sm-12 sd-col-md-6 sd-col-lg-6 docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<a class=""
+               data-lightbox="_images/g1-simulation.png"
+               href="_images/g1-simulation.png"
+               title="Simulation Workflow"
+               data-title="Simulation Workflow"
+               
+               ><img src="_images/g1-simulation.png"
+                     class="align-center"
+                     width=""
+                     height="240px"
+                     alt="Simulation Workflow"/>
+                </a></div>
+<div class="sd-card-footer docutils">
+<p class="sd-card-text">Simulation Workflow</p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row sd-col-12 sd-col-xs-12 sd-col-sm-12 sd-col-md-6 sd-col-lg-6 docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<a class=""
+               data-lightbox="_images/apple_to_plate.gif"
+               href="_images/apple_to_plate.gif"
+               title="apple_to_plate"
+               data-title="apple_to_plate"
+               
+               ><img src="_images/apple_to_plate.gif"
+                     class="align-center"
+                     width=""
+                     height="240px"
+                     alt="apple_to_plate"/>
+                </a></div>
+<div class="sd-card-footer docutils">
+<p class="sd-card-text">Real Robot Workflow</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<section id="what-you-ll-build">
+<h2>What You’ll Build<a class="headerlink" href="#what-you-ll-build" title="Link to this heading">#</a></h2>
+<p>The target task is a <strong>tabletop pick-and-place</strong>: the G1 stands actively balanced, picks up an apple from the table surface, and places it onto a plate. This is a foundational manipulation skill that exercises the full pipeline: perception, grasping, whole-body coordination, and policy execution.</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>This course offers <strong>two independent workflow paths</strong> that are fully decoupled from each other:</p>
+<ul class="simple">
+<li><p><strong>Simulation Workflow</strong>: Collect data and train policies entirely in Isaac Lab-Arena.</p></li>
+<li><p><strong>Real Robot Workflow</strong>: Collect data on the physical G1 and deploy to hardware through Jetson Thor.</p></li>
+</ul>
+<p>You can complete either path on its own, or work through both. The simulation and real workflows don’t depend on each other in this version of the course.</p>
+</div>
+</section>
+<section id="how-to-approach-this-course">
+<h2>How to Approach This Course<a class="headerlink" href="#how-to-approach-this-course" title="Link to this heading">#</a></h2>
+<p>This course provides datasets and models that allow you to choose from several approaches, depending on your goals:</p>
+<ul class="simple">
+<li><p><strong>Easiest / fastest</strong>: Use the provided models to <strong>replicate the reference results</strong>, gathering enough teleop data to get familiar with the process.</p></li>
+<li><p><strong>Deeper dive</strong>: Reproduce the demos by <strong>collecting your own data and training your own models</strong> for the same task.</p></li>
+<li><p><strong>Custom task</strong>: Use this workflow as the foundation to build and train <strong>your own task</strong>.</p></li>
+</ul>
+</section>
+<section id="learning-objectives">
+<h2>Learning Objectives<a class="headerlink" href="#learning-objectives" title="Link to this heading">#</a></h2>
+<p>By the end of this course, you’ll be able to:</p>
+<ul class="simple">
+<li><p><strong>Configure</strong> Isaac Lab-Arena for humanoid robot simulation and Isaac Teleop for teleoperation.</p></li>
+<li><p><strong>Collect</strong> manipulation demonstration data through teleoperation with AGILE in either HDF5 (sim) or MCAP (real) format.</p></li>
+<li><p><strong>Convert</strong> the collected demonstration data to LeRobot format for GR00T 1.7 post-training.</p></li>
+<li><p><strong>Fine-tune</strong> a GR00T 1.7 policy on the converted LeRobot dataset.</p></li>
+<li><p><strong>Evaluate</strong> trained pick-and-place policies using success-rate metrics in Isaac Lab-Arena.</p></li>
+<li><p><strong>Deploy</strong> a trained manipulation policy to the physical Unitree G1 through Jetson Thor.</p></li>
+</ul>
+</section>
+<section id="who-is-this-for">
+<h2>Who Is This For<a class="headerlink" href="#who-is-this-for" title="Link to this heading">#</a></h2>
+<p>This course is for robotics engineers, researchers, and developers working with humanoid robots or manipulation tasks. You’ll get the most from this material if you fall into one of these profiles:</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-1 sd-row-cols-xs-1 sd-row-cols-sm-1 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-3 sd-g-xs-3 sd-g-sm-3 sd-g-md-3 sd-g-lg-3 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Robotics Researcher</div>
+<p class="sd-card-text">You’re investigating learned manipulation policies for humanoid robots. You want hands-on experience with NVIDIA’s end-to-end stack and access to a reproducible baseline task.</p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Applied Robotics Engineer</div>
+<p class="sd-card-text">You’re building or integrating humanoid robot capabilities for a product or deployment. You need a working reference implementation that covers data collection through deployment on real hardware.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<p>Or you’re curious to learn more about how Physical AI is implemented in practice.</p>
+<p>Whether you are setting up your environment for the first time or preparing a trained model for real-world deployment, this course provides step-by-step guidance, tooling references, and best practices.</p>
+</section>
+<section id="how-long-does-this-workflow-take">
+<h2>How Long Does This Workflow Take?<a class="headerlink" href="#how-long-does-this-workflow-take" title="Link to this heading">#</a></h2>
+<p>These etimates assume you have prerequisites met and hardware available.</p>
+<p>Actual time will vary depending on:</p>
+<ul class="simple">
+<li><p>Amount of data collection you choose to do (collecting a small sample vs full dataset)</p></li>
+<li><p>Compute used for post-training (or using our pre-trained models)</p></li>
+<li><p>Number of training iterations</p></li>
+<li><p>Internet connection speed</p></li>
+</ul>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Workflow</p></th>
+<th class="head"><p>Phase</p></th>
+<th class="head"><p>Recommended Range</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Sim</p></td>
+<td><p>Setup through Teleop</p></td>
+<td><p>1-2 hours</p></td>
+</tr>
+<tr class="row-odd"><td><p>Sim</p></td>
+<td><p>Post‑training</p></td>
+<td><p>2-4 hours</p></td>
+</tr>
+<tr class="row-even"><td><p>Sim</p></td>
+<td><p><strong>Total</strong></p></td>
+<td><p>3-6 hours</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Workflow</p></th>
+<th class="head"><p>Phase</p></th>
+<th class="head"><p>Recommended Range</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Real</p></td>
+<td><p>Setup through Teleop</p></td>
+<td><p>1-2 hours</p></td>
+</tr>
+<tr class="row-odd"><td><p>Real</p></td>
+<td><p>Post‑training</p></td>
+<td><p>2-4 hours</p></td>
+</tr>
+<tr class="row-even"><td><p>Real</p></td>
+<td><p><strong>Total</strong></p></td>
+<td><p>3-6 hours</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="toctree-wrapper compound">
+</div>
+<div class="toctree-wrapper compound">
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="right-next"
+       href="getting-started/concepts-overview.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Concepts Overview</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-ll-build">What You’ll Build</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-to-approach-this-course">How to Approach This Course</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#learning-objectives">Learning Objectives</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#who-is-this-for">Who Is This For</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-long-does-this-workflow-take">How Long Does This Workflow Take?</a><ul class="nav section-nav flex-column">
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+<div class="footer-links">
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">Privacy Policy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-center/">Manage My Privacy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/preferences/start/">Do Not Sell or Share My Data</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/terms-of-service/">Terms of Service</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/accessibility/">Accessibility</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/company-policies/">Corporate Policies</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/product-security/">Product Security</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/contact/">Contact</a>
+  
+  
+  
+</div>
+</div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+<div class="extra_footer">
+  
+  
+    <script type="text/javascript">if (typeof _satellite !== "undefined") {_satellite.pageBottom();}</script>
+    
+  
+</div></div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

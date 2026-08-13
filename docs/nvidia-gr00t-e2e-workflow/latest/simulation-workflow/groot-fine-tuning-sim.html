@@ -1,0 +1,743 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>GR00T Fine-Tuning on Sim Data &#8212; How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=df3ac72c" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/nvlearning.css?v=d3374dad" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/css/lightbox.min.css?v=6e7d0de0" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/pointer.css?v=c97663ff" />
+    <link rel="stylesheet" type="text/css" href="../_static/checklist.css?v=0c588c95" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/js/lightbox-plus-jquery.min.js?v=f0ca4bb6"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/jquery-noconflict.js?v=12818e64"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'simulation-workflow/groot-fine-tuning-sim';</script>
+    <script src="../_static/checklist.js?v=d4c019e1"></script>
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Sim Evaluation" href="sim-evaluation.html" />
+    <link rel="prev" title="Sim Data Export: HDF5 to LeRobot" href="sim-data-export.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+
+
+    <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" ></script>
+    
+
+
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../getting-started/concepts-overview.html">Getting Started</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/concepts-overview.html">Concepts Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/prerequisites.html">Prerequisites</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="sim-overview.html">Simulation Workflow</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="sim-overview.html">Simulation Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sim-setup-isaac-lab-arena.html">Sim Setup: Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sim-environment-code-review.html">Sim Environment Code Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sim-teleop-and-wbc.html">Sim Teleop and WBC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sim-data-export.html">Sim Data Export</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">GR00T Fine-Tuning on Sim Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sim-evaluation.html">Sim Evaluation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../real-robot-workflow/real-overview.html">Real Robot Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-overview.html">Robot Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/isaac-ros-setup.html">Isaac ROS Setup on Thor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/g1-introduction-and-safety.html">G1 Introduction and Safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-teleop.html">Teleoperation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-record.html">Data Recording</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-data-export.html">Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-fine-tuning-and-leapp.html">Fine-Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-leapp-export.html">LEAPP Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-deployment.html">Deployment</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../conclusion.html">Conclusion</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../shared/teleoperation-data-collection-guide.html">Teleop Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resources/models-and-datasets.html">Models and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/repos.html">Repos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/isaac-sim/IsaacLab-Arena">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/IsaacTeleop">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA-ISAAC-ROS">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T">Isaac GR00T</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/documentation.html">Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://isaac-sim.github.io/IsaacLab-Arena/main/index.html">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia-isaac-ros.github.io/">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://developer.nvidia.com/isaac/gr00t">Isaac GR00T</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://support.unitree.com/home/en/G1_developer/about_G1">Unitree G1 Developer Guide</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="sim-overview.html" class="nav-link">Simulation Workflow</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">GR00T Fine-Tuning on Sim Data</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="gr00t-fine-tuning-on-sim-data">
+<h1>GR00T Fine-Tuning on Sim Data<a class="headerlink" href="#gr00t-fine-tuning-on-sim-data" title="Link to this heading">#</a></h1>
+<p>In this lesson, we’ll post-train a GR00T 1.7 policy directly on the teleoperated demonstrations converted from HDF5 to LeRobot format.</p>
+<p>To do that, we’ll:</p>
+<ul class="simple">
+<li><p><strong>Run</strong> GR00T 1.7 post-training from a standalone Isaac-GR00T checkout.</p></li>
+<li><p><strong>Use</strong> Arena’s WBC modality config as the single source of truth for training and serving.</p></li>
+<li><p><strong>Match</strong> the action horizon between training and evaluation.</p></li>
+<li><p><strong>Apply</strong> the AGILE-specific recommendations that make the checkpoint work in closed-loop evaluation.</p></li>
+</ul>
+<p>This page assumes you have a successful recording at <code class="docutils literal notranslate"><span class="pre">$DATASET_DIR/arena_g1_static_apple_dataset_recorded.hdf5</span></code> and have converted it to LeRobot format.</p>
+<section id="confirm-training-context">
+<h2>Confirm Training Context<a class="headerlink" href="#confirm-training-context" title="Link to this heading">#</a></h2>
+<p>We post-train the GR00T 1.7 policy on the task using the standalone Isaac-GR00T checkout referenced as <code class="docutils literal notranslate"><span class="pre">$ISAAC_GR00T_DIR</span></code>. This step runs outside the Arena container so GR00T’s dependencies do not need to coexist with Arena and Isaac Sim dependencies.</p>
+<p>The GR00T 1.7 policy has 3 billion parameters, so post-training requires substantial compute. The upstream static apple workflow uses a tested single-GPU configuration.</p>
+<p>Training takes approximately 2-3 hours for 20,000 steps on a single NVIDIA RTX 6000 Ada GPU.</p>
+</section>
+<section id="review-compute-requirements">
+<h2>Review Compute Requirements<a class="headerlink" href="#review-compute-requirements" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>GPUs:</strong> NVIDIA GPU with at least 48 GB VRAM.</p></li>
+<li><p><strong>System RAM:</strong> 128 GB or more recommended.</p></li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>For faster training in the cloud, you can also use a H100 instance on NVIDIA Brev, with prerequisites installed for Isaac GR00T: <a class="reference external" href="https://brev.nvidia.com/launchable/deploy/now?launchableID=env-3DgCELkan85JSOjYWxb3UlB0f5v" rel="noreferer noopener" target="_blank"><img alt=" Click here to deploy." src="https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg" /></a></p>
+</div>
+</section>
+<section id="review-training-configuration">
+<h2>Review Training Configuration<a class="headerlink" href="#review-training-configuration" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Setting</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Base model</p></td>
+<td><p>GR00T-N1.7-3B, downloaded from Hugging Face on first run</p></td>
+</tr>
+<tr class="row-odd"><td><p>Tuned modules</p></td>
+<td><p>Visual backbone, projector, diffusion model</p></td>
+</tr>
+<tr class="row-even"><td><p>Frozen modules</p></td>
+<td><p>LLM</p></td>
+</tr>
+<tr class="row-odd"><td><p>Batch size</p></td>
+<td><p>12, adjusted based on GPU memory</p></td>
+</tr>
+<tr class="row-even"><td><p>Training steps</p></td>
+<td><p>20,000</p></td>
+</tr>
+<tr class="row-odd"><td><p>Action horizon</p></td>
+<td><p>40</p></td>
+</tr>
+<tr class="row-even"><td><p>Embodiment tag</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">new_embodiment</span></code>, resolved to <code class="docutils literal notranslate"><span class="pre">EmbodimentTag.NEW_EMBODIMENT</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="launch-post-training">
+<h2>Launch Post-Training<a class="headerlink" href="#launch-post-training" title="Link to this heading">#</a></h2>
+<ol class="arabic">
+<li><p>In a terminal outside the Arena container, navigate to your standalone Isaac GR00T repo.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$ISAAC_GR00T_DIR</span><span class="w"> </span><span class="c1"># or use path directly if environment variable is not set</span>
+</pre></div>
+</div>
+</li>
+<li><p>Because fine-tuning runs outside the Arena Docker container, set <code class="docutils literal notranslate"><span class="pre">DATASET_DIR</span></code> and <code class="docutils literal notranslate"><span class="pre">MODELS_DIR</span></code> to the host paths that correspond to the Docker mounts.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DATASET_DIR</span><span class="o">=</span>~/datasets/isaaclab_arena/static_apple_tutorial
+<span class="nb">export</span><span class="w"> </span><span class="nv">MODELS_DIR</span><span class="o">=</span>~/models/isaaclab_arena/static_apple_tutorial
+</pre></div>
+</div>
+</li>
+<li><p>Run the post-training command.</p>
+<p>Ensure that <code class="docutils literal notranslate"><span class="pre">--modality-config-path</span></code> uses the absolute path to your Arena clone in order to register the WBC modality from Arena’s source tree.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>torch.distributed.run<span class="w"> </span>--nproc_per_node<span class="o">=</span><span class="m">1</span><span class="w"> </span>--standalone<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>gr00t/experiment/launch_finetune.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--base-model-path<span class="w"> </span>nvidia/GR00T-N1.7-3B<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataset-path<span class="w"> </span><span class="nv">$DATASET_DIR</span>/arena_g1_static_apple_dataset_recorded/lerobot<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--output-dir<span class="w"> </span><span class="nv">$MODELS_DIR</span>/static_apple_n17_finetune<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--modality-config-path<span class="w"> </span>~/IsaacLab-Arena/isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--embodiment-tag<span class="w"> </span>new_embodiment<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--global-batch-size<span class="w"> </span><span class="m">12</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--max-steps<span class="w"> </span><span class="m">20000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--num-gpus<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--save-steps<span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--save-total-limit<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--no-tune-llm<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tune-visual<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tune-projector<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tune-diffusion-model<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dataloader-num-workers<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--color-jitter-params<span class="w"> </span>brightness<span class="w"> </span><span class="m">0</span>.3<span class="w"> </span>contrast<span class="w"> </span><span class="m">0</span>.4<span class="w"> </span>saturation<span class="w"> </span><span class="m">0</span>.5<span class="w"> </span>hue<span class="w"> </span><span class="m">0</span>.08
+</pre></div>
+</div>
+</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">--modality-config-path</span></code> argument points to Arena’s <code class="docutils literal notranslate"><span class="pre">isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py</span></code> so that <code class="docutils literal notranslate"><span class="pre">register_modality_config(...)</span></code> runs and <code class="docutils literal notranslate"><span class="pre">new_embodiment</span></code> resolves to the WBC modality layout: 5 state keys and 7 action keys. This is the same file the server consumes at evaluation time, so it is the single source of truth for the modality layout.</p>
+</div>
+<div class="admonition caution">
+<p class="admonition-title">Caution</p>
+<p><strong>Action horizon must match between training and serving.</strong> <code class="docutils literal notranslate"><span class="pre">action_horizon</span></code> is baked into the diffusion head at training time and cannot be changed at inference. The Arena server YAML used in evaluation ships with <code class="docutils literal notranslate"><span class="pre">action_horizon:</span> <span class="pre">40</span></code> to match the value trained here. If you want a different horizon, change both:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">delta_indices=list(range(N))</span></code> in <code class="docutils literal notranslate"><span class="pre">isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py</span></code> for the action modality.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">action_horizon:</span> <span class="pre">N</span></code> and <code class="docutils literal notranslate"><span class="pre">action_chunk_length:</span> <span class="pre">N</span></code>, less than or equal to <code class="docutils literal notranslate"><span class="pre">action_horizon</span></code>, in <code class="docutils literal notranslate"><span class="pre">isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml</span></code>.</p></li>
+</ol>
+</div>
+<p>If you have more powerful GPUs, see the <a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T#3-fine-tuning" rel="noreferer noopener" target="_blank">GR00T fine-tuning guidelines</a> for information on adjusting the training configuration to your hardware.</p>
+<p>This workflow recommends fine-tuning the visual backbone, projector, and diffusion model for best results.</p>
+</section>
+<section id="apply-agile-apple-to-plate-recommendations">
+<h2>Apply AGILE Apple-to-Plate Recommendations<a class="headerlink" href="#apply-agile-apple-to-plate-recommendations" title="Link to this heading">#</a></h2>
+<p>The static apple-to-plate environment runs AGILE for the lower body and uses either PinkIK during recording or direct joint control during evaluation. These choices affect whether the fine-tuned policy works in the AGILE joint runtime.</p>
+<ol class="arabic simple">
+<li><p><strong>Record with AGILE.</strong> Keep the default <code class="docutils literal notranslate"><span class="pre">--embodiment</span> <span class="pre">g1_wbc_agile_pink</span></code> during teleoperation. AGILE WBC is a single end-to-end velocity policy.</p></li>
+<li><p><strong>Do not record with the joint embodiment.</strong> Use <code class="docutils literal notranslate"><span class="pre">g1_wbc_agile_pink</span></code>, not <code class="docutils literal notranslate"><span class="pre">g1_wbc_agile_joint</span></code>. The recorder writes the joint-space output of PinkIK as <code class="docutils literal notranslate"><span class="pre">processed_actions</span></code>, which is what the policy needs to learn. Recording with <code class="docutils literal notranslate"><span class="pre">g1_wbc_agile_joint</span></code> would require the human teleoperator to drive 43 joint targets directly.</p></li>
+<li><p><strong>Use Arena’s <code class="docutils literal notranslate"><span class="pre">g1_sim_wbc_data_gr00t_n_1_7_config.py</span></code> for <code class="docutils literal notranslate"><span class="pre">--modality-config-path</span></code>.</strong> This registers the modality with <code class="docutils literal notranslate"><span class="pre">NEW_EMBODIMENT</span></code>, uses a 40-step action horizon for 1.7, and matches the file the Arena server consumes at evaluation.</p></li>
+<li><p><strong>Pick <code class="docutils literal notranslate"><span class="pre">action_horizon</span></code> deliberately.</strong> The default value of 40 gives an 800 ms inference chunk at 50 Hz. This is a good default for static apple-to-plate episodes of approximately 600 steps and is the maximum supported by the released GR00T 1.7 base model. Lower values, such as 20, improve responsiveness at the cost of more frequent policy queries. You cannot go higher without retraining the base model. Keep the modality config and server YAML in sync.</p></li>
+</ol>
+<p>If a resulting checkpoint behaves badly at evaluation, the most common causes are too few or low-quality demonstrations, a modality config or <code class="docutils literal notranslate"><span class="pre">action_horizon</span></code> mismatch between training and server YAML, or recording with the wrong embodiment.</p>
+</section>
+<section id="key-takeaways">
+<h2>Key Takeaways<a class="headerlink" href="#key-takeaways" title="Link to this heading">#</a></h2>
+<p>We post-trained GR00T 1.7 on static apple-to-plate demonstrations using the standalone Isaac-GR00T checkout. The resulting checkpoint is ready for closed-loop evaluation through Arena’s remote-policy server-client architecture.</p>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="sim-data-export.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Sim Data Export: HDF5 to LeRobot</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="sim-evaluation.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Sim Evaluation</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#confirm-training-context">Confirm Training Context</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#review-compute-requirements">Review Compute Requirements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#review-training-configuration">Review Training Configuration</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#launch-post-training">Launch Post-Training</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#apply-agile-apple-to-plate-recommendations">Apply AGILE Apple-to-Plate Recommendations</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#key-takeaways">Key Takeaways</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+<div class="footer-links">
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">Privacy Policy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-center/">Manage My Privacy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/preferences/start/">Do Not Sell or Share My Data</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/terms-of-service/">Terms of Service</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/accessibility/">Accessibility</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/company-policies/">Corporate Policies</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/product-security/">Product Security</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/contact/">Contact</a>
+  
+  
+  
+</div>
+</div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+<div class="extra_footer">
+  
+  
+    <script type="text/javascript">if (typeof _satellite !== "undefined") {_satellite.pageBottom();}</script>
+    
+  
+</div></div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

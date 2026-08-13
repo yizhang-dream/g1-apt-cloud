@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+
+# --- Virtualenvs ---
+.venv*/
+venv/
+
+# --- Heavy experiment artifacts (kept on disk, NOT tracked) ---
+# Datasets (regenerable; canonical copy lives on the server)
+apt_g1/data/*
+!apt_g1/data/.gitkeep
+
+# Outputs: logs, videos, numpy/torch artifacts, legacy distill versions
+# Re-include documentation so the dir's purpose is recorded in-tree.
+apt_g1/outputs/*
+!apt_g1/outputs/README.md
+
+# Defensive globbing for large binaries anywhere in the tree
+*.mp4
+*.gif
+*.png
+*.jpg
+*.jpeg
+*.npy
+*.npz
+*.pt
+*.bin
+*.onnx
+!docs/**/*.png
+!apt_g1/outputs/README.md
+
+# --- Scratch / reference copies ---
+tmp/
+
+# --- ZCode session-internal state (do NOT commit) ---
+.zcode/
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,910 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Troubleshooting &#8212; How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/nvidia-sphinx-theme.css?v=df3ac72c" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/nvlearning.css?v=d3374dad" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinxcontrib-images/LightBox2/lightbox2/dist/css/lightbox.min.css?v=6e7d0de0" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinxcontrib-images/LightBox2/lightbox2-customize/pointer.css?v=c97663ff" />
+    <link rel="stylesheet" type="text/css" href="_static/checklist.css?v=0c588c95" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script src="_static/sphinxcontrib-images/LightBox2/lightbox2/dist/js/lightbox-plus-jquery.min.js?v=f0ca4bb6"></script>
+    <script src="_static/sphinxcontrib-images/LightBox2/lightbox2-customize/jquery-noconflict.js?v=12818e64"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'troubleshooting';</script>
+    <script src="_static/checklist.js?v=d4c019e1"></script>
+    <link rel="icon" href="_static/favicon.png"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Documentation" href="resources/documentation.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+
+
+    <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" ></script>
+    
+
+
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="getting-started/concepts-overview.html">Getting Started</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting-started/concepts-overview.html">Concepts Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting-started/prerequisites.html">Prerequisites</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="simulation-workflow/sim-overview.html">Simulation Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-overview.html">Simulation Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-setup-isaac-lab-arena.html">Sim Setup: Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-environment-code-review.html">Sim Environment Code Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-teleop-and-wbc.html">Sim Teleop and WBC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-data-export.html">Sim Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/groot-fine-tuning-sim.html">GR00T Fine-Tuning on Sim Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="simulation-workflow/sim-evaluation.html">Sim Evaluation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="real-robot-workflow/real-overview.html">Real Robot Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-overview.html">Robot Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/isaac-ros-setup.html">Isaac ROS Setup on Thor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/g1-introduction-and-safety.html">G1 Introduction and Safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-teleop.html">Teleoperation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-record.html">Data Recording</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-data-export.html">Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-fine-tuning-and-leapp.html">Fine-Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-leapp-export.html">LEAPP Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-robot-workflow/real-deployment.html">Deployment</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="conclusion.html">Conclusion</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="shared/teleoperation-data-collection-guide.html">Teleop Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="resources/models-and-datasets.html">Models and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="resources/repos.html">Repos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/isaac-sim/IsaacLab-Arena">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/IsaacTeleop">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA-ISAAC-ROS">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T">Isaac GR00T</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="resources/documentation.html">Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://isaac-sim.github.io/IsaacLab-Arena/main/index.html">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia-isaac-ros.github.io/">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://developer.nvidia.com/isaac/gr00t">Isaac GR00T</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://support.unitree.com/home/en/G1_developer/about_G1">Unitree G1 Developer Guide</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Troubleshooting</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Troubleshooting</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="troubleshooting">
+<h1>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h1>
+<p>Use this page when hardware setup, camera access, image streaming, or compute-unit performance issues block the Unitree G1 workflow.</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>Stop the robot before troubleshooting hardware, cables, network connections, or camera access. Follow manufacturer safety procedures first.</p>
+</div>
+<section id="hardware-setup-reference">
+<h2>Hardware Setup Reference<a class="headerlink" href="#hardware-setup-reference" title="Link to this heading">#</a></h2>
+<p>Use the Isaac hardware setup troubleshooting guide for the source troubleshooting reference:</p>
+<p><a class="sd-sphinx-override sd-btn sd-text-wrap sd-btn-outline-primary reference external" href="https://nvidia-isaac-ros.github.io/troubleshooting/hardware_setup.html"><span>Open Isaac Hardware Setup Troubleshooting</span></a></p>
+</section>
+<section id="realsense-camera-not-found">
+<h2>RealSense Camera Not Found<a class="headerlink" href="#realsense-camera-not-found" title="Link to this heading">#</a></h2>
+<section id="symptom">
+<h3>Symptom<a class="headerlink" href="#symptom" title="Link to this heading">#</a></h3>
+<p>Use this section when no RealSense camera is detected and one of these conditions occurs:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">rs-enumerate-devices</span></code> fails without <code class="docutils literal notranslate"><span class="pre">sudo</span></code>, but succeeds with <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">rs-enumerate-devices</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ros2</span> <span class="pre">launch</span> <span class="pre">realsense2_camera</span> <span class="pre">rs_launch.py</span></code> reports <code class="docutils literal notranslate"><span class="pre">failed</span> <span class="pre">to</span> <span class="pre">set</span> <span class="pre">power</span> <span class="pre">state</span></code> or <code class="docutils literal notranslate"><span class="pre">The</span> <span class="pre">requested</span> <span class="pre">device</span> <span class="pre">...</span> <span class="pre">is</span> <span class="pre">NOT</span> <span class="pre">found</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">realsense-viewer</span></code> doesn’t detect any RealSense camera.</p></li>
+</ul>
+</section>
+<section id="solution-1-check-realsense-versions">
+<h3>Solution 1: Check RealSense Versions<a class="headerlink" href="#solution-1-check-realsense-versions" title="Link to this heading">#</a></h3>
+<p>Follow the RealSense setup instructions and confirm the installed versions for <code class="docutils literal notranslate"><span class="pre">librealsense</span></code>, <code class="docutils literal notranslate"><span class="pre">realsense2_camera</span></code>, and camera firmware.</p>
+<p>Run the RealSense ROS node inside the Isaac ROS environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>realsense2_camera<span class="w"> </span>rs_launch.py
+</pre></div>
+</div>
+<p>Verify that the output reports the expected RealSense ROS and LibRealSense versions.</p>
+<p>Check the camera firmware version:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>rs-enumerate-devices
+</pre></div>
+</div>
+<p>To update camera firmware:</p>
+<ol class="arabic">
+<li><p>Download the recommended D400 firmware binary from the <a class="reference external" href="https://dev.realsenseai.com/docs/firmware-releases-d400" rel="noreferer noopener" target="_blank">Intel RealSense firmware releases</a>.</p></li>
+<li><p>Extract the binary from the downloaded <code class="docutils literal notranslate"><span class="pre">.zip</span></code> file.</p></li>
+<li><p>Run the firmware update command, replacing <code class="docutils literal notranslate"><span class="pre">&lt;binary_filename&gt;</span></code> with the downloaded binary name:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>rs-fw-update<span class="w"> </span>-f<span class="w"> </span>&lt;binary_filename&gt;
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+<section id="solution-2-install-realsense-udev-rules">
+<h3>Solution 2: Install RealSense Udev Rules<a class="headerlink" href="#solution-2-install-realsense-udev-rules" title="Link to this heading">#</a></h3>
+<p>Verify that <code class="docutils literal notranslate"><span class="pre">99-realsense-libusb.rules</span></code> exists in <code class="docutils literal notranslate"><span class="pre">/etc/udev/rules.d/</span></code>.</p>
+<p>If it doesn’t exist, run these commands on the host machine before activating the Isaac ROS environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>wget<span class="w"> </span>https://raw.githubusercontent.com/IntelRealSense/librealsense/v2.56.3/config/99-realsense-libusb.rules<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+sudo<span class="w"> </span>mv<span class="w"> </span><span class="m">99</span>-realsense-libusb.rules<span class="w"> </span>/etc/udev/rules.d/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+sudo<span class="w"> </span>udevadm<span class="w"> </span>control<span class="w"> </span>--reload-rules<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>udevadm<span class="w"> </span>trigger<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Successfully added udev rules&quot;</span>
+</pre></div>
+</div>
+<p>Confirm that the output includes <code class="docutils literal notranslate"><span class="pre">Successfully</span> <span class="pre">added</span> <span class="pre">udev</span> <span class="pre">rules</span></code>.</p>
+</section>
+</section>
+<section id="isaac-teleop-ui-partially-disappears-after-certificate-acceptance">
+<h2>Isaac Teleop UI Partially Disappears After Certificate Acceptance<a class="headerlink" href="#isaac-teleop-ui-partially-disappears-after-certificate-acceptance" title="Link to this heading">#</a></h2>
+<section id="id1">
+<h3>Symptom<a class="headerlink" href="#id1" title="Link to this heading">#</a></h3>
+<p>After accepting the CloudXR certificate in the headset browser, part of the Isaac Teleop web client UI disappears or fails to render.</p>
+</section>
+<section id="solution">
+<h3>Solution<a class="headerlink" href="#solution" title="Link to this heading">#</a></h3>
+<p>Update the headset OS and native browser, then reopen the Isaac Teleop web client and repeat the certificate acceptance step.</p>
+<p>For PICO headsets: software version 5.15.5 was tested with this workflow.</p>
+</section>
+</section>
+<section id="mujoco-teleop-interferes-with-real-robot-teleop">
+<h2>MuJoCo Teleop Interferes With Real Robot Teleop<a class="headerlink" href="#mujoco-teleop-interferes-with-real-robot-teleop" title="Link to this heading">#</a></h2>
+<section id="id2">
+<h3>Symptom<a class="headerlink" href="#id2" title="Link to this heading">#</a></h3>
+<p>When starting real robot teleop, a new MuJoCo window opens instead and the simulated robot falls because there is no virtual gantry.</p>
+</section>
+<section id="cause">
+<h3>Cause<a class="headerlink" href="#cause" title="Link to this heading">#</a></h3>
+<p>The MuJoCo teleop terminal or a background MuJoCo process is still running.</p>
+</section>
+<section id="id3">
+<h3>Solution<a class="headerlink" href="#id3" title="Link to this heading">#</a></h3>
+<p>Close the MuJoCo teleop window and stop the MuJoCo teleop terminal before starting real robot teleop. If the window is closed but the issue continues, stop any background MuJoCo processes and launch real robot teleop again.</p>
+</section>
+</section>
+<section id="input-images-must-have-an-even-height-and-width">
+<h2>Input Images Must Have an Even Height and Width<a class="headerlink" href="#input-images-must-have-an-even-height-and-width" title="Link to this heading">#</a></h2>
+<section id="id4">
+<h3>Symptom<a class="headerlink" href="#id4" title="Link to this heading">#</a></h3>
+<p>Isaac ROS nodes terminate when given images with odd width or height. Terminal logs can include:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">[</span>NitrosImage<span class="o">]</span>:<span class="w"> </span><span class="o">[</span>convert_to_custom<span class="o">]</span><span class="w"> </span>Image<span class="w"> </span>width/height<span class="w"> </span>must<span class="w"> </span>be<span class="w"> </span>even<span class="w"> </span><span class="k">for</span><span class="w"> </span>creation<span class="w"> </span>of<span class="w"> </span>gxf::VideoBuffer
+terminate<span class="w"> </span>called<span class="w"> </span>after<span class="w"> </span>throwing<span class="w"> </span>an<span class="w"> </span>instance<span class="w"> </span>of<span class="w"> </span><span class="s1">&#39;std::runtime_error&#39;</span>
+what<span class="o">()</span>:<span class="w">  </span><span class="o">[</span>convert_to_custom<span class="o">]</span><span class="w"> </span>Odd<span class="w"> </span>Image<span class="w"> </span>width<span class="w"> </span>or<span class="w"> </span>height.
+</pre></div>
+</div>
+</section>
+<section id="id5">
+<h3>Solution<a class="headerlink" href="#id5" title="Link to this heading">#</a></h3>
+<p>Replace the input image source with one that produces images with even width and height.</p>
+</section>
+</section>
+<section id="realsense-does-not-stream-ir-stereo-images">
+<h2>RealSense Does Not Stream IR Stereo Images<a class="headerlink" href="#realsense-does-not-stream-ir-stereo-images" title="Link to this heading">#</a></h2>
+<section id="id6">
+<h3>Symptom<a class="headerlink" href="#id6" title="Link to this heading">#</a></h3>
+<p>Inside the Isaac ROS environment, <code class="docutils literal notranslate"><span class="pre">realsense-viewer</span></code> doesn’t show IR images, but depth images stream. Outside the Isaac ROS environment, no metadata containing projector status is attached to the IR frames.</p>
+</section>
+<section id="id7">
+<h3>Solution<a class="headerlink" href="#id7" title="Link to this heading">#</a></h3>
+<ol class="arabic">
+<li><p>Download and install the <code class="docutils literal notranslate"><span class="pre">dkms</span></code> package for Kernel 5.15 from the <a class="reference external" href="https://github.com/mengyui/librealsense2-dkms/releases/tag/initial-support-for-kernel-5.15" rel="noreferer noopener" target="_blank">librealsense2-dkms release</a>.</p></li>
+<li><p>Download <code class="docutils literal notranslate"><span class="pre">librealsense2-dkms-dkms_1.3.14_amd64.deb</span></code>.</p></li>
+<li><p>Install the package from the download directory:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>./librealsense2-dkms-dkms_1.3.14_amd64.deb
+</pre></div>
+</div>
+</li>
+</ol>
+<p>Build <code class="docutils literal notranslate"><span class="pre">librealsense</span></code> inside the Isaac ROS environment without CUDA:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JetsonHacksNano/installLibrealsense
+<span class="nb">cd</span><span class="w"> </span>installLibrealsense
+./installLibrealsense.sh
+./buildLibrealsense.sh<span class="w"> </span>--no_cuda
+</pre></div>
+</div>
+</section>
+</section>
+<section id="realsense-error-failed-to-resolve-the-request">
+<h2>RealSense Error: Failed to Resolve the Request<a class="headerlink" href="#realsense-error-failed-to-resolve-the-request" title="Link to this heading">#</a></h2>
+<section id="id8">
+<h3>Symptom<a class="headerlink" href="#id8" title="Link to this heading">#</a></h3>
+<p>Any RealSense tutorial launches, but no images stream. Terminal logs include <code class="docutils literal notranslate"><span class="pre">Failed</span> <span class="pre">to</span> <span class="pre">resolve</span> <span class="pre">the</span> <span class="pre">request</span></code>.</p>
+</section>
+<section id="id9">
+<h3>Solution<a class="headerlink" href="#id9" title="Link to this heading">#</a></h3>
+<p>Confirm that the camera uses the correct firmware. Use the RealSense version and firmware checks in <a class="reference internal" href="#realsense-camera-not-found">RealSense Camera Not Found</a>.</p>
+</section>
+</section>
+<section id="realsense-incompatible-qos-policy-error">
+<h2>RealSense Incompatible QoS Policy Error<a class="headerlink" href="#realsense-incompatible-qos-policy-error" title="Link to this heading">#</a></h2>
+<section id="id10">
+<h3>Symptom<a class="headerlink" href="#id10" title="Link to this heading">#</a></h3>
+<p>A RealSense output topic isn’t subscribed when a RealSense tutorial launches. Terminal logs report an incompatible QoS policy, such as <code class="docutils literal notranslate"><span class="pre">RELIABILITY_QOS_POLICY</span></code>.</p>
+</section>
+<section id="id11">
+<h3>Solution<a class="headerlink" href="#id11" title="Link to this heading">#</a></h3>
+<p>Set the QoS policy in the RealSense configuration file used by the launch graph so the RealSense publisher is compatible with the subscribing Isaac ROS node.</p>
+<p>For the relevant RealSense image QoS setting, such as <code class="docutils literal notranslate"><span class="pre">depth_qos</span></code> or <code class="docutils literal notranslate"><span class="pre">color_qos</span></code>, use <code class="docutils literal notranslate"><span class="pre">SYSTEM_DEFAULT</span></code>.</p>
+</section>
+</section>
+<section id="intel-realsense-camera-accidentally-enables-laser-emitter">
+<h2>Intel RealSense Camera Accidentally Enables Laser Emitter<a class="headerlink" href="#intel-realsense-camera-accidentally-enables-laser-emitter" title="Link to this heading">#</a></h2>
+<section id="id12">
+<h3>Symptom<a class="headerlink" href="#id12" title="Link to this heading">#</a></h3>
+<p>The Intel RealSense laser emitter turns on even though <code class="docutils literal notranslate"><span class="pre">emitter_enabled</span></code> is set to <code class="docutils literal notranslate"><span class="pre">0</span></code>.</p>
+</section>
+<section id="id13">
+<h3>Solution<a class="headerlink" href="#id13" title="Link to this heading">#</a></h3>
+<p>Run this command at runtime:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/camera/camera<span class="w"> </span>depth_module.emitter_enabled<span class="w"> </span><span class="m">0</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="ros-domain-id-crosstalk">
+<h2>ROS_DOMAIN_ID Crosstalk<a class="headerlink" href="#ros-domain-id-crosstalk" title="Link to this heading">#</a></h2>
+<section id="id14">
+<h3>Symptom<a class="headerlink" href="#id14" title="Link to this heading">#</a></h3>
+<p>Use this section when multiple robots, Thor systems, or ROS 2 groups are on the same network and you see unexpected ROS traffic:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ros2</span> <span class="pre">topic</span> <span class="pre">list</span></code> shows topics from another robot or workstation.</p></li>
+<li><p>Nodes connect to the wrong robot, camera, recorder, or deployment stack.</p></li>
+<li><p>Teleop, recording, or deployment behavior is unexpected or changes when another ROS 2 system starts.</p></li>
+</ul>
+</section>
+<section id="id15">
+<h3>Cause<a class="headerlink" href="#id15" title="Link to this heading">#</a></h3>
+<p>ROS 2 uses DDS discovery. When multicast is supported on the network, ROS 2 systems on the same <code class="docutils literal notranslate"><span class="pre">ROS_DOMAIN_ID</span></code> can discover each other across that network. This can cause crosstalk when multiple robots or ROS 2 workflows run in the same lab.</p>
+<p>For background, see the ROS 2 Humble documentation for <a class="reference external" href="https://docs.ros.org/en/humble/Concepts/Intermediate/About-Domain-ID.html" rel="noreferer noopener" target="_blank"><code class="docutils literal notranslate"><span class="pre">ROS_DOMAIN_ID</span></code></a>.</p>
+</section>
+<section id="id16">
+<h3>Solution<a class="headerlink" href="#id16" title="Link to this heading">#</a></h3>
+<ol class="arabic">
+<li><p>Check the active domain ID. The default domain ID is <code class="docutils literal notranslate"><span class="pre">0</span></code>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ROS_DOMAIN_ID</span><span class="k">:-</span><span class="nv">0</span><span class="si">}</span><span class="s2">&quot;</span>
+</pre></div>
+</div>
+</li>
+<li><p>Assign a unique domain ID before launching nodes:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ROS_DOMAIN_ID</span><span class="o">=</span><span class="m">12</span>
+</pre></div>
+</div>
+</li>
+<li><p>Confirm that only the expected nodes and topics are visible:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>node<span class="w"> </span>list
+ros2<span class="w"> </span>topic<span class="w"> </span>list
+</pre></div>
+</div>
+</li>
+</ol>
+<p>Restart any launch files that were started with the wrong domain ID.</p>
+</section>
+</section>
+<section id="intel-realsense-d455-infra-camera-capped-at-15fps">
+<h2>Intel RealSense D455 Infra Camera Capped at 15fps<a class="headerlink" href="#intel-realsense-d455-infra-camera-capped-at-15fps" title="Link to this heading">#</a></h2>
+<section id="id17">
+<h3>Symptom<a class="headerlink" href="#id17" title="Link to this heading">#</a></h3>
+<p>The Intel RealSense D455 infra camera is capped at 15fps even though it’s specified to run at 90fps.</p>
+</section>
+<section id="id18">
+<h3>Solution<a class="headerlink" href="#id18" title="Link to this heading">#</a></h3>
+<p>The initial frame rate can be capped around 15fps due to a known RealSense ROS issue. Enable auto exposure:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/camera/camera<span class="w"> </span>depth_module.enable_auto_exposure<span class="w"> </span><span class="nb">true</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="system-throttled-due-to-over-current">
+<h2>System Throttled Due to Over-Current<a class="headerlink" href="#system-throttled-due-to-over-current" title="Link to this heading">#</a></h2>
+<section id="id19">
+<h3>Symptom<a class="headerlink" href="#id19" title="Link to this heading">#</a></h3>
+<p>A display attached to the compute unit reports <code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">throttled</span> <span class="pre">due</span> <span class="pre">to</span> <span class="pre">over-current</span></code>.</p>
+</section>
+<section id="id20">
+<h3>Solution<a class="headerlink" href="#id20" title="Link to this heading">#</a></h3>
+<p>This warning indicates hardware throttling due to over-current. It can reduce performance and cause jitter or non-deterministic behavior in the robotics pipeline.</p>
+<p>Reduce system load, such as lowering image resolutions or frame rates.</p>
+<p>To disable over-current throttling for the current boot, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>su
+<span class="nb">source</span><span class="w"> </span>&lt;<span class="o">(</span>awk<span class="w"> </span><span class="s1">&#39;/^function config_hwmon *\(\)/ {flag=1} flag; /^}/ &amp;&amp; flag {flag=0}&#39;</span><span class="w"> </span>/etc/systemd/nvpower.sh<span class="o">)</span>
+config_hwmon<span class="w"> </span>ina3221<span class="w"> </span>curr4_crit<span class="w"> </span><span class="m">81900</span><span class="w"> </span>VDD_GPU_SOC
+</pre></div>
+</div>
+<p>This setting doesn’t persist across reboots.</p>
+<p>Check how many times the system has throttled due to over-current since the last boot:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>find<span class="w"> </span>/sys/devices<span class="w"> </span>-name<span class="w"> </span>oc3_event_cnt<span class="w"> </span>-print<span class="w"> </span>-quit<span class="k">)</span><span class="s2">&quot;</span>
+</pre></div>
+</div>
+<p>If the command returns a non-zero value, the system has throttled due to over-current. The value indicates the number of throttle events.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Disabling system over-current limits can allow the system to overheat. Hardware should thermal throttle, but testing without limits can affect silicon health. Use this only when you need to find appropriate limits for the workload.</p>
+</div>
+</section>
+</section>
+<section id="g1-workflow-checks">
+<h2>G1 Workflow Checks<a class="headerlink" href="#g1-workflow-checks" title="Link to this heading">#</a></h2>
+<p>Before changing course workflow commands, verify these G1-specific basics:</p>
+<ul class="simple">
+<li><p>Confirm the G1 and NVIDIA Thor are powered on and connected through the required USB and direct Ethernet cables.</p></li>
+<li><p>Confirm cable routing doesn’t interfere with the robot’s motion envelope.</p></li>
+<li><p>Confirm the RealSense camera connection is visible to the system.</p></li>
+<li><p>Confirm the Thor and G1 network interfaces are on the expected network.</p></li>
+<li><p>Confirm the robot is in a safe state before restarting teleoperation, recording, or deployment services.</p></li>
+</ul>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="resources/documentation.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Documentation</p>
+      </div>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware-setup-reference">Hardware Setup Reference</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#realsense-camera-not-found">RealSense Camera Not Found</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#symptom">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#solution-1-check-realsense-versions">Solution 1: Check RealSense Versions</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#solution-2-install-realsense-udev-rules">Solution 2: Install RealSense Udev Rules</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#isaac-teleop-ui-partially-disappears-after-certificate-acceptance">Isaac Teleop UI Partially Disappears After Certificate Acceptance</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#solution">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mujoco-teleop-interferes-with-real-robot-teleop">MuJoCo Teleop Interferes With Real Robot Teleop</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cause">Cause</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#input-images-must-have-an-even-height-and-width">Input Images Must Have an Even Height and Width</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#realsense-does-not-stream-ir-stereo-images">RealSense Does Not Stream IR Stereo Images</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#realsense-error-failed-to-resolve-the-request">RealSense Error: Failed to Resolve the Request</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id8">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id9">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#realsense-incompatible-qos-policy-error">RealSense Incompatible QoS Policy Error</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id10">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id11">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#intel-realsense-camera-accidentally-enables-laser-emitter">Intel RealSense Camera Accidentally Enables Laser Emitter</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id12">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id13">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#ros-domain-id-crosstalk">ROS_DOMAIN_ID Crosstalk</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id14">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id15">Cause</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id16">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#intel-realsense-d455-infra-camera-capped-at-15fps">Intel RealSense D455 Infra Camera Capped at 15fps</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id17">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id18">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#system-throttled-due-to-over-current">System Throttled Due to Over-Current</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id19">Symptom</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id20">Solution</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#g1-workflow-checks">G1 Workflow Checks</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+<div class="footer-links">
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">Privacy Policy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-center/">Manage My Privacy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/preferences/start/">Do Not Sell or Share My Data</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/terms-of-service/">Terms of Service</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/accessibility/">Accessibility</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/company-policies/">Corporate Policies</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/product-security/">Product Security</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/contact/">Contact</a>
+  
+  
+  
+</div>
+</div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+<div class="extra_footer">
+  
+  
+    <script type="text/javascript">if (typeof _satellite !== "undefined") {_satellite.pageBottom();}</script>
+    
+  
+</div></div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

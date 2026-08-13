@@ -1,0 +1,66 @@
+robot: g1
+control_dt: 0.02
+
+sonic:
+  checkpoint_path: null
+  model_config_path: null
+  encoder_path: null
+  decoder_path: null
+  token_dim: 64
+  action_dim: 29
+  lower_body_indices: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+  decoder_output_keys: ["pd_targets"]
+
+motion:
+  token_vae_path: outputs/flat_g1/token_vae16.pt
+
+apt:
+  latent_dim: 16
+  aux_dim: 12
+  num_skills: 2
+  aux_scale: 0.15
+  kp: 80
+  kd: 2
+  use_skill_selection: false
+  initial_token_path: outputs/flat_g1/walking_latent_mean16.npy
+  initial_token_std: 0.2
+  initial_aux_std: 0.02
+  train_token: true
+
+mujoco:
+  robot_scene: gear_sonic/data/robot_model/model_data/g1/scene_43dof.xml
+  wbc_config_path: gear_sonic/utils/mujoco_sim/wbc_configs/g1_29dof_sonic_model12.yaml
+  sim_dt: 0.005
+  control_decimation: 4
+  episode_length_s: 20.0
+  use_elastic_band: false
+  band_scale: 0.0
+
+commands:
+  stand_only: false
+  vx_min: 0.0
+  vx_max: 0.5
+  vy_min: 0.0
+  vy_max: 0.0
+  yaw_min: 0.0
+  yaw_max: 0.0
+
+training:
+  num_envs: 1
+  num_steps: 256
+  max_iterations: 500
+  save_interval: 50
+  log_interval: 10
+  output_dir: outputs/flat_g1_vae16_walk
+  band_anneal_iters: 0
+
+ppo:
+  lr: 0.0003
+  minibatch_size: 256
+  num_epochs: 10
+  gamma: 0.99
+  lam: 0.95
+  clip_eps: 0.2
+  entropy_coef: 0.001
+  value_coef: 0.5
+  max_grad_norm: 0.5

@@ -1,0 +1,2 @@
+# Datasets (token/mode/speed/proprio/cmd .npy) live here but are gitignored.
+# Canonical: exp_all3/ (68,093 steps). See HANDOFF/03_OUTPUTS_INDEX.md §4.

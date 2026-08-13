@@ -1,0 +1,858 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Teleoperation &#8212; How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=df3ac72c" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/nvlearning.css?v=d3374dad" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/css/lightbox.min.css?v=6e7d0de0" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/pointer.css?v=c97663ff" />
+    <link rel="stylesheet" type="text/css" href="../_static/checklist.css?v=0c588c95" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/js/lightbox-plus-jquery.min.js?v=f0ca4bb6"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/jquery-noconflict.js?v=12818e64"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'real-robot-workflow/real-teleop';</script>
+    <script src="../_static/checklist.js?v=d4c019e1"></script>
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Data Recording" href="real-record.html" />
+    <link rel="prev" title="G1 Introduction and Safety" href="g1-introduction-and-safety.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+
+
+    <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" ></script>
+    
+
+
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../getting-started/concepts-overview.html">Getting Started</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/concepts-overview.html">Concepts Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/prerequisites.html">Prerequisites</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../simulation-workflow/sim-overview.html">Simulation Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-overview.html">Simulation Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-setup-isaac-lab-arena.html">Sim Setup: Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-environment-code-review.html">Sim Environment Code Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-teleop-and-wbc.html">Sim Teleop and WBC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-data-export.html">Sim Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/groot-fine-tuning-sim.html">GR00T Fine-Tuning on Sim Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-evaluation.html">Sim Evaluation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="real-overview.html">Real Robot Workflow</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="real-overview.html">Robot Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="isaac-ros-setup.html">Isaac ROS Setup on Thor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="g1-introduction-and-safety.html">G1 Introduction and Safety</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Teleoperation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-record.html">Data Recording</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-data-export.html">Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-fine-tuning-and-leapp.html">Fine-Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-leapp-export.html">LEAPP Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-deployment.html">Deployment</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../conclusion.html">Conclusion</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../shared/teleoperation-data-collection-guide.html">Teleop Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resources/models-and-datasets.html">Models and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/repos.html">Repos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/isaac-sim/IsaacLab-Arena">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/IsaacTeleop">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA-ISAAC-ROS">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T">Isaac GR00T</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/documentation.html">Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://isaac-sim.github.io/IsaacLab-Arena/main/index.html">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia-isaac-ros.github.io/">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://developer.nvidia.com/isaac/gr00t">Isaac GR00T</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://support.unitree.com/home/en/G1_developer/about_G1">Unitree G1 Developer Guide</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="real-overview.html" class="nav-link">Real Robot Workflow</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Teleoperation</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="teleoperation">
+<h1>Teleoperation<a class="headerlink" href="#teleoperation" title="Link to this heading">#</a></h1>
+<p>This lesson covers whole-body XR teleoperation on the Unitree G1. The teleop application combines the AGILE WBC policy, bimanual inverse kinematics, and finger control driven by an XR headset.</p>
+<p>We’ll begin with a simulation test to verify the XR headset, CloudXR session, and teleoperation commands, then connect to the physical G1 and teleoperate on real hardware.</p>
+<p>Run these steps on a Jetson AGX Thor connected to the G1, either as an external system or as a Thor backpack.</p>
+<p>We’ll cover:</p>
+<ul class="simple">
+<li><p><strong>Activating</strong> the Isaac ROS environment for teleoperation</p></li>
+<li><p><strong>Starting</strong> CloudXR and connecting an XR headset</p></li>
+<li><p><strong>Launching</strong> real-hardware teleoperation</p></li>
+<li><p><strong>Enabling</strong> and <strong>disabling</strong> robot control using the safety controller</p></li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Before collecting data, review the <a class="reference internal" href="../shared/teleoperation-data-collection-guide.html"><span class="std std-doc">Teleoperation Data Collection Guide</span></a>.</p>
+<p>It covers warm-up runs, smooth motion, body stability, scene variation, side-grasp approach, recovery examples, camera field of view, and completion behavior for GR00T training.</p>
+<p>This keeps the operator out of the left-hand camera view and avoids blocking the teleoperator’s view during apple-to-plate demonstrations.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Having at least two people work on this workflow is recommended:</p>
+<ul class="simple">
+<li><p>One person for teleoperation</p></li>
+<li><p>One person to monitor the robot for safety purposes</p></li>
+</ul>
+</div>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<p>This lesson assumes the previous module is complete, the XR headset is ready, and the G1 is powered on and connected directly to Thor through Ethernet.</p>
+</section>
+<section id="activate-isaac-ros">
+<h2>Activate Isaac ROS<a class="headerlink" href="#activate-isaac-ros" title="Link to this heading">#</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">gr00t_workflow</span></code> Docker layer from <a class="reference internal" href="isaac-ros-setup.html"><span class="std std-doc">Isaac ROS Setup on Thor</span></a> includes the teleop bringup package.</p>
+<p>Start a new terminal and activate the Isaac ROS environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>isaac-ros<span class="w"> </span>activate
+</pre></div>
+</div>
+</section>
+<section id="start-cloudxr">
+<h2>Start CloudXR<a class="headerlink" href="#start-cloudxr" title="Link to this heading">#</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>As a best practice, <strong>update your teleop headset</strong> before beginning this lesson.</p>
+</div>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Network Requirements</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Before using XR teleoperation, verify the network can support CloudXR streaming. Refer to the <a class="reference external" href="https://docs.nvidia.com/cloudxr-sdk/latest/requirement/network_setup.html#network-requirements" rel="noreferer noopener" target="_blank">CloudXR Network Setup guide</a>.</p>
+</div>
+</details><ol class="arabic">
+<li><p>Start the CloudXR runtime and accept the EULA:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>isaacteleop.cloudxr<span class="w"> </span>--accept-eula
+</pre></div>
+</div>
+<p>Keep this application running until you finish teleoperation.</p>
+</li>
+<li><p>On the XR headset, open the native browser and navigate to <code class="docutils literal notranslate"><span class="pre">https://nvidia.github.io/IsaacTeleop/client/release-1.3.x/#/real/isaacros</span></code>.</p></li>
+<li><p>Enter the Thor’s host IP address in the <strong>Server IP</strong> field.</p>
+<figure class="align-default" id="id1">
+<a class=""
+               data-lightbox="../_images/pico-sim-teleop-ip-entry.jpeg"
+               href="../_images/pico-sim-teleop-ip-entry.jpeg"
+               title="Example Isaac Teleop web client in a PICO headset browser with the Server IP and port fields visible."
+               data-title="Example Isaac Teleop web client in a PICO headset browser with the Server IP and port fields visible."
+               
+               ><img src="../_images/pico-sim-teleop-ip-entry.jpeg"
+                     class=""
+                     width="80%"
+                     height=""
+                     alt="Example Isaac Teleop web client in a PICO headset browser with the Server IP and port fields visible."/>
+                </a><figcaption>
+<p><span class="caption-text">Example headset client layout before connection.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</li>
+<li><p>Select the <strong>Click https://<ip>:48322/ to accept cert</strong> link that appears on the page after entering the IP address.</p></li>
+<li><p>Accept the certificate in the new browser page, then return to the CloudXR.js client page.</p></li>
+<li><p>Select <strong>Connect</strong> to connect the headset to the teleop server.</p>
+<figure class="align-default" id="id2">
+<a class=""
+               data-lightbox="../_images/pico-teleop-web-client-port-connect.jpeg"
+               href="../_images/pico-teleop-web-client-port-connect.jpeg"
+               title="Example Isaac Teleop web client in a PICO headset browser after connecting to the CloudXR server."
+               data-title="Example Isaac Teleop web client in a PICO headset browser after connecting to the CloudXR server."
+               
+               ><img src="../_images/pico-teleop-web-client-port-connect.jpeg"
+                     class=""
+                     width="80%"
+                     height=""
+                     alt="Example Isaac Teleop web client in a PICO headset browser after connecting to the CloudXR server."/>
+                </a><figcaption>
+<p><span class="caption-text">Example connected headset client layout.</span><a class="headerlink" href="#id2" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>On the PICO headset, use the Isaac Teleop client in the native browser to set <strong>Video Codec</strong> to <strong>H.264</strong>. Other codecs can prevent the headset from connecting.</p>
+</div>
+</section>
+<section id="initial-test-in-mujoco">
+<h2>Initial Test in MuJoCo<a class="headerlink" href="#initial-test-in-mujoco" title="Link to this heading">#</a></h2>
+<p>Before connecting to a physical G1, use MuJoCo to verify that the headset, CloudXR session, and teleoperation commands are working.</p>
+<p>This test runs on Thor without a real G1 connected. A display must be connected to Thor for this step.</p>
+<p>Two headset options are available:</p>
+<ul class="simple">
+<li><p>Wear the headset normally with <code class="docutils literal notranslate"><span class="pre">AR</span> <span class="pre">Immersive</span></code> passthrough enabled on the client page. The simulation is not streamed to the headset.</p></li>
+<li><p>Remove the cushion and pull it down to the neck, then watch the monitor instead. When wearing the headset on the neck, ensure clothing does not block the bottom cameras of the headset for tracking.</p></li>
+</ul>
+<ol class="arabic">
+<li><p>Open a new terminal and activate Isaac ROS:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>isaac-ros<span class="w"> </span>activate
+</pre></div>
+</div>
+</li>
+<li><p>Activate the CloudXR environment variables:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">source</span><span class="w"> </span>~/.cloudxr/run/cloudxr.env
+</pre></div>
+</div>
+</li>
+<li><p>Launch the teleop application in MuJoCo:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>isaac_ros_unitree_g1_teleop_bringup<span class="w"> </span>unitree_g1_teleop.launch.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>hardware_type:<span class="o">=</span>mujoco<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>input_mode:<span class="o">=</span>teleop
+</pre></div>
+</div>
+<p>The MuJoCo viewer opens with the G1 robot on Thor desktop. A virtual gantry holds the robot upright during startup.</p>
+<ul class="simple">
+<li><p>Press <code class="docutils literal notranslate"><span class="pre">g</span></code> key to toggle the gantry on or off</p></li>
+<li><p>Press <code class="docutils literal notranslate"><span class="pre">[</span></code> and <code class="docutils literal notranslate"><span class="pre">]</span></code> keys to shorten or lengthen the rope of the gantry</p></li>
+</ul>
+</li>
+<li><p>With the XR controllers in your hands, move them and confirm that the
+simulated robot’s arms track your motion. You can also use the joysticks on the
+XR controllers to make the robot walk.</p>
+<div class="admonition-controller-conventions admonition">
+<p class="admonition-title">Controller Conventions</p>
+<p>The pose of the XR controllers is used to command the pose of the robot’s hands.</p>
+<p>The left joystick rotates the robot. The right joystick walks the robot forwards, backwards, or sideways.</p>
+</div>
+</li>
+<li><p>After verifying controller tracking, stop the app with <strong>Ctrl+C</strong>.</p></li>
+</ol>
+</section>
+<section id="set-up-the-robot-network">
+<h2>Set Up the Robot Network<a class="headerlink" href="#set-up-the-robot-network" title="Link to this heading">#</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">isaac_ros_robots</span></code> repository is cloned during <a class="reference internal" href="isaac-ros-setup.html"><span class="std std-doc">Isaac ROS Setup on Thor</span></a>.</p>
+<ol class="arabic">
+<li><p>Confirm the G1 Ethernet cable is plugged directly into Thor and the robot is
+powered on.</p></li>
+<li><p>Open a new terminal on the Thor and run the network setup script. Run this on the host, not inside the Docker container.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="si">${</span><span class="nv">ISAAC_ROS_WS</span><span class="si">}</span>/src/isaac_ros_robots/isaac_ros_robots_tools/scripts/setup_network.py
+</pre></div>
+</div>
+</li>
+<li><p>When prompted, select the network interface that is physically connected to
+the G1. On Thor, this is normally <code class="docutils literal notranslate"><span class="pre">enP2p1s0</span></code>.</p></li>
+</ol>
+</section>
+<section id="launch-real-hardware-teleoperation">
+<h2>Launch Real-Hardware Teleoperation<a class="headerlink" href="#launch-real-hardware-teleoperation" title="Link to this heading">#</a></h2>
+<p>Before operating real hardware, complete this checklist:</p>
+<ul class="contains-task-list simple">
+<li class="task-list-item"><p><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Clear the work area of people and hazards.</p></li>
+<li class="task-list-item"><p><input class="task-list-item-checkbox" disabled="disabled" type="checkbox"> Ensure the waist yaw joint is close to zero before launch.</p></li>
+</ul>
+<ol class="arabic">
+<li><p>Open a new terminal and start the Isaac ROS environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>isaac-ros<span class="w"> </span>activate
+</pre></div>
+</div>
+</li>
+<li><p>Activate the CloudXR environment variables:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">source</span><span class="w"> </span>~/.cloudxr/run/cloudxr.env
+</pre></div>
+</div>
+</li>
+<li><p>Launch the teleop application. Use the network interface you selected during <a class="reference internal" href="#set-up-the-robot-network">network setup</a>, for example <code class="docutils literal notranslate"><span class="pre">enP2p1s0</span></code> on Thor:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>isaac_ros_unitree_g1_teleop_bringup<span class="w"> </span>unitree_g1_teleop.launch.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>hardware_type:<span class="o">=</span>real<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>input_mode:<span class="o">=</span>teleop<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>network_interface:<span class="o">=</span>enP2p1s0
+</pre></div>
+</div>
+</li>
+<li><p>Verify that teleoperation commands are arriving from the XR headset. Open a new terminal, enter the Isaac ROS environment, and echo the ROS topic. New commands should appear multiple times per second.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>isaac-ros<span class="w"> </span>activate
+</pre></div>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>topic<span class="w"> </span><span class="nb">echo</span><span class="w"> </span>/xr_teleop/ee_poses
+</pre></div>
+</div>
+</li>
+<li><p>Reset the headset’s world frame by pressing the <code class="docutils literal notranslate"><span class="pre">Home</span></code> button (the button
+with the circle) on the right XR controller for 2 seconds.</p></li>
+</ol>
+</section>
+<section id="disable-and-enable-control">
+<h2>Disable and Enable Control<a class="headerlink" href="#disable-and-enable-control" title="Link to this heading">#</a></h2>
+<p>By default, control is disabled. The stack uses a <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> parameter to smoothly enable control. At launch, <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> is <code class="docutils literal notranslate"><span class="pre">0.0</span></code>, so only default motor commands are sent. When you set <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> to <code class="docutils literal notranslate"><span class="pre">1.0</span></code>, the controllers are fully active. Changes ramp smoothly between values.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Simulation vs. real hardware:</strong> In the simulation test, <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> defaults to 1.0, so control is active from the start.</p>
+</div>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>Before setting <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code>, confirm that the inference controller is available.</p>
+<p>Watch the logs and wait for the <code class="docutils literal notranslate"><span class="pre">InferenceController</span> <span class="pre">activated</span></code> message. Until then, the controller prints a message once per second indicating it is still waiting for an input message.</p>
+<p>Example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">[</span>ros2_control_node-1<span class="o">]</span><span class="w"> </span><span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span><span class="m">1780620035</span>.588796262<span class="o">]</span><span class="w"> </span><span class="o">[</span>inference_controller<span class="o">]</span>:<span class="w"> </span>Waiting<span class="w"> </span><span class="k">for</span><span class="w"> </span>topic<span class="w"> </span>messages<span class="w"> </span>before<span class="w"> </span>activating<span class="w"> </span>core<span class="w"> </span>controller:<span class="w"> </span><span class="s1">&#39;/cmd_vel&#39;</span>
+<span class="o">[</span>ros2_control_node-1<span class="o">]</span><span class="w"> </span><span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span><span class="m">1780620040</span>.605301453<span class="o">]</span><span class="w"> </span><span class="o">[</span>inference_controller<span class="o">]</span>:<span class="w"> </span>Waiting<span class="w"> </span><span class="k">for</span><span class="w"> </span>topic<span class="w"> </span>messages<span class="w"> </span>before<span class="w"> </span>activating<span class="w"> </span>core<span class="w"> </span>controller:<span class="w"> </span><span class="s1">&#39;/cmd_vel&#39;</span>
+<span class="o">[</span>ros2_control_node-1<span class="o">]</span><span class="w"> </span><span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span><span class="m">1780620044</span>.232195753<span class="o">]</span><span class="w"> </span><span class="o">[</span>inference_controller<span class="o">]</span>:<span class="w"> </span>Core<span class="w"> </span>InferenceController<span class="w"> </span>activated
+</pre></div>
+</div>
+<p>This may take about 40 seconds.</p>
+</div>
+<ol class="arabic">
+<li><p>To disable the robot, set the blend ratio to zero:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/safety_controller<span class="w"> </span>blend_ratio<span class="w"> </span><span class="m">0</span>.0
+</pre></div>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Keep this command in your shell history so you can execute it quickly if something goes wrong.</p>
+</div>
+</li>
+<li><p>To enable the robot, set the blend ratio to one. On real hardware, do this only after launch is healthy and the robot is standing on the ground:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/safety_controller<span class="w"> </span>blend_ratio<span class="w"> </span><span class="m">1</span>.0
+</pre></div>
+</div>
+</li>
+</ol>
+<p>The robot starts balancing and tracking your hand movements.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can stop teleoperation by either setting <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> to <code class="docutils literal notranslate"><span class="pre">0.0</span></code> or quitting the main application.</p>
+</div>
+</section>
+<section id="key-takeaways">
+<h2>Key Takeaways<a class="headerlink" href="#key-takeaways" title="Link to this heading">#</a></h2>
+<p>This lesson covered installing teleop bringup, connecting XR control, launching real-hardware teleoperation, and verifying that the robot tracks controller commands.</p>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="g1-introduction-and-safety.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">G1 Introduction and Safety</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="real-record.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Data Recording</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#activate-isaac-ros">Activate Isaac ROS</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#start-cloudxr">Start CloudXR</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#initial-test-in-mujoco">Initial Test in MuJoCo</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#set-up-the-robot-network">Set Up the Robot Network</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#launch-real-hardware-teleoperation">Launch Real-Hardware Teleoperation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#disable-and-enable-control">Disable and Enable Control</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#key-takeaways">Key Takeaways</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+<div class="footer-links">
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">Privacy Policy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-center/">Manage My Privacy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/preferences/start/">Do Not Sell or Share My Data</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/terms-of-service/">Terms of Service</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/accessibility/">Accessibility</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/company-policies/">Corporate Policies</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/product-security/">Product Security</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/contact/">Contact</a>
+  
+  
+  
+</div>
+</div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+<div class="extra_footer">
+  
+  
+    <script type="text/javascript">if (typeof _satellite !== "undefined") {_satellite.pageBottom();}</script>
+    
+  
+</div></div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

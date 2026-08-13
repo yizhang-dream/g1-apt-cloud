@@ -1,0 +1,500 @@
+{
+ "A_long_walk": {
+  "seed0": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.684,
+   "h_mean": 0.754,
+   "vx": 0.832,
+   "vy": 0.059,
+   "displacement": 50.86
+  },
+  "seed1": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.704,
+   "h_mean": 0.759,
+   "vx": 0.85,
+   "vy": 0.034,
+   "displacement": 51.95
+  },
+  "seed2": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.682,
+   "h_mean": 0.755,
+   "vx": 0.834,
+   "vy": 0.049,
+   "displacement": 50.97
+  }
+ },
+ "B_disturbance": {
+  "fwd_200_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.687,
+   "h_mean": 0.758,
+   "vx": 0.85,
+   "vy": 0.036,
+   "displacement": 38.92,
+   "min_h_after_imp": [
+    0.74,
+    0.732
+   ],
+   "recovery_s": [
+    0.32,
+    0.02
+   ]
+  },
+  "fwd_200_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.677,
+   "h_mean": 0.755,
+   "vx": 0.832,
+   "vy": 0.057,
+   "displacement": 38.18,
+   "min_h_after_imp": [
+    0.738,
+    0.738
+   ],
+   "recovery_s": [
+    0.18,
+    0.16
+   ]
+  },
+  "fwd_200_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.734,
+   "h_mean": 0.76,
+   "vx": 0.863,
+   "vy": 0.025,
+   "displacement": 39.57,
+   "min_h_after_imp": [
+    0.725,
+    0.708
+   ],
+   "recovery_s": [
+    0.56,
+    0.62
+   ]
+  },
+  "fwd_500_seed0": {
+   "steps": 1427,
+   "completed": false,
+   "fall_step": 1426,
+   "h_min": 0.23,
+   "h_mean": 0.754,
+   "vx": 0.906,
+   "vy": -0.043,
+   "displacement": 26.47,
+   "min_h_after_imp": [
+    0.735,
+    0.713
+   ],
+   "recovery_s": [
+    1.0,
+    0.22
+   ]
+  },
+  "fwd_500_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.682,
+   "h_mean": 0.754,
+   "vx": 0.832,
+   "vy": 0.048,
+   "displacement": 38.12,
+   "min_h_after_imp": [
+    0.729,
+    0.682
+   ],
+   "recovery_s": [
+    0.02,
+    1.84
+   ]
+  },
+  "fwd_500_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.732,
+   "h_mean": 0.76,
+   "vx": 0.868,
+   "vy": 0.018,
+   "displacement": 39.82,
+   "min_h_after_imp": [
+    0.742,
+    0.742
+   ],
+   "recovery_s": [
+    0.22,
+    0.24
+   ]
+  },
+  "back_200_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.684,
+   "h_mean": 0.758,
+   "vx": 0.846,
+   "vy": 0.039,
+   "displacement": 38.76,
+   "min_h_after_imp": [
+    0.74,
+    0.72
+   ],
+   "recovery_s": [
+    0.02,
+    0.16
+   ]
+  },
+  "back_200_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.679,
+   "h_mean": 0.757,
+   "vx": 0.837,
+   "vy": 0.042,
+   "displacement": 38.37,
+   "min_h_after_imp": [
+    0.729,
+    0.682
+   ],
+   "recovery_s": [
+    0.02,
+    1.84
+   ]
+  },
+  "back_200_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.736,
+   "h_mean": 0.76,
+   "vx": 0.859,
+   "vy": 0.023,
+   "displacement": 39.4,
+   "min_h_after_imp": [
+    0.741,
+    0.732
+   ],
+   "recovery_s": [
+    0.02,
+    0.02
+   ]
+  },
+  "back_500_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.686,
+   "h_mean": 0.757,
+   "vx": 0.83,
+   "vy": 0.049,
+   "displacement": 38.15,
+   "min_h_after_imp": [
+    0.721,
+    0.687
+   ],
+   "recovery_s": [
+    0.52,
+    0.32
+   ]
+  },
+  "back_500_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.681,
+   "h_mean": 0.756,
+   "vx": 0.823,
+   "vy": 0.044,
+   "displacement": 37.82,
+   "min_h_after_imp": [
+    0.724,
+    0.69
+   ],
+   "recovery_s": [
+    0.56,
+    2.3
+   ]
+  },
+  "back_500_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.679,
+   "h_mean": 0.756,
+   "vx": 0.826,
+   "vy": 0.049,
+   "displacement": 37.89,
+   "min_h_after_imp": [
+    0.728,
+    0.715
+   ],
+   "recovery_s": [
+    0.26,
+    0.38
+   ]
+  },
+  "left_200_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "h_mean": 0.757,
+   "vx": 0.845,
+   "vy": 0.036,
+   "displacement": 38.73,
+   "min_h_after_imp": [
+    0.74,
+    0.729
+   ],
+   "recovery_s": [
+    1.34,
+    0.02
+   ]
+  },
+  "left_200_seed1": {
+   "steps": 1393,
+   "completed": false,
+   "fall_step": 1392,
+   "h_min": 0.202,
+   "h_mean": 0.752,
+   "vx": 0.866,
+   "vy": 0.059,
+   "displacement": 24.59,
+   "min_h_after_imp": [
+    0.724,
+    0.69
+   ],
+   "recovery_s": [
+    0.56,
+    2.3
+   ]
+  },
+  "left_200_seed2": {
+   "steps": 1153,
+   "completed": false,
+   "fall_step": 1152,
+   "h_min": 0.229,
+   "h_mean": 0.751,
+   "vx": 0.856,
+   "vy": 0.053,
+   "displacement": 20.14,
+   "min_h_after_imp": [
+    0.722,
+    0.697
+   ],
+   "recovery_s": [
+    0.54,
+    0.7
+   ]
+  },
+  "left_500_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.676,
+   "h_mean": 0.754,
+   "vx": 0.855,
+   "vy": 0.05,
+   "displacement": 39.28,
+   "min_h_after_imp": [
+    0.741,
+    0.723
+   ],
+   "recovery_s": [
+    0.1,
+    0.44
+   ]
+  },
+  "left_500_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.682,
+   "h_mean": 0.755,
+   "vx": 0.832,
+   "vy": 0.054,
+   "displacement": 38.25,
+   "min_h_after_imp": [
+    0.738,
+    0.738
+   ],
+   "recovery_s": [
+    0.18,
+    0.16
+   ]
+  },
+  "left_500_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.69,
+   "h_mean": 0.758,
+   "vx": 0.848,
+   "vy": 0.039,
+   "displacement": 38.89,
+   "min_h_after_imp": [
+    0.74,
+    0.735
+   ],
+   "recovery_s": [
+    0.32,
+    0.02
+   ]
+  },
+  "right_200_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.68,
+   "h_mean": 0.758,
+   "vx": 0.847,
+   "vy": 0.036,
+   "displacement": 38.83,
+   "min_h_after_imp": [
+    0.737,
+    0.722
+   ],
+   "recovery_s": [
+    0.02,
+    0.02
+   ]
+  },
+  "right_200_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.686,
+   "h_mean": 0.755,
+   "vx": 0.828,
+   "vy": 0.052,
+   "displacement": 38.01,
+   "min_h_after_imp": [
+    0.73,
+    0.701
+   ],
+   "recovery_s": [
+    0.58,
+    0.8
+   ]
+  },
+  "right_200_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.733,
+   "h_mean": 0.76,
+   "vx": 0.865,
+   "vy": 0.018,
+   "displacement": 39.68,
+   "min_h_after_imp": [
+    0.7,
+    0.715
+   ],
+   "recovery_s": [
+    0.04,
+    0.02
+   ]
+  },
+  "right_500_seed0": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.687,
+   "h_mean": 0.759,
+   "vx": 0.855,
+   "vy": 0.029,
+   "displacement": 39.19,
+   "min_h_after_imp": [
+    0.74,
+    0.732
+   ],
+   "recovery_s": [
+    0.32,
+    0.02
+   ]
+  },
+  "right_500_seed1": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.683,
+   "h_mean": 0.756,
+   "vx": 0.837,
+   "vy": 0.043,
+   "displacement": 38.39,
+   "min_h_after_imp": [
+    0.729,
+    0.71
+   ],
+   "recovery_s": [
+    2.56,
+    0.52
+   ]
+  },
+  "right_500_seed2": {
+   "steps": 2250,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.69,
+   "h_mean": 0.758,
+   "vx": 0.833,
+   "vy": 0.037,
+   "displacement": 38.27,
+   "min_h_after_imp": [
+    0.74,
+    0.738
+   ],
+   "recovery_s": [
+    0.32,
+    2.48
+   ]
+  }
+ },
+ "C_switch": {
+  "seed0": {
+   "steps": 1852,
+   "completed": false,
+   "fall_step": 1851,
+   "h_min": 0.205,
+   "h_mean": 0.763,
+   "vx": 0.145,
+   "vy": -0.001,
+   "displacement": 15.13
+  },
+  "seed1": {
+   "steps": 1035,
+   "completed": false,
+   "fall_step": 1034,
+   "h_min": 0.242,
+   "h_mean": 0.762,
+   "vx": 0.288,
+   "vy": 0.015,
+   "displacement": 10.6
+  },
+  "seed2": {
+   "steps": 1903,
+   "completed": false,
+   "fall_step": 1902,
+   "h_min": 0.203,
+   "h_mean": 0.762,
+   "vx": 0.145,
+   "vy": -0.009,
+   "displacement": 15.33
+  }
+ }
+}

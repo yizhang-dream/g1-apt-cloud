@@ -1,0 +1,889 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Deployment &#8212; How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=df3ac72c" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/nvlearning.css?v=d3374dad" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/css/lightbox.min.css?v=6e7d0de0" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/pointer.css?v=c97663ff" />
+    <link rel="stylesheet" type="text/css" href="../_static/checklist.css?v=0c588c95" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/js/lightbox-plus-jquery.min.js?v=f0ca4bb6"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/jquery-noconflict.js?v=12818e64"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'real-robot-workflow/real-deployment';</script>
+    <script src="../_static/checklist.js?v=d4c019e1"></script>
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Conclusion" href="../conclusion.html" />
+    <link rel="prev" title="LEAPP Export" href="real-leapp-export.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+
+
+    <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" ></script>
+    
+
+
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../getting-started/concepts-overview.html">Getting Started</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/concepts-overview.html">Concepts Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting-started/prerequisites.html">Prerequisites</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../simulation-workflow/sim-overview.html">Simulation Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-overview.html">Simulation Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-setup-isaac-lab-arena.html">Sim Setup: Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-environment-code-review.html">Sim Environment Code Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-teleop-and-wbc.html">Sim Teleop and WBC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-data-export.html">Sim Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/groot-fine-tuning-sim.html">GR00T Fine-Tuning on Sim Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-evaluation.html">Sim Evaluation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="real-overview.html">Real Robot Workflow</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="real-overview.html">Robot Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="isaac-ros-setup.html">Isaac ROS Setup on Thor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="g1-introduction-and-safety.html">G1 Introduction and Safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-teleop.html">Teleoperation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-record.html">Data Recording</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-data-export.html">Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-fine-tuning-and-leapp.html">Fine-Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="real-leapp-export.html">LEAPP Export</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Deployment</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../conclusion.html">Conclusion</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../shared/teleoperation-data-collection-guide.html">Teleop Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resources/models-and-datasets.html">Models and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started/agents.html">Agent Skills</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/repos.html">Repos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/isaac-sim/IsaacLab-Arena">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/IsaacTeleop">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA-ISAAC-ROS">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T">Isaac GR00T</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/documentation.html">Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://isaac-sim.github.io/IsaacLab-Arena/main/index.html">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia-isaac-ros.github.io/">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://developer.nvidia.com/isaac/gr00t">Isaac GR00T</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://support.unitree.com/home/en/G1_developer/about_G1">Unitree G1 Developer Guide</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="real-overview.html" class="nav-link">Real Robot Workflow</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Deployment</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="deployment">
+<h1>Deployment<a class="headerlink" href="#deployment" title="Link to this heading">#</a></h1>
+<p>In this lesson, we’ll deploy a GR00T policy to the physical Unitree G1 and evaluate its performance on the pick-and-place task. We’ll start with the bundled apple-to-plate policy, then replace it with your own LEAPP-exported policy.</p>
+<p>To do that, we’ll:</p>
+<ul class="simple">
+<li><p><strong>Deploy</strong> the pretrained apple-to-plate policy to a Thor on the G1.</p></li>
+<li><p><strong>Replace</strong> the pretrained policy with a custom fine-tuned policy.</p></li>
+<li><p><strong>Measure</strong> real-world success rate and document results.</p></li>
+</ul>
+<section id="prepare-for-deployment">
+<h2>Prepare for Deployment<a class="headerlink" href="#prepare-for-deployment" title="Link to this heading">#</a></h2>
+<p>Run this tutorial on a Jetson AGX Thor connected to the G1, either as an external system or as a Thor backpack. Complete <a class="reference internal" href="isaac-ros-setup.html"><span class="std std-doc">Isaac ROS Setup on Thor</span></a> first so the workspace and source repositories are ready.</p>
+<ol class="arabic">
+<li><p>Activate the Isaac ROS environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>isaac-ros<span class="w"> </span>activate
+</pre></div>
+</div>
+</li>
+<li><p>Download and install the pre-trained GR00T Unitree G1 policy assets. For model reference, see the provided <a class="reference internal" href="../resources/models-and-datasets.html#real-robot-workflow"><span class="std std-ref">real robot model</span></a>, <a class="reference external" href="https://huggingface.co/nvidia/GR00T-N1.7-ApplePnP-V1" rel="noreferer noopener" target="_blank"><code class="docutils literal notranslate"><span class="pre">nvidia/GR00T-N1.7-ApplePnP-V1</span></code></a>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>run<span class="w"> </span>isaac_ros_gr00t_unitree_g1_install<span class="w"> </span>install_gr00t_unitree_g1.sh<span class="w"> </span>--eula
+</pre></div>
+</div>
+<p>This stores the bundled model files and LEAPP YAML under <code class="docutils literal notranslate"><span class="pre">${ISAAC_ROS_WS}/isaac_ros_assets/models/gr00t_unitree_g1/</span></code>. Run this command in the same container and workspace used for deployment so asset paths and file permissions match the runtime environment.</p>
+</li>
+</ol>
+</section>
+<section id="run-the-policy-on-real-hardware">
+<h2>Run the Policy on Real Hardware<a class="headerlink" href="#run-the-policy-on-real-hardware" title="Link to this heading">#</a></h2>
+<div class="admonition danger">
+<p class="admonition-title">Danger</p>
+<p>Before running the policy autonomously:</p>
+<ol class="arabic simple">
+<li><p>Clear all people from the robot’s workspace.</p></li>
+<li><p>Maintain visual contact with the robot at all times.</p></li>
+</ol>
+<p>Review <a class="reference internal" href="g1-introduction-and-safety.html"><span class="std std-doc">G1 Introduction and Safety</span></a> before enabling autonomous policy control. This course is a workflow guide, not a robot operating guide.</p>
+</div>
+<ol class="arabic">
+<li><p>Before launching, recreate the <a class="reference internal" href="g1-introduction-and-safety.html#workspace-setup"><span class="std std-ref">workspace setup</span></a>:</p>
+<ul class="simple">
+<li><p>Black tablecloth</p></li>
+<li><p>Approximately 75 cm table height</p></li>
+<li><p>White 19 cm plate</p></li>
+<li><p>Red apple</p></li>
+</ul>
+</li>
+<li><p>Use a gantry to position the robot at the table. Roll it close so the torso is almost touching the table, then rest the robot’s hands flat on the table before enabling any controller. Lower the robot from the gantry before step 7. Position the robot similar to the reference below.</p>
+<figure class="align-default" id="expected-deploy-sequence">
+<a class=""
+               data-lightbox="../_images/g1-groot-deploy.gif"
+               href="../_images/g1-groot-deploy.gif"
+               title="Unitree G1 deployment at the table showing lower-body balancing enabled first, then upper-body apple-to-plate manipulation"
+               data-title="Unitree G1 deployment at the table showing lower-body balancing enabled first, then upper-body apple-to-plate manipulation"
+               
+               ><img src="../_images/g1-groot-deploy.gif"
+                     class=""
+                     width=""
+                     height=""
+                     alt="Unitree G1 deployment at the table showing lower-body balancing enabled first, then upper-body apple-to-plate manipulation"/>
+                </a><figcaption>
+<p><span class="caption-text"><strong>Expected deploy positioning and policy execution</strong></span><a class="headerlink" href="#expected-deploy-sequence" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The animation shows the full deploy sequence. Lower-body joints enable first for balancing, then upper-body joints pick up the apple and place it on the plate.</p>
+</li>
+<li><p>Set up the network to communicate with the robot. <strong>Run on the Thor host</strong>, outside the container. Skip this step if you already ran network setup during <a class="reference internal" href="real-teleop.html"><span class="std std-doc">teleoperation</span></a> and have not rebooted Thor. Re-run it after a reboot or if you reconnect Ethernet.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="si">${</span><span class="nv">ISAAC_ROS_WS</span><span class="si">}</span>/src/isaac_ros_robots/isaac_ros_robots_tools/scripts/setup_network.py
+</pre></div>
+</div>
+<p>Select the network interface connected to the G1. On Thor this is normally <code class="docutils literal notranslate"><span class="pre">enP2p1s0</span></code>.</p>
+</li>
+<li><p>Activate the Isaac ROS Docker environment (<strong>inside the container</strong>):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>isaac-ros<span class="w"> </span>activate
+</pre></div>
+</div>
+</li>
+<li><p>Set up CUDA MPS (<strong>inside the container</strong>).    This allows the GPU to be partitioned so the whole-body control
+policy runs in real time without contention from the GR00T policy.</p>
+<p>Without MPS the two controllers can fight for GPU resources which can lead
+the robot to lose balance.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="si">${</span><span class="nv">ISAAC_ROS_WS</span><span class="si">}</span>/src/isaac_ros_physical_ai/isaac_ros_unitree_g1_gr00t/scripts/setup_mps.sh
+</pre></div>
+</div>
+</li>
+<li><p>Launch the deploy stack with the pre-trained apple-to-plate policy (<strong>inside the container</strong>). Use the network interface you selected during network setup in step 3, for example <code class="docutils literal notranslate"><span class="pre">enP2p1s0</span></code> on Thor:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>isaac_ros_unitree_g1_gr00t<span class="w"> </span>unitree_g1_gr00t_agile.launch.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>hardware_type:<span class="o">=</span>real<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>network_interface:<span class="o">=</span>enP2p1s0<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>use_foxglove:<span class="o">=</span><span class="nb">false</span>
+</pre></div>
+</div>
+<p>This uses the default pretrained policy installed by <code class="docutils literal notranslate"><span class="pre">install_gr00t_unitree_g1.sh</span> <span class="pre">--eula</span></code>.</p>
+<p>The command loads the policy onto the GPU, which takes up to 30 seconds.</p>
+<p>You can enable Foxglove by changing the last parameter. It is disabled here to keep the terminal output simpler.</p>
+<p>Before enabling control, check the camera view. Open a second terminal, run <code class="docutils literal notranslate"><span class="pre">isaac-ros</span> <span class="pre">activate</span></code>, then <code class="docutils literal notranslate"><span class="pre">rviz2</span></code>. Add <strong>/realsense_d435_rgb/color/image_raw/Image</strong> and confirm the apple, plate, and table are visible and within reach. Adjust the scene or camera if needed while both safety controllers are still at <code class="docutils literal notranslate"><span class="pre">blend_ratio=0.0</span></code>.</p>
+</li>
+<li><p>Enable the lower body:</p>
+<p>Lower the robot from the gantry so its feet are on the ground before you enable lower-body control. The AGILE policy balances the robot while standing, so <strong>do not enable lower-body control while the robot is still suspended in air.</strong></p>
+<p>The <a class="reference internal" href="#expected-deploy-sequence">deployment animation above</a> shows the full sequence. Lower-body control enables first, then upper-body manipulation follows.</p>
+<p>Similar to <a class="reference internal" href="real-teleop.html"><span class="std std-doc">teleoperation</span></a>, the GR00T deploy stack uses a
+<code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> parameter to smoothly enable control.</p>
+<p>Unlike teleoperation, the GR00T deployment stack uses separate <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code>
+values (and separate safety controllers) for the lower and upper body.</p>
+<p>Enable balancing by setting the lower-body <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> to <code class="docutils literal notranslate"><span class="pre">1.0</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/safety_controller_lower_body<span class="w"> </span>blend_ratio<span class="w"> </span><span class="m">1</span>.0
+</pre></div>
+</div>
+<p>The robot should now balance and stand on its own.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Keep <code class="docutils literal notranslate"><span class="pre">ros2</span> <span class="pre">param</span> <span class="pre">set</span> <span class="pre">/safety_controller_lower_body</span> <span class="pre">blend_ratio</span> <span class="pre">0.0</span></code> in your
+shell history so you can disable control quickly if needed.</p>
+</div>
+</li>
+<li><p>Enable the upper body:</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>If you are testing your own fine-tuned policy for the first time, gradually increase <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> rather than jumping directly to <code class="docutils literal notranslate"><span class="pre">1.0</span></code>.</p>
+</div>
+<p>When you set the upper-body blend ratio to <code class="docutils literal notranslate"><span class="pre">1.0</span></code>, the GR00T policy immediately starts picking up the apple and placing it on the plate.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/safety_controller_upper_body<span class="w"> </span>blend_ratio<span class="w"> </span><span class="m">1</span>.0
+</pre></div>
+</div>
+<p>To repeat the trial you can disable the upper body, reset the apple and plate
+on the table, and then enable the upper body again:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/safety_controller_upper_body<span class="w"> </span>blend_ratio<span class="w"> </span><span class="m">0</span>.0
+</pre></div>
+</div>
+<p>Now, reset the apple and plate, then run again:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>param<span class="w"> </span><span class="nb">set</span><span class="w"> </span>/safety_controller_upper_body<span class="w"> </span>blend_ratio<span class="w"> </span><span class="m">1</span>.0
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+<section id="use-your-own-policy">
+<h2>Use Your Own Policy<a class="headerlink" href="#use-your-own-policy" title="Link to this heading">#</a></h2>
+<p>The steps above used the pretrained GR00T apple-to-plate policy. To deploy the policy you fine-tuned in <a class="reference internal" href="real-fine-tuning-and-leapp.html"><span class="std std-doc">Fine-Tuning</span></a> and exported in <a class="reference internal" href="real-leapp-export.html"><span class="std std-doc">LEAPP Export</span></a>, follow the steps below.</p>
+<ol class="arabic">
+<li><p>Place the exported LEAPP bundle in a directory that is mounted into the
+container, such as <code class="docutils literal notranslate"><span class="pre">${ISAAC_ROS_WS}/policies/</span></code>.</p></li>
+<li><p>Make the LEAPP bundle world-readable inside the Docker container:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>chmod<span class="w"> </span>-R<span class="w"> </span>a+rX<span class="w"> </span><span class="si">${</span><span class="nv">ISAAC_ROS_WS</span><span class="si">}</span>/policies
+</pre></div>
+</div>
+</li>
+<li><p>Repeat the same instructions as before, but now when launching the app add
+the launch argument <code class="docutils literal notranslate"><span class="pre">gr00t_leapp_yaml_path</span></code> and point it to the YAML file in
+your exported LEAPP bundle.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>isaac_ros_unitree_g1_gr00t<span class="w"> </span>unitree_g1_gr00t_agile.launch.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>hardware_type:<span class="o">=</span>real<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>network_interface:<span class="o">=</span>enP2p1s0<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>use_foxglove:<span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>gr00t_leapp_yaml_path:<span class="o">=</span><span class="si">${</span><span class="nv">ISAAC_ROS_WS</span><span class="si">}</span>/policies/&lt;path/to/leapp_export/your_policy.yaml&gt;<span class="w"> </span>
+</pre></div>
+</div>
+<p>You can enable Foxglove by changing the parameter to <code class="docutils literal notranslate"><span class="pre">true</span></code>. It is disabled here to keep the terminal output simpler.</p>
+</li>
+</ol>
+</section>
+<section id="structured-evaluation-approach">
+<h2>Structured Evaluation Approach<a class="headerlink" href="#structured-evaluation-approach" title="Link to this heading">#</a></h2>
+<p>Evaluate the success rate of the policy.</p>
+<p>The success rate depends on how closely your environment matches the environment used during data collection.</p>
+<p>Run the evaluation with two people: one person stays at the computer to enable and disable the policy, while the other person resets the scene.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>You can define your own evaluation process. Below is a description of the conventions we used for this course.</p>
+</div>
+<section id="setup">
+<h3>Setup<a class="headerlink" href="#setup" title="Link to this heading">#</a></h3>
+<p>Set up the evaluation grid:</p>
+<ol class="arabic simple">
+<li><p>With a dark marker or another subtle marking system, mark two <code class="docutils literal notranslate"><span class="pre">19</span> <span class="pre">cm</span> <span class="pre">x</span> <span class="pre">19</span> <span class="pre">cm</span></code> squares on the table in front of the robot. One is for the apple positions, one is for the plate.</p></li>
+<li><p>Mark an additional square at the center of each rectangle to create a 5th position.</p></li>
+</ol>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-1 sd-row-cols-xs-1 sd-row-cols-sm-1 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<p class="sd-card-text"><a class=""
+               data-lightbox="../_images/real-eval-grids-labeled.png"
+               href="../_images/real-eval-grids-labeled.png"
+               title="Evaluation grid layout with labels"
+               data-title="Evaluation grid layout with labels"
+               
+               ><img src="../_images/real-eval-grids-labeled.png"
+                     class=""
+                     width=""
+                     height=""
+                     alt="Evaluation grid layout with labels"/>
+                </a></p>
+</div>
+<div class="sd-card-footer docutils">
+<p class="sd-card-text">Labeled Evaluation Grid</p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<p class="sd-card-text"><a class=""
+               data-lightbox="../_images/real-eval-grids.png"
+               href="../_images/real-eval-grids.png"
+               title="Evaluation grid layout"
+               data-title="Evaluation grid layout"
+               
+               ><img src="../_images/real-eval-grids.png"
+                     class=""
+                     width=""
+                     height=""
+                     alt="Evaluation grid layout"/>
+                </a></p>
+</div>
+<div class="sd-card-footer docutils">
+<p class="sd-card-text">Evaluation Start Position Example</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<p>These regions support a structured evaluation of the policy. Each smaller square defines where to center the objects for each evaluation trial.</p>
+</section>
+<section id="process">
+<h3>Process<a class="headerlink" href="#process" title="Link to this heading">#</a></h3>
+<ol class="arabic simple">
+<li><p>Begin evaluations. For the first, keep the apple in the first grid position and rotate the plate through all five plate positions.</p></li>
+<li><p>Move the apple to the next grid position and rotate the plate through all five plate positions again.</p></li>
+<li><p>Repeat this pattern until all apple and plate combinations have been evaluated.</p></li>
+</ol>
+<p><a class=""
+               data-lightbox="../_images/real-eval-setups.gif"
+               href="../_images/real-eval-setups.gif"
+               title="Structured policy evaluation procedure"
+               data-title="Structured policy evaluation procedure"
+               
+               ><img src="../_images/real-eval-setups.gif"
+                     class=""
+                     width=""
+                     height=""
+                     alt="Structured policy evaluation procedure"/>
+                </a></p>
+<p><em>Structured policy evaluation procedure. Example sequence showing 15 of 25 possible environment resets between rollouts.</em></p>
+<p>This produces <strong>25 unique apple-to-plate placement combinations</strong>. Run the full set as many times as needed for your evaluation target.</p>
+<p>In the reference evaluation pass, the process was repeated four times for a total of 100 rollouts, measuring a <strong>68% success rate</strong>.</p>
+</section>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h2>
+<ul>
+<li><p>If the robot does not stand after enabling lower-body control, verify
+real-time prerequisites (<code class="docutils literal notranslate"><span class="pre">rtprio</span></code> and CUDA MPS) and network interface settings.</p></li>
+<li><p>If a custom upper-body policy does not start, verify that
+<code class="docutils literal notranslate"><span class="pre">gr00t_leapp_yaml_path</span></code> points to a container-visible LEAPP YAML file. For
+bundled-policy deployment, leave <code class="docutils literal notranslate"><span class="pre">gr00t_leapp_yaml_path</span></code> empty.</p></li>
+<li><p>If Triton or ONNX Runtime cannot load a custom LEAPP policy, make the bundle world-readable:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>chmod<span class="w"> </span>-R<span class="w"> </span>a+rX<span class="w"> </span>/path/to/your/leapp_export_dir
+</pre></div>
+</div>
+</li>
+<li><p>If behavior regresses between runs, reset upper-body <code class="docutils literal notranslate"><span class="pre">blend_ratio</span></code> to <code class="docutils literal notranslate"><span class="pre">0.0</span></code>, re-place objects, and re-enable.</p></li>
+</ul>
+</section>
+<section id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading">#</a></h2>
+<p>You deployed a fine-tuned GR00T policy to the physical Unitree G1 and measured task execution on real hardware.</p>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p>Refer to the <a class="reference external" href="https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_physical_ai/isaac_ros_unitree_g1_gr00t/index.html" rel="noreferer noopener" target="_blank">Isaac ROS Unitree G1 GR00T package reference</a> for additional package details.</p>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="real-leapp-export.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">LEAPP Export</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="../conclusion.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Conclusion</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prepare-for-deployment">Prepare for Deployment</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#run-the-policy-on-real-hardware">Run the Policy on Real Hardware</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#use-your-own-policy">Use Your Own Policy</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#structured-evaluation-approach">Structured Evaluation Approach</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#setup">Setup</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#process">Process</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting">Troubleshooting</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#conclusion">Conclusion</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+<div class="footer-links">
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">Privacy Policy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-center/">Manage My Privacy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/preferences/start/">Do Not Sell or Share My Data</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/terms-of-service/">Terms of Service</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/accessibility/">Accessibility</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/company-policies/">Corporate Policies</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/product-security/">Product Security</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/contact/">Contact</a>
+  
+  
+  
+</div>
+</div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+<div class="extra_footer">
+  
+  
+    <script type="text/javascript">if (typeof _satellite !== "undefined") {_satellite.pageBottom();}</script>
+    
+  
+</div></div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

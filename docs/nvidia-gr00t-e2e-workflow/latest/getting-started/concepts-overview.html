@@ -1,0 +1,1122 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Concepts Overview &#8212; How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=df3ac72c" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/nvlearning.css?v=d3374dad" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/css/lightbox.min.css?v=6e7d0de0" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/pointer.css?v=c97663ff" />
+    <link rel="stylesheet" type="text/css" href="../_static/checklist.css?v=0c588c95" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2/dist/js/lightbox-plus-jquery.min.js?v=f0ca4bb6"></script>
+    <script src="../_static/sphinxcontrib-images/LightBox2/lightbox2-customize/jquery-noconflict.js?v=12818e64"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'getting-started/concepts-overview';</script>
+    <script src="../_static/checklist.js?v=d4c019e1"></script>
+    <link rel="icon" href="../_static/favicon.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Agent Skills" href="agents.html" />
+    <link rel="prev" title="End-to-End Physical AI With the Unitree G1" href="../index.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+
+
+    <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" ></script>
+    
+
+
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1 - Home"/>
+  
+  
+    <p class="title logo__title">How to Develop and Deploy Humanoid Robots End-to-End with NVIDIA Isaac GR00T and Unitree G1</p>
+  
+</a>
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://www.youtube.com/@NVIDIAOmniverse" title="YouTube" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fab fa-youtube fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">YouTube</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discord.gg/nvidiaomniverse" title="Discord" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discord fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discord</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://surveys.hotjar.com/98510484-7ad7-4ddc-bfc4-1b7663827216?utm_source=e2e-gr00t-workflow" title="Survey" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-solid fa-comment fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Survey</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Table of Contents">
+  <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Getting Started</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Concepts Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="agents.html">Agent Skills</a></li>
+<li class="toctree-l2"><a class="reference internal" href="prerequisites.html">Prerequisites</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../simulation-workflow/sim-overview.html">Simulation Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-overview.html">Simulation Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-setup-isaac-lab-arena.html">Sim Setup: Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-environment-code-review.html">Sim Environment Code Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-teleop-and-wbc.html">Sim Teleop and WBC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-data-export.html">Sim Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/groot-fine-tuning-sim.html">GR00T Fine-Tuning on Sim Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simulation-workflow/sim-evaluation.html">Sim Evaluation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../real-robot-workflow/real-overview.html">Real Robot Workflow</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-overview.html">Robot Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/isaac-ros-setup.html">Isaac ROS Setup on Thor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/g1-introduction-and-safety.html">G1 Introduction and Safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-teleop.html">Teleoperation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-record.html">Data Recording</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-data-export.html">Data Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-fine-tuning-and-leapp.html">Fine-Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-leapp-export.html">LEAPP Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../real-robot-workflow/real-deployment.html">Deployment</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../conclusion.html">Conclusion</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../shared/teleoperation-data-collection-guide.html">Teleop Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resources/models-and-datasets.html">Models and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agents.html">Agent Skills</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/repos.html">Repos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/isaac-sim/IsaacLab-Arena">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/IsaacTeleop">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA-ISAAC-ROS">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T">Isaac GR00T</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../resources/documentation.html">Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference external" href="https://isaac-sim.github.io/IsaacLab-Arena/main/index.html">Isaac Lab-Arena</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html">Isaac Teleop</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://nvidia-isaac-ros.github.io/">Isaac ROS</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://developer.nvidia.com/isaac/gr00t">Isaac GR00T</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://support.unitree.com/home/en/G1_developer/about_G1">Unitree G1 Developer Guide</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Concepts Overview</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="concepts-overview">
+<h1>Concepts Overview<a class="headerlink" href="#concepts-overview" title="Link to this heading">#</a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">#</a></h2>
+<p>This section covers the core concepts of the GR00T reference workflow.</p>
+<p>This <strong>reference workflow</strong> packages supported models, libraries, frameworks, and a task into a single reproducible workflow for the Unitree G1 humanoid robot.</p>
+</section>
+<section id="what-is-the-gr00t-reference-workflow">
+<h2>What Is the GR00T Reference Workflow<a class="headerlink" href="#what-is-the-gr00t-reference-workflow" title="Link to this heading">#</a></h2>
+<p>The GR00T reference workflow is a structured workflow for Unitree G1 humanoid robot policy learning, spanning from simulation to real hardware.</p>
+<p>It targets engineers who need to understand:</p>
+<ul class="simple">
+<li><p>each stage of the pipeline</p></li>
+<li><p>how those stages connect for a specific manipulation task</p></li>
+<li><p>how to perform the workflow in practice</p></li>
+</ul>
+<p>The workflow also serves as an end-to-end blueprint, not a fixed product stack that every team must adopt unchanged. Its modular design lets robotics teams use the full platform or integrate selected capabilities into existing development pipelines, helping them scale humanoid development without rebuilding the same infrastructure for each robot or task.</p>
+<p>Robotics teams can start from validated development workflows, then adapt them for their own tasks, sensors, and humanoid configurations.</p>
+<figure class="align-default" id="id1">
+<a class=""
+               data-lightbox="../_images/Isaac-GR00T-workflow-diagram.png"
+               href="../_images/Isaac-GR00T-workflow-diagram.png"
+               title="Diagram showing the architecture of the GR00T reference workflow."
+               data-title="Diagram showing the architecture of the GR00T reference workflow."
+               
+               ><img src="../_images/Isaac-GR00T-workflow-diagram.png"
+                     class=""
+                     width=""
+                     height=""
+                     alt="Diagram showing the architecture of the GR00T reference workflow."/>
+                </a><figcaption>
+<p><span class="caption-text">The architecture diagram illustrates how each component in the reference workflow connects, from setup to deployment.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<section id="what-end-to-end-means">
+<h3>What End-to-End Means<a class="headerlink" href="#what-end-to-end-means" title="Link to this heading">#</a></h3>
+<p>Here is a high-level overview of what this workflow covers:</p>
+<p>In this course, <strong>end-to-end</strong> refers to all major stages required to build a humanoid manipulation policy for a task, starting in simulation and ending on the real robot.</p>
+<ol class="arabic simple">
+<li><p><strong>Environment setup</strong> establishes the software stack, task assets, robot embodiment, sensors, and workspace within a simulation environment.</p></li>
+<li><p><strong>Teleoperation and data collection</strong> records demonstrations in simulation or on the real robot.</p></li>
+<li><p><strong>Data conversion</strong> transforms demonstrations into LeRobot-format datasets.</p></li>
+<li><p><strong>GR00T Vision-Language-Action (VLA) post-training</strong> fine-tunes a GR00T policy for the apple pick-and-place task from collected demonstrations.</p></li>
+<li><p><strong>Evaluation in simulation</strong> measures the policy in Isaac Lab-Arena before hardware deployment.</p></li>
+<li><p><strong>Deployment on G1</strong> packages and runs the post-trained VLA policy on the physical robot.</p></li>
+</ol>
+<p>Conceptually, the reference workflow follows a sim-first to deployment flow for a given task. Each stage still needs clear validation.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>A weak dataset, incorrect action mapping, unstable controller, or unrepeatable workspace can break the pipeline even if the surrounding tools are connected correctly.</p>
+</div>
+</section>
+<section id="how-humanoid-robots-learn-tasks">
+<h3>How Humanoid Robots Learn Tasks<a class="headerlink" href="#how-humanoid-robots-learn-tasks" title="Link to this heading">#</a></h3>
+<p>In this workflow, humanoid robots learn manipulation tasks by combining demonstrations, perception, robot state, control, and policy learning.</p>
+<p>A human operator demonstrates the desired behavior through teleoperation. The system records what the robot sees, where its body is, and which actions move the task forward. GR00T then fine-tunes a vision-language-action (VLA) policy on those demonstrations.</p>
+<p>Humanoid manipulation adds another challenge because the robot must move its arms and hands while staying balanced. A standing humanoid must solve manipulation and stability at the same time, unlike a robotic manipulator arm with a fixed base.</p>
+<p>GR00T Whole-Body Control (WBC) supports multiple controller options. AGILE is currently the recommended default for the GR00T end-to-end workflow.</p>
+<p>In this workflow, AGILE is the baseline whole-body controller for standing and balance only, so the operator or learned policy <strong>can focus on upper-body task execution</strong>.</p>
+<section id="the-task-apple-pick-and-place">
+<h4>The Task: Apple Pick-and-Place<a class="headerlink" href="#the-task-apple-pick-and-place" title="Link to this heading">#</a></h4>
+<p>In the target task for this course, the Unitree G1 stands at a table, picks up an apple, and places it on a plate.</p>
+<figure class="align-default">
+<a class=""
+               data-lightbox="../_images/unitree-top-down.jpg"
+               href="../_images/unitree-top-down.jpg"
+               title="The Unitree G1 standing at a table with an apple prop."
+               data-title="The Unitree G1 standing at a table with an apple prop."
+               
+               ><img src="../_images/unitree-top-down.jpg"
+                     class=""
+                     width=""
+                     height=""
+                     alt="The Unitree G1 standing at a table with an apple prop."/>
+                </a></figure>
+</section>
+<section id="why-this-task">
+<h4>Why This Task<a class="headerlink" href="#why-this-task" title="Link to this heading">#</a></h4>
+<p>The apple pick-and-place task exercises the full workflow without requiring complex multi-step reasoning. The task requires:</p>
+<ul class="simple">
+<li><p>Stable standing and balance during reaching</p></li>
+<li><p>Visual identification of the apple and plate</p></li>
+<li><p>Coordinated arm and hand motion for grasping</p></li>
+<li><p>Whole-body adjustment during the transfer</p></li>
+<li><p>Release on the target</p></li>
+</ul>
+<p>This task is intentionally bounded. It is complex enough to exercise perception, teleoperation, whole-body control, policy training, evaluation, and deployment, but simple enough to debug stage by stage.</p>
+<p>With the big picture in place, the following sections examine each stage of the workflow in detail.</p>
+</section>
+</section>
+</section>
+<section id="environment-setup">
+<h2>Environment Setup<a class="headerlink" href="#environment-setup" title="Link to this heading">#</a></h2>
+<section id="everything-in-its-place">
+<h3>Everything in Its Place<a class="headerlink" href="#everything-in-its-place" title="Link to this heading">#</a></h3>
+<p>First, configure the robot and establish a workspace in both simulation and the real world.</p>
+<p>Before collecting data, training a model, or evaluating a policy, the workflow requires a consistent task definition and a repeatable execution environment.</p>
+</section>
+<section id="simulation-setup">
+<h3>Simulation Setup<a class="headerlink" href="#simulation-setup" title="Link to this heading">#</a></h3>
+<p>In simulation, environment setup involves:</p>
+<ul class="simple">
+<li><p>Configuring Isaac Lab-Arena</p></li>
+<li><p>Defining the evaluation task</p></li>
+<li><p>Registering the robot embodiment</p></li>
+<li><p>Adding task objects</p></li>
+<li><p>Setting up observation and action spaces</p></li>
+</ul>
+<section id="what-is-isaac-lab-arena">
+<h4>What Is Isaac Lab-Arena<a class="headerlink" href="#what-is-isaac-lab-arena" title="Link to this heading">#</a></h4>
+<p><a class="reference external" href="https://developer.nvidia.com/isaac/lab-arena" rel="noreferer noopener" target="_blank">Isaac Lab-Arena</a> is an open-source framework built on NVIDIA Isaac Lab for rapidly creating, managing, and evaluating large-scale embodied AI tasks with modular components, rich task variation, and scalable benchmarking tools.</p>
+<figure class="align-default">
+<a class=""
+               data-lightbox="../_images/arena-stack-ari.png"
+               href="../_images/arena-stack-ari.png"
+               title=""
+               data-title=""
+               
+               ><img src="../_images/arena-stack-ari.png"
+                     class=""
+                     width=""
+                     height=""
+                     alt=""/>
+                </a></figure>
+<p>This lets you define tasks from reusable pieces instead of creating each environment from scratch. It also supports GPU-accelerated evaluation across many simulated rollouts, task variations, objects, and environments.</p>
+</section>
+<section id="bringing-in-new-assets">
+<h4>Bringing in New Assets<a class="headerlink" href="#bringing-in-new-assets" title="Link to this heading">#</a></h4>
+<p>Bringing in new assets means adding task objects, robot configurations, scene elements, and observation sources in a way that the rest of the pipeline can consume. The asset setup must support the simulation task and the data schema used later for training.</p>
+<p>The goal is not to make simulation and reality identical. The goal is to make each path explicit, inspectable, and repeatable so you can debug failures at the right layer.</p>
+</section>
+</section>
+<section id="real-robot-setup">
+<h3>Real-Robot Setup<a class="headerlink" href="#real-robot-setup" title="Link to this heading">#</a></h3>
+<p>For the real robot, environment setup involves:</p>
+<ul class="simple">
+<li><p>Validating workstation hardware</p></li>
+<li><p>Confirming robot connectivity</p></li>
+<li><p>Checking camera placement</p></li>
+<li><p>Controlling lighting</p></li>
+<li><p>Setting workspace boundaries</p></li>
+<li><p>Placing objects in the work area</p></li>
+</ul>
+<p>A small physical change can alter the data distribution, so the workspace needs to stay repeatable across collection and evaluation.</p>
+</section>
+</section>
+<section id="data-collection">
+<h2>Data Collection<a class="headerlink" href="#data-collection" title="Link to this heading">#</a></h2>
+<p>High-quality demonstration data is necessary for training robust robot policies. This course uses teleoperation to collect demonstrations.</p>
+<figure class="align-default">
+<a class=""
+               data-lightbox="../_images/zYqxhAGHV26raIAh9p1BS.png"
+               href="../_images/zYqxhAGHV26raIAh9p1BS.png"
+               title=""
+               data-title=""
+               
+               ><img src="../_images/zYqxhAGHV26raIAh9p1BS.png"
+                     class=""
+                     width=""
+                     height=""
+                     alt=""/>
+                </a></figure>
+<section id="teleoperation">
+<h3>Teleoperation<a class="headerlink" href="#teleoperation" title="Link to this heading">#</a></h3>
+<p>Teleoperation is the most common way to collect this task data. A human expert performs the task while the system records demonstrations for <a class="reference external" href="https://www.nvidia.com/en-us/glossary/imitation-learning/" rel="noreferer noopener" target="_blank">imitation learning</a>.</p>
+<p><a class=""
+               data-lightbox="../_images/isaac-teleop-hero.jpg"
+               href="../_images/isaac-teleop-hero.jpg"
+               title="Isaac Teleop in Action"
+               data-title="Isaac Teleop in Action"
+               
+               ><img src="../_images/isaac-teleop-hero.jpg"
+                     class=""
+                     width=""
+                     height=""
+                     alt="Isaac Teleop in Action"/>
+                </a></p>
+<p>Humanoids require more sophisticated teleoperation systems to capture the full range of motion required for complex tasks.</p>
+<p>Humanoid tasks usually require upper-body control so that the operator can demonstrate reaching, grasping, and placement behavior.</p>
+<p>In this workflow, teleoperation is scoped to the device and control paths described in the instructions, such as a PICO headset with inverse kinematics (IK) and AGILE for standing and balance.</p>
+<p>Because human and robot limbs differ in proportion, joint limits, and reachable configurations, teleoperation needs a step called <strong>retargeting</strong>. A retargeting layer maps human motion into commands the robot can physically execute.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Tips for Successful Teleoperation</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">High-quality demonstrations matter more than raw volume. Keep successful episodes, discard failed or interrupted attempts, and vary object placement within the task’s valid range. Consistent pacing also matters because long pauses, abrupt corrections, or inconsistent grasp timing can create confusing action labels for post-training.</p>
+</div>
+</details><details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Learn More About XR Devices for Teleoperation</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">A good way to capture this type of teleoperation data is using extended reality (XR) devices like the PICO 4 Ultra, Meta Quest 3, and Apple Vision Pro headsets.</p>
+</div>
+</details><details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Learn More About Other Teleoperation Methods</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Very simple tasks and robot embodiments can use a keyboard or gamepad by sending velocity or joint-position commands. These devices provide limited degrees of freedom for dexterous tasks.</p>
+<p class="sd-card-text">Leader-follower systems, such as the popular SO-101 robot, can provide more natural control by letting the human expert physically move a leader arm while the follower arm mirrors those motions.</p>
+</div>
+</details><section id="tools-for-collecting-data">
+<h4>Tools for Collecting Data<a class="headerlink" href="#tools-for-collecting-data" title="Link to this heading">#</a></h4>
+<p>This workflow uses three primary tools:</p>
+<ul class="simple">
+<li><p><strong>Isaac Teleop</strong> for teleoperation and recording</p></li>
+<li><p><strong>Isaac Lab-Arena</strong> for simulation-side task execution</p></li>
+<li><p><strong>AGILE</strong> as the recommended default GR00T WBC controller for standing and balance</p></li>
+</ul>
+</section>
+</section>
+<section id="isaac-teleop">
+<h3>Isaac Teleop<a class="headerlink" href="#isaac-teleop" title="Link to this heading">#</a></h3>
+<p><a class="reference external" href="https://nvidia.github.io/IsaacTeleop/main/index.html" rel="noreferer noopener" target="_blank">NVIDIA Isaac Teleop</a> is a teleoperation platform for high-fidelity data collection.</p>
+<p>It provides a standardized device interface for XR headsets and peripherals, a retargeting pipeline, and a data schema for MCAP recording.</p>
+<p>In simulation, Isaac Teleop capabilities integrate with Isaac Lab-Arena and can use CloudXR to stream the simulated environment to the demonstrator’s XR headset in real time. This enables immersive teleoperation from a first-person view.</p>
+<p>On the real robot, Isaac Teleop records live robot and sensor streams for downstream conversion.</p>
+<figure class="align-default">
+<a class=""
+               data-lightbox="../_images/real-robot-teleop-example.gif"
+               href="../_images/real-robot-teleop-example.gif"
+               title=""
+               data-title=""
+               
+               ><img src="../_images/real-robot-teleop-example.gif"
+                     class=""
+                     width=""
+                     height=""
+                     alt=""/>
+                </a></figure>
+<p>A key benefit is consistency across simulation and real-robot collection. Isaac Teleop and Isaac Lab-Arena use shared concepts for device interfaces, retargeting, and recording schemas, which reduces the amount of rework needed when moving from simulated teleoperation to physical robot data collection.</p>
+<section id="using-agile-with-teleoperation">
+<h4>Using AGILE With Teleoperation<a class="headerlink" href="#using-agile-with-teleoperation" title="Link to this heading">#</a></h4>
+<p>Teleoperating a humanoid robot like the G1 is difficult because the operator needs to control arms, hands, torso, legs, and balance at the same time.</p>
+<p>AGILE enables the robot to stand on its own, allowing the operator to focus on fewer axes of motion during teleoperation.</p>
+<p><strong>AGILE</strong> is the baseline whole-body control component for standing and balance in the G1 workflow.</p>
+<p>When integrated with the teleoperation stack, AGILE manages standing and balance while the operator manages upper-body manipulation through XR teleoperation.</p>
+<p>In this course, the key architectural idea is <strong>decoupled whole-body control</strong>. AGILE provides the standing and balance baseline, while upper-body degrees of freedom remain available for inverse kinematics or vision-language-action manipulation policies.</p>
+</section>
+</section>
+</section>
+<section id="data-conversion">
+<h2>Data Conversion<a class="headerlink" href="#data-conversion" title="Link to this heading">#</a></h2>
+<p>For both simulation and real-world collection, convert the data to a correctly mapped format. If observations, robot state, or actions are mapped incorrectly, training quality drops or completely fails, even when the files appear structurally valid.</p>
+<p>Different formats serve different priorities. At teleoperation time, the system requires fast recording, data recovery, and efficient replay.</p>
+<p>LeRobot dataset format is a standardized, machine-learning-optimized format designed specifically for training robot learning models, while MCAP serves as a general-purpose recording format for heterogeneous robotics data.</p>
+<p>The key difference lies in their intended use cases. <strong>MCAP excels at data capture, while LeRobot excels at training and sharing models.</strong></p>
+<section id="lerobot-standardization">
+<h3>LeRobot Standardization<a class="headerlink" href="#lerobot-standardization" title="Link to this heading">#</a></h3>
+<p>This workflow standardizes on the <a class="reference external" href="https://huggingface.co/docs/lerobot/lerobot-dataset-v3" rel="noreferer noopener" target="_blank">Hugging Face LeRobot dataset schema</a> because it stores episodes as observations, robot state, and actions in a structure that aligns with GR00T training (vision-language-action).</p>
+<p>Simulation and real-world collection use different recording formats:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Source</p></th>
+<th class="head"><p>Recording Format</p></th>
+<th class="head"><p>Conversion Path</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Simulation with Isaac Lab-Arena</p></td>
+<td><p>HDF5</p></td>
+<td><p>HDF5 to LeRobot</p></td>
+</tr>
+<tr class="row-odd"><td><p>Real robot with Isaac Teleop</p></td>
+<td><p>MCAP</p></td>
+<td><p>MCAP to LeRobot</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="for-simulation-hdf5-to-lerobot-conversion">
+<h3>For Simulation: HDF5 to LeRobot Conversion<a class="headerlink" href="#for-simulation-hdf5-to-lerobot-conversion" title="Link to this heading">#</a></h3>
+<p>For simulation data, Isaac Lab-Arena records demonstrations as <strong>HDF5</strong> files.</p>
+<p>These files contain joint states, end-effector poses, RGB images, and action labels. A LeRobot converter transforms these HDF5 recordings into the LeRobot dataset format by mapping simulation-specific fields to the standardized schema.</p>
+</section>
+<section id="for-the-real-robot-mcap-to-lerobot-conversion">
+<h3>For the Real-Robot: MCAP to LeRobot Conversion<a class="headerlink" href="#for-the-real-robot-mcap-to-lerobot-conversion" title="Link to this heading">#</a></h3>
+<p>For real-world data collection, Isaac Teleop records demonstrations in MCAP (“em-cap”), an open-source container format designed for multimodal robotics logging. MCAP files serialize sensor streams, robot commands, and camera feeds with timestamps and optional compression.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Learn More About MCAP Recording</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">MCAP is designed for multimodal robotics logging. It can store camera streams, robot state, and commands in a single time-indexed file. MCAP uses efficient binary serialization and supports optional compression, such as LZ4 or Zstandard, which helps with real-time recording where write speed and storage efficiency matter.</p>
+</div>
+</details><p>The system captures real robot demonstrations as live sensor streams across multiple ROS 2 topics, including camera feeds, joint states, wrist force-torque readings, and teleoperation commands. These streams may arrive asynchronously and at different frequencies. A ROS 2 bag records that live stream to disk, and modern ROS 2 systems can store those bag files in MCAP format.</p>
+<p>The MCAP-to-LeRobot converter extracts, synchronizes, and restructures this data into the LeRobot schema.</p>
+<p>After conversion, LeRobot-format datasets can also be pushed to the Hugging Face Hub for sharing, reuse, and direct access from training workflows.</p>
+</section>
+</section>
+<section id="post-training-a-policy">
+<h2>Post-Training a Policy<a class="headerlink" href="#post-training-a-policy" title="Link to this heading">#</a></h2>
+<p>After collecting and converting demonstration data into the LeRobot dataset format, the next step is to post-train a policy.</p>
+<p>Post-training starts from a pretrained GR00T 1.7 foundation model and adapts it to the target task and robot embodiment through imitation learning.</p>
+<p><a class=""
+               data-lightbox="../_images/gr00t.png"
+               href="../_images/gr00t.png"
+               title="GR00T Model Architecture"
+               data-title="GR00T Model Architecture"
+               
+               ><img src="../_images/gr00t.png"
+                     class=""
+                     width=""
+                     height=""
+                     alt="GR00T Model Architecture"/>
+                </a></p>
+<section id="vla-inputs-and-outputs">
+<h3>VLA Inputs and Outputs<a class="headerlink" href="#vla-inputs-and-outputs" title="Link to this heading">#</a></h3>
+<p>GR00T 1.7 is a vision-language-action model. It takes visual information, language instructions, and robot state as inputs, then outputs actions for the robot to execute.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Category</p></th>
+<th class="head"><p>Role in Training</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Vision inputs</strong></p></td>
+<td><p>RGB images from one or more cameras mounted on or around the robot, such as wrist cameras or head cameras</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Language inputs</strong></p></td>
+<td><p>A natural language instruction, such as <code class="docutils literal notranslate"><span class="pre">move</span> <span class="pre">the</span> <span class="pre">apple</span> <span class="pre">to</span> <span class="pre">the</span> <span class="pre">plate</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Robot state inputs</strong></p></td>
+<td><p>The current proprioceptive state of the robot, including joint positions, joint velocities, and end-effector pose</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Action outputs</strong></p></td>
+<td><p>A sequence of joint position targets or action chunks for the controller to execute</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>GR00T uses action chunking, which means the model predicts a short horizon of future actions at once instead of a single next action. This can improve temporal consistency and smoothness during execution.</p>
+<p>The LeRobot dataset schema is organized around the same structure:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">observation.images</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">observation.state</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">action</span></code></p></li>
+</ul>
+<p>That alignment is why format unification during data conversion matters.</p>
+</section>
+<section id="set-up-a-new-embodiment">
+<h3>Set Up a New Embodiment<a class="headerlink" href="#set-up-a-new-embodiment" title="Link to this heading">#</a></h3>
+<p>Because GR00T 1.7 was pretrained on specific robot hardware, adapting it to a new embodiment requires describing the robot’s physical configuration and data layout. This ability to work across new embodiments is one of GR00T’s key features.</p>
+<p>This involves:</p>
+<ul class="simple">
+<li><p><strong>Defining the action space</strong> by specifying which joints are controlled and what ranges are valid.</p></li>
+<li><p><strong>Configuring the observation space</strong> by specifying camera count, camera resolution, and how robot state fields map to the model’s expected inputs.</p></li>
+<li><p><strong>Running embodiment fine-tuning</strong> by post-training on collected demonstrations so the model adapts to the robot’s morphology, dynamics, and task context.</p></li>
+</ul>
+<p>The GR00T training scripts use configuration files to declare the embodiment’s sensor and actuator layout.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Tips for Post-Training</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Before launching post-training, verify the:</p>
+<ul class="simple">
+<li><p class="sd-card-text">foundation model checkpoint</p></li>
+<li><p class="sd-card-text">training schedule</p></li>
+<li><p class="sd-card-text">output location for logs and checkpoints</p></li>
+</ul>
+<p class="sd-card-text">The checkpoint defines the pretrained GR00T 1.7 model you start from. The training schedule controls how long the model trains on the dataset. The output directory stores checkpoints, metrics, and logs for later evaluation.</p>
+<p class="sd-card-text">During training, monitor health signals early. Verify that:</p>
+<ul class="simple">
+<li><p class="sd-card-text">loss starts moving in the expected direction</p></li>
+<li><p class="sd-card-text">GPU memory usage is stable</p></li>
+<li><p class="sd-card-text">validation loss does not diverge immediately</p></li>
+<li><p class="sd-card-text">action prediction error is within a reasonable range</p></li>
+</ul>
+<p class="sd-card-text">This helps catch dataset mapping errors or configuration issues before spending unnecessary compute.</p>
+</div>
+</details></section>
+<section id="hyperparameters-to-tune">
+<h3>Hyperparameters to Tune<a class="headerlink" href="#hyperparameters-to-tune" title="Link to this heading">#</a></h3>
+<p>Hyperparameters are settings that control how training is performed. For GR00T post-training, the key hyperparameters include:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Hyperparameter</p></th>
+<th class="head"><p>Why It Matters</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Learning rate</strong></p></td>
+<td><p>Controls how aggressively the model updates during training. Too high can overwrite the pretrained prior. Too low can prevent adaptation.</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Batch size</strong></p></td>
+<td><p>Controls how many demonstration steps are processed per training update. Larger batches can stabilize gradients but require more GPU memory.</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Number of training steps</strong></p></td>
+<td><p>Controls training duration. Too many steps with limited data can cause overfitting.</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Action chunk size</strong></p></td>
+<td><p>Controls how many future actions the model predicts at once. Larger chunks can improve smoothness but reduce reactivity.</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Dataset mixing ratio</strong></p></td>
+<td><p>Controls sampling frequency when using more than one dataset source.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The resulting artifact is a post-trained GR00T policy checkpoint.</p>
+</section>
+</section>
+<section id="preparing-trained-models-for-real-robot-deployment">
+<h2>Preparing Trained Models for Real-Robot Deployment<a class="headerlink" href="#preparing-trained-models-for-real-robot-deployment" title="Link to this heading">#</a></h2>
+<p>In simulation, Isaac Lab-Arena can evaluate a trained GR00T checkpoint directly. The real-robot path requires an additional export step.</p>
+<p>A training checkpoint is built for training flexibility, not real-time robot execution. It preserves training-time framework behavior that helps during fine-tuning but adds unnecessary overhead during deployment. On the G1, the policy must run as part of a low-latency inference pipeline that handles:</p>
+<ul class="simple">
+<li><p><strong>Preprocessing</strong> robot observations</p></li>
+<li><p><strong>Running GR00T inference</strong></p></li>
+<li><p><strong>Postprocessing</strong> predicted actions for the robot controller</p></li>
+</ul>
+<p>LEAPP, or <strong>Lightweight Export Annotations for Policy Pipelines</strong>, packages that pipeline for deployment. It traces the annotated GR00T policy pipeline, exports the model stages, and produces a deployment descriptor that tells the robot software stack how data flows through preprocessing, inference, and postprocessing.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This export step applies only to the real-robot path. Simulation evaluation uses the trained checkpoint directly in Isaac Lab-Arena.</p>
+</div>
+<p>The detailed export commands, validation steps, and output checks appear later in the real-robot workflow.</p>
+</section>
+<section id="inference-and-evaluation">
+<h2>Inference and Evaluation<a class="headerlink" href="#inference-and-evaluation" title="Link to this heading">#</a></h2>
+<p>Training produces a policy, but a trained policy does not guarantee strong task performance. The next step is to measure how well the policy performs in simulation and on the real robot. Learning and performing well are different milestones.</p>
+<p>Determine policy success by running <strong>inference</strong> to generate actions during test trials, then using <strong>evaluation</strong> to measure task performance.</p>
+<p><strong>Inference</strong> is the process of running a trained policy in an environment. The policy receives live observations and produces actions. In this workflow the model is a VLA, so at each step it perceives the scene and decides what action to take next. Model weights are frozen at this point, so no additional learning happens.</p>
+<p><strong>Evaluation</strong> is the process of combining inference with measurement. Run the policy against many trials and track its success in objective terms.</p>
+<p>Start by evaluating in simulation where failure is cheap and iteration is fast. Automation is straightforward because simulation exposes the full state of the world. After validating in simulation, evaluate on the real robot as the hardware validation point.</p>
+<section id="simulation-isaac-lab-arena">
+<h3>Simulation: Isaac Lab-Arena<a class="headerlink" href="#simulation-isaac-lab-arena" title="Link to this heading">#</a></h3>
+<p>Simulation evaluation acts as a validation gate before deploying on the real robot. Isaac Lab-Arena provides a controlled environment with parallel rollouts, instant resets, task randomization, and safe failure.</p>
+<p>The same task environment used for data collection also supports evaluation. Isaac Lab-Arena spawns the robot, sets up the scene, and feeds simulated observations to the policy.</p>
+<p><strong>A low task success rate in simulation is a strong signal that the policy is not ready for hardware testing.</strong></p>
+<p>Because simulation trials can be repeated quickly, you can use evaluation results to identify failure modes, refine the training setup, add demonstrations, and re-evaluate.</p>
+<p>Evaluation is also a decision point. Use the results to determine whether the policy meets the target success rate, whether failures cluster around a specific task phase, and whether the failures are safe enough to continue testing. If the policy misses the apple, drops the object, places off target, or destabilizes the robot, return to data collection, dataset validation, or training configuration before moving forward.</p>
+</section>
+<section id="real-robot-running-on-edge">
+<h3>Real-Robot: Running on Edge<a class="headerlink" href="#real-robot-running-on-edge" title="Link to this heading">#</a></h3>
+<p>After validating the policy in simulation, move to hardware evaluation on the real robot.</p>
+<p>On the real robot, inference runs on <strong>edge compute</strong>. In this course, that means deploying the LEAPP-exported policy pipeline on Jetson Thor and connecting it to live robot sensor and actuator streams through the robot software stack.</p>
+<p>At each timestep, the robot’s cameras and joint encoders feed observations into the pipeline. The policy predicts the next action chunk, and the system sends commands to the low-level controller for execution.</p>
+<p>The policy inference must run at the frequency required to control the robot in real time, on hardware with limited memory and compute compared to a training machine.</p>
+<p>Real-robot evaluation measures whether the policy completes the apple pick-and-place task while the G1 remains stable and within operational limits. It is the hardware validation point for the real-robot path.</p>
+<p>For this course, a successful real-robot evaluation should show that the policy can:</p>
+<ul class="simple">
+<li><p>Identify the apple and target plate</p></li>
+<li><p>Reach and grasp the apple</p></li>
+<li><p>Move the apple to the plate</p></li>
+<li><p>Release the apple on the target</p></li>
+<li><p>Maintain stable standing behavior</p></li>
+<li><p>Complete the task without a safety abort</p></li>
+</ul>
+<p><strong>Real-robot evaluation is the ultimate test of the end-to-end workflow</strong>.</p>
+<p>Success here means the post-trained policy can execute the apple pick-and-place task on the physical G1 under the tested workspace, hardware, and safety conditions.</p>
+</section>
+</section>
+<section id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading">#</a></h2>
+<p>This module covered how the major pieces of the GR00T reference workflow fit together.</p>
+<ul class="simple">
+<li><p>Isaac Lab-Arena supports simulation task setup and evaluation.</p></li>
+<li><p>Isaac Teleop supports demonstration collection.</p></li>
+<li><p>AGILE, one controller option provided by GR00T WBC, provides the baseline controller for standing and balance during teleoperation and policy execution.</p></li>
+<li><p>LeRobot conversion prepares data for training.</p></li>
+<li><p>GR00T fine-tuning adapts a VLA policy to the task and embodiment.</p></li>
+<li><p>LEAPP prepares the real-robot deployment pipeline.</p></li>
+</ul>
+<p>Now that you have this mental model, verify prerequisites and set up the environment so you can start the hands-on modules.</p>
+</section>
+<section id="what-s-next">
+<h2>What’s Next<a class="headerlink" href="#what-s-next" title="Link to this heading">#</a></h2>
+<p>Proceed to <a class="reference internal" href="agents.html"><span class="std std-doc">Agent Skills</span></a> to explore the optional agent skills for troubleshooting, tutoring, and working through the rest of this course.</p>
+<hr class="docutils" />
+<div class="toctree-wrapper compound">
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">End-to-End Physical AI With the Unitree G1</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="agents.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Agent Skills</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+
+
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#overview">Overview</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-is-the-gr00t-reference-workflow">What Is the GR00T Reference Workflow</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#what-end-to-end-means">What End-to-End Means</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#how-humanoid-robots-learn-tasks">How Humanoid Robots Learn Tasks</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#the-task-apple-pick-and-place">The Task: Apple Pick-and-Place</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#why-this-task">Why This Task</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-setup">Environment Setup</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#everything-in-its-place">Everything in Its Place</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#simulation-setup">Simulation Setup</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#what-is-isaac-lab-arena">What Is Isaac Lab-Arena</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#bringing-in-new-assets">Bringing in New Assets</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#real-robot-setup">Real-Robot Setup</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#data-collection">Data Collection</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#teleoperation">Teleoperation</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#tools-for-collecting-data">Tools for Collecting Data</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#isaac-teleop">Isaac Teleop</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#using-agile-with-teleoperation">Using AGILE With Teleoperation</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#data-conversion">Data Conversion</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#lerobot-standardization">LeRobot Standardization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#for-simulation-hdf5-to-lerobot-conversion">For Simulation: HDF5 to LeRobot Conversion</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#for-the-real-robot-mcap-to-lerobot-conversion">For the Real-Robot: MCAP to LeRobot Conversion</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#post-training-a-policy">Post-Training a Policy</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#vla-inputs-and-outputs">VLA Inputs and Outputs</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#set-up-a-new-embodiment">Set Up a New Embodiment</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hyperparameters-to-tune">Hyperparameters to Tune</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#preparing-trained-models-for-real-robot-deployment">Preparing Trained Models for Real-Robot Deployment</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-and-evaluation">Inference and Evaluation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#simulation-isaac-lab-arena">Simulation: Isaac Lab-Arena</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#real-robot-running-on-edge">Real-Robot: Running on Edge</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#conclusion">Conclusion</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-s-next">What’s Next</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+<a class="footer-brand logo" href="https://www.nvidia.com">
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-blk-for-screen.svg" class="logo__image only-light" alt="NVIDIA"/>
+  <img src="../_static/nvidia-logo-horiz-rgb-1c-wht-for-screen.svg" class="logo__image only-dark" alt="NVIDIA"/>
+</a></div>
+      
+        <div class="footer-item">
+
+<div class="footer-links">
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">Privacy Policy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/privacy-center/">Manage My Privacy</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/preferences/start/">Do Not Sell or Share My Data</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/terms-of-service/">Terms of Service</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/accessibility/">Accessibility</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/about-nvidia/company-policies/">Corporate Policies</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/product-security/">Product Security</a>
+   | 
+  
+  
+  
+  <a class="external" href="https://www.nvidia.com/en-us/contact/">Contact</a>
+  
+  
+  
+</div>
+</div>
+      
+        <div class="footer-item">
+
+
+
+
+  <p class="copyright">
+    
+      Copyright © 2026 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+<div class="extra_footer">
+  
+  
+    <script type="text/javascript">if (typeof _satellite !== "undefined") {_satellite.pageBottom();}</script>
+    
+  
+</div></div>
+      
+    </div>
+  
+  
+  
+</div>
+
+  </footer>
+  </body>
+</html>

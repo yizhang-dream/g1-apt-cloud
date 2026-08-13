@@ -1,0 +1,58 @@
+# C1: router token prior + aux PPO, stable settings
+robot: g1
+control_dt: 0.02
+
+sonic:
+  token_dim: 64
+  action_dim: 29
+  decoder_output_keys: ["pd_targets"]
+
+apt:
+  latent_dim: 64
+  aux_dim: 12
+  num_skills: 2
+  aux_scale: 0.15
+  kp: 80
+  kd: 2
+  use_skill_selection: false
+  initial_token_path: null
+  initial_aux_std: 0.01
+  train_token: false
+
+mujoco:
+  robot_scene: gear_sonic/data/robot_model/model_data/g1/scene_43dof.xml
+  wbc_config_path: gear_sonic/utils/mujoco_sim/wbc_configs/g1_29dof_sonic_model12.yaml
+  sim_dt: 0.005
+  control_decimation: 4
+  episode_length_s: 12.0
+  use_elastic_band: false
+  band_scale: 0.0
+
+commands:
+  stand_only: false
+  vx_min: 0.0
+  vx_max: 0.8
+  vy_min: 0.0
+  vy_max: 0.0
+  yaw_min: 0.0
+  yaw_max: 0.0
+
+training:
+  num_envs: 1
+  num_steps: 256
+  max_iterations: 400
+  save_interval: 50
+  log_interval: 10
+  output_dir: outputs/apt_aux_c1
+  band_anneal_iters: 0
+
+ppo:
+  lr: 0.0003
+  minibatch_size: 256
+  num_epochs: 10
+  gamma: 0.99
+  lam: 0.95
+  clip_eps: 0.2
+  entropy_coef: 0.0003
+  value_coef: 0.5
+  max_grad_norm: 0.5
