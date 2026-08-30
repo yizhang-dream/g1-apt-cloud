@@ -149,6 +149,7 @@
 | `to37_decoder.json` / `to37_decoder.pt` | 同上 | TO37b 条件化解码器（单速度压缩 PASS / 跨速度泛化 FAIL） |
 | `to38_ref.npz` | 同上 | TO38 RL 注入 LUT（M=120，角色→SONIC 重排 + B 门符号 + wrap_gap=0 meta） |
 | `to38a/` / `to38b/` | 同上 | TO38 双臂 ckpt + train_log（主臂 obs 注入 w=0.3 / 对照臂 obs 零块 w=0，128 envs×2000 iters） |
+| `to38{a,b}_eval_*.json`（14 组） | 同上 | TO38 配对评测：两臂 {best,final}×低速带 A + best 全 battery；配对差分结论见 tracker/TO.md TO38-eval 行 |
 
 ## 9. 汇总图表（2026-08-27 补生成，服务器与本地 `apt_g1/outputs/figs/`）
 
