@@ -1,201 +1,145 @@
-# APT-RL × SONIC × G1 复现实验综合报告（2026-08-12）
+# APT-RL × SONIC × G1 复现实验 · 收束报告（2026-08-14 定稿）
 
-## 1. 任务与结论速览
+> 【层位 L2 侧轴｜收束定稿，两个核心问题的最终回答】↑ `HANDOFF/00_FINAL_SUMMARY.md`
+> （L0 结论卡）｜↓ `refine-logs/tracker/` 系列文件（L3 证据行·事实源）。
+> 本报告是项目的**最终定稿**：自洽、可从头读，回答项目的两个核心问题并给出证据。
+> 逐实验细节见 `EXPERIMENT_TRACKER.md`（台账）、`STAGE_SUMMARY_2026-08-13.md`（阶段结论）、
+> `ISAAC_APT_LOG.md` / `DATA_GENERALIZATION_LOG.md` / `MUJOCO_APT_LOG.md`（逐实验日志）。
 
-- 目标：在 MuJoCo 上按 APT-RL 论文补齐"控制器线 + 数据线"，之后转 Isaac Lab
-  继续探索论文结合方向，回答"是否需要更好的数据/网络保证泛化性"，并验证论文
-  "先给特权地图、后蒸馏感知"的顺序。
-- **一句话结论**：蒸馏先验（冻结相位路由器 + SONIC 解码器）是当前管道最优
-  控制器（平坦地面全项通过、粗糙地形盲走也有鲁棒性）；论文的 aux / elevation /
-  步态选择机制在逐一补齐后均未带来"前进 + 地形存活"兼得的正向价值，根因是
-  替代管道缺少力矩级解码器、结构化连续潜空间、千级并行与强制任务奖励——这些
-  正是论文与主流开源实现（unitree_rl_mjlab）的生效条件。
+## 1. 项目目标与一句话结论
 
-## 2. 论文方法对照表（论文用了什么，我们怎么处理）
+在 Unitree G1 人形上，用 NVIDIA GEAR-SONIC 官方 token 数据 + **冻结解码器**，复现
+Science Robotics 2026 APT-RL 管线（TO 数据 → 潜空间 → RL 增强 → 地形泛化），回答：
 
-| 论文阶段 | 论文方法 | 我们的实现 | 结论 |
+- **① 蒸馏先验是否必要？**
+- **② 论文机制在替代管道（SONIC 冻结先验）里是否成立？**
+
+**一句话结论**：冻结 SONIC 解码器是**防作弊的承重墙**（vanilla 直出关节学出蹲蹭漏洞，而
+latent + 冻结解码器从零也能真走路）；论文的**步态选择 / 感知蒸馏 / 潜空间解耦**机制成立，
+但**位置 token 下的 aux 永远破坏**，而论文真正的**力矩级 aux 前馈（SRB TO）是四足专用
+简化、不迁移到 43-DOF 双足 G1**——这两条 negative 结果共同划定了「SONIC 替代管道」的边界。
+
+## 2. 两个核心问题的最终回答
+
+### 2.1 蒸馏先验是否必要？
+
+**解码器是防作弊承重墙；路由器不必要但显著提速；「必要」是设备/数据条件下的结论。**
+
+| 消融 | 结果 | 含义 |
+|---|---|---|
+| E9/E11 vanilla（直出 29 维关节，无解码器） | 0/3 立即倒，或**蹲蹭漏洞**（h_min 0.20、body 系 vx 假速度 0.5–0.65、世界 disp=0） | 无解码器 = 奖励可被游戏 |
+| **E45 从零 latent + 冻结解码器**（无 warm start） | 3/3 真走路（h_min 0.76、disp 14m） | 解码器锁住正常步态流形，从零也能学 |
+| E27（有解码器、无路由器） | 19m 可走 | 路由器不必要，但 ≈0.4× 位移 |
+| 冻结先验（路由器 + 解码器） | 47m | 路由器 ≈2.5× 提速 |
+| mjlab 从零（无任何 SONIC 组件，官方配方 1024 envs） | 平地 44.5–48m、地形 0.08 平滑退化 | 足够算力+正确配方下，蒸馏非普适必要 |
+
+**结论**：管道内「解码器/token 流形」是关键先验（防作弊 + 提供步态），「路由器」只是
+提速器；换后端（mjlab）后从零也可行，所以「蒸馏必要」是**当前设备（3060/64 envs）与
+数据条件下的可用下限**，不是普适定律。
+
+### 2.2 论文机制在替代管道是否成立？
+
+**部分成立。** 逐机制判定：
+
+| 论文机制 | 判定 | 证据 |
+|---|---|---|
+| 2Hz 门控 | ✅ 成立 | E13：位移 3–11m → 34–37m |
+| 可学习步态选择（gait logit） | ✅ 成立 | E20c gate-only 选先验最优组；MQ11 步态模式是真杠杆；TO04 跨步态外推爆炸（步态身份必要） |
+| 感知蒸馏（depth→elevation） | ✅ 成立 | P1 corr 0.954、P2-lite corr 0.965（≈几何上界） |
+| 潜空间解耦（方向+速度） | ✅ 成立（自研） | E37/E39：对抗解耦修漂移，快且直 |
+| 连续潜空间（相位插值） | ⚠️ 中性 | E26 全项达标但不增益 |
+| **aux（位置 token 管道）** | ❌ 破坏 | E2–E22b、E25 消融全一致：aux 永远是破坏源 |
+| **aux（力矩级前馈，SRB TO）** | ❌ 不成立 | TO06：SRB（2D 单刚体）力矩太简化，不驱动 G1（见 §5） |
+| 地形泛化（蒸馏路径盲走） | ❌ 0.08 不可破 | E41/E42/E47-T：0.06 全过、0.08 全倒（见 §4） |
+
+## 3. 对照阶梯（核心数字，A 60s 直行位移）
+
+| 方案 | 位移 | 说明 |
+|---|---|---|
+| 冻结先验（路由器 + SONIC 解码器） | 47m | 满速，管道最优 |
+| E26 纯相位偏移（aux 关） | 46m | 学习型无损但中性 |
+| E27 latent→VAE→SONIC（无行为先验） | 19m | 无路由器可走，半速 = 解码器流形天花板 |
+| E39 双解耦 VAE（walk 先验） | 24.65m（vx 0.417，直行 0.98） | 潜空间线历史最佳 |
+| **E47 从零 + E39 VAE + heading** | **23.8m（vx 0.42，直行 0.944）** | **从零无 warm start，A/B/C/D 全过** |
+| E9/E11 vanilla | 0m | 无解码器失败（蹲蹭/立即倒） |
+| mjlab 从零（原生 sim） | 44.5–48m | 非 SONIC 官方配方对照锚点 |
+
+**关键洞察**：速度天花板链条——冻结 walk 解码器流形 ~0.35 m/s（E28–E30）→ 速度条件化
+VAE 破到 0.535 但带转向偏置（E31）→ 方向条件化修漂移但回落（E35）→ **双解耦（方向+速度）
+在 0.42 m/s 上快且直**（E39/E47）。0.535 快 bin 与「直行」不可兼得，是流形固有 Pareto 前沿。
+
+## 4. 地形结论
+
+- **rough 0.06**：蒸馏路径所有方案全过（冻结先验、E39、E42 地形训练、E47 从零 12/12）。
+- **rough 0.08**：蒸馏路径**全员 0/9–0/12 全倒**（冻结先验、E26、E39、E42、E47 从零）。
+- **〔归因修正，MQ09〕** 0.08 悬崖是**「蒸馏路径（无 planner 10Hz 重规划）」的边界，不是
+  冻结解码器的边界**：同一解码器 + 官方 planner 闭环重规划，在 MuJoCo rough 0.08 上
+  walk ≈ flat（3.38m ≈ 3.39m/6s）。mjlab 从零（原生 sim）在 0.08 无悬崖（15–45m）也佐证
+  至少部分是 SONIC/Isaac 地形配方特有。
+- 步态选择是真杠杆（MQ11）：0.14 上 crawl 3/3 vs walk 0/3；但「walk→crawl 中途切换」
+  脆弱（MQ12，需官方 ADAPTING 状态机）。
+
+## 5. 力矩级 aux：为什么没复现出来（TO 线，重要负结果）
+
+论文的 aux 是力矩级：`τ = τ_dec(latent) + kp·(q_default + 0.2·aux − q) − kd·q̇`。本项目
+位置 token 管道下的 aux 永远是破坏源（§2.2），根因是「缺力矩级解码器 + 自洽 TO 数据」。
+我们补上了这个前置，但**力矩级前馈仍不成立**：
+
+| 力矩标签 | MAE | 作为 G1 前馈 |
+|---|---|---|
+| PD 力矩（反馈） | 18.76 N·m | 站住不前进（MQ05） |
+| ID 力矩（mj_inverse 重放） | 4.13 N·m | 站住不前进（MQ05） |
+| **自洽 SRB TO 力矩** | **0.27–0.31（单步态）/ 0.57–1.1（多步态 3 关节）** | **短暂移动即倒（TO06）** |
+
+- **可学性成立**：自洽 SRB TO 力矩 ~20× 优于 PD 标签、~4× 优于 ID；跨 walk+run × 6 速度 ×
+  3 关节（hip/knee/ankle）可学 MAE 0.57–1.1 N·m；且**步态身份是必要输入**（跨步态外推
+  MAE 32.9/70.6/32.1 爆炸，印证论文 gait logit 设计）。
+- **可迁移性不成立（TO06）**：把 SRB TO 力矩当 G1 前馈（τ = τ_SRB + PD），**不走路**——
+  sign+1 前进 0.9–1.3m/1.6–2s 即倒，sign−1 高速后退；对比 ID 力矩至少「站住」。
+- **根因**：SRB 是 2D 单刚体（36kg 点质量、点足），与 43-DOF 双足 G1 差太远——力矩量级
+  （hip 峰值 25–76 N·m）远小于 G1 行走所需（~100–300 N·m），且不含腿惯性/躯干/手臂/3D。
+  **论文 SRB TO 是四足（trot/bound）专用简化，不迁移到人形**。
+
+## 6. 论文方法对照表（逐阶段：论文 vs 我们）
+
+| 论文阶段 | 论文方法 | 我们 | 结论 |
 |---|---|---|---|
-| 数据 | 2D SRBD 轨迹优化，动量守恒周期轨道，含力矩 | SONIC 官方闭环数据（68,093 步），无力矩、非周期 | 替换；周期与力矩是两个实质差异 |
-| 表示学习 | TVAE 统一潜空间（z∈ℝ16，KL 0.1）| 相位路由器（PCA 相位 + 40-bin 原型）；VAE-lite 试过 | VAE-lite 后验坍缩/闭环失败；显式相位+原型最稳 |
-| RL | latent 动作 + aux(12) + gait logit，Isaac Gym 千级 env | phase/aux/gate + elevation，64 envs | aux/gate/elevation 均无正向价值；相位锚定可存活但倒走 |
-| 混合控制 | τ=τ_dec + PD(q_default−q+a·a_aux)，kp=80 | 位置目标 q_des + Isaac Lab PD | 无前馈力矩，物理语义不同 |
-| 感知 | 教师特权地图 → 策略；学生 depth+LIDAR→GRU 蒸馏 | 特权 9×9 elevation patch（E16）；学生复原地图（P1） | 地图无 latent/gait 通道时不产生价值；蒸馏机制验证成立 |
-| 奖励 | velocity tracking（Rudin 2022）+ style terms | 5 项最小奖励 + progress/anti-stop | 最小奖励允许 idle/倒走坍缩 |
-| 并行 | 数千 env | 64 envs（RTX 3060） | 规模差 ~64 倍 |
+| 数据 | 2D SRBD TO，周期+力矩 | ① SONIC 官方闭环数据（无力矩）；② 自建 SRB TO + IK → 力矩 | ① 覆盖够但非周期；② 自洽可学但**模型太简化**（TO06） |
+| 表示学习 | TVAE 统一潜空间 z∈ℝ16 | 相位路由器（PCA+40 原型）→ 后升级为速度/方向条件化 VAE（E31–E43） | 显式相位+原型最稳；速度/方向双解耦是自研正向机制 |
+| RL | latent + aux(12) + gait logit，千级 env | latent/gate/elevation，64 envs | gate 正向；**aux 破坏**；64 envs 样本不足（mjlab 1024 可行） |
+| 混合控制 | τ=τ_dec + PD(q_default+0.2aux−q)−kd·q̇ | ① 位置 q_des + PD；② τ_SRB + PD | ① 语义不同；② **SRB 前馈不迁移**（TO06） |
+| 感知 | 教师特权地图 → 策略；学生 depth+LIDAR→GRU | 特权 elevation patch（E16）；学生复原（P1/P2-lite） | 蒸馏机制成立；但地图需 latent/gait 通道才能产生价值 |
+| 奖励 | velocity tracking + style | 5 项最小奖励 + progress/anti-stop | 最小奖励允许 idle/倒走坍缩，需强制前进压力 |
+| 并行 | 数千 env | 64 envs（RTX 3060） | 规模差 ~64 倍；千级正解 = mjlab |
 
-## 3. MuJoCo 两条线（已完成，见 MUJOCO_APT_LOG.md）
+## 7. 已判死路线（勿重复，完整清单见 `STAGE_SUMMARY` §2）
 
-- 控制器线：7 个 RL 变体全部劣于 aux=0 基线 → 判定单进程 MuJoCo PPO 基础设施
-  不足，终止。
-- 数据线：闭合周期 token 数据集构建（闭合误差 0.00000 达成）→ 重训路由器复测
-  无益 → 漂移根源在控制器层缺闭环修正，终止。
+1. 官方 token 开环重放扩充转向/横移（SONIC 是 200ms 闭环跟踪器）。
+2. 闭合周期 token 数据（闭合误差 0 但无益）。
+3. PD 力矩解码器（PD 标签是反馈、非论文 TO 规划前馈）。
+4. 开环重放补数据后 BC 增广（闭环 20–30× 复合误差）。
+5. 直接微调 SONIC 解码器（E44 四变体全塌成打转）。
+6. **SRB TO 力矩直接当 G1 前馈**（TO06，本报告新增——需升级为全身/腿级 TO）。
 
-## 4. Isaac Lab 阶段
+## 8. 产物位置
 
-### 4.1 机制矩阵（E1–E14，平坦地面）
+- **代码**：`apt_g1/`（`srb_to.py`/`srb_to_torque.py`/`train_torque_decoder_srb.py` = TO 数据
+  管线；`eval_torque_srb.py` = 力矩闭环回放；`isaac/` = Isaac 训练栈；`planner_*.py` = 官方
+  planner 复刻）。
+- **checkpoint（服务器）**：`apt_g1/outputs/isaac_e47_heading/policy_it_500.pt`（从零最优）；
+  `GR00T-WholeBodyControl/outputs/isaac_e{37,38,39,40,42,43,44}*`；VAE `apt_g1/outputs/token_vae_e{37,39,43}/`。
+- **评测 JSON（服务器）**：`apt_g1/outputs/isaac_eval_e*.json`、`eval_e47_*.json`、`eval_e47_terrain_*.json`。
+- **文档**：本报告 + `EXPERIMENT_TRACKER.md`（台账）+ `STAGE_SUMMARY_2026-08-13.md`（阶段结论）
+  + `HANDOFF/`（交接包，`00_FINAL_SUMMARY.md` 为一页纸版）。
 
-- 蒸馏先验必要：vanilla RL 800/2000 iters 均 0/3 立即倒；先验版全项通过。
-- aux 在平坦地面无正向收益（超速 + 偏航漂移）；修正版 2Hz 门控（E13）显著
-  减少漂移（位移 3–11m → 34–37m），是论文门控机制的正向验证。
-- 离散 token 相位选择学不出振荡器（E3 系列）；TVAE 平滑流形缺失是根因。
+## 9. 剩余开放方向与建议
 
-### 4.2 地形/感知/动作通道（E15–E20）
+1. **（唯一真正剩下的大方向）G1 全身/腿级 TO（非 SRB）**：解锁「力矩级 aux 正向」的正路。
+   需要把 TO 从「2D 单刚体」升级到「含腿惯性/躯干的多体模型」，或直接生成**无位置跟踪器的
+   力矩驱动运动**（区别于 A-ID 的「带位置控制重放 → 受污染 ID」）。代价：数周级，研究级问题。
+2. （可选）E47 的 D「跳跃」假阳性修正：E39 VAE 只覆盖 WALK token，模式命令被忽略——要真跳
+   需把 VAE 扩展到多步态 token（TO04 已证步态身份必要）。
+3. （可选）真机部署/sim-to-real：未做（无真机条件）。
 
-| 变体 | rough 0.06 | rough 0.08 | 前进质量 |
-|---|---|---|---|
-| 冻结先验 noaux | 3/3 | 0–1/3 | 42–46m |
-| E15 盲 aux | 2/3 | 0/3 | 1.7–9.7m |
-| E16 aux+elevation | 0/3 | 0/3 | - |
-| E17 gate+aux+elevation | 0/3（或站住） | 0/3 | - |
-| E17b +progress | 0/3 | 0/3 | 能移动 |
-| E18 phase 直控 | 0/3 | 0/3 | 能移动 |
-| E19 phase 锚定 | **3/3** | **3/3** | 倒走/站住 |
-| E19c +aux 正则 | 1/3 | 0/3 | 平坦前进 8s |
-| E20 +anti-stop | 0/3、0/3、2/3@0.08（爬行） | 平坦 3/3（快但画圈） | 速度/存活冲突 |
-| E20c gate+anti-stop | 0/3（倒走） | **0.06 3/3 前进 38–43m；0.08 一 seed 59s** | gate 学对（选先验组），aux 破坏 |
-
-**E20 系列最终结论**：
-1. anti-stop 方向压力能让 gate 头收敛到"选择先验自己的 walk_fwd 组"（aux=0
-   时行为与冻结先验一致）；这是唯一"学习不破坏先验"的组件。
-2. aux 通道从 E2 到 E20c 始终是破坏源：任何学习到的 12 维关节偏移修正都让先验
-   退化（超速/偏航/倒走/跌倒）。论文 aux 的正向价值依赖力矩级解码器（PD 稳定
-   下的力矩修正），SONIC 位置目标 + 关节偏移的替代无法复现。
-3. 结论收敛：**现有管道最优 = 冻结先验 + （可选）anti-stop 训练的 gate 选择
-   先验组；继续提升必须换力矩级数据/解码器、千级并行或真机部署**。
-
-**E20c gate-only 全量验证**（2026-08-12）：平坦 A 3/3（vx 0.71–0.77）、B 12/12、
-C 3/3、D 3/3 —— 与冻结先验全项持平；rough 0.06 A 3/3（38–43m）、B 10/12、
-C 3/3、D 3/3。可学习步态选择（论文 gait logit 类比）在正确奖励压力下被验证为
-"无损组件"；aux 是唯一破坏源。结果文件：
-`outputs/e20c_gateonly_{flat,rough06}_BCD.json`。
-
-**跨地形扩展**：rough 0.06 三 terrain seed **9/9 全部前进存活**（38–45m）；
-rough 0.08 三 seed 0/9 完成但存活 21–59s（= 冻结先验边缘区，无增益无损失）。
-结果文件：`outputs/e20c_gateonly_n{0.06,0.08}_s{1,2}.json`。
-
-### 4.3 数据/网络泛化（v8/v8c/v9/VAE-lite）
-
-- v8 共享相位回归：失败（相位误差 1.6–2.3 rad）。
-- v8c 共享回归解码器：walk_fwd 3/3，其余差于离散原型。
-- exp3 补采 walk 6 方向 + v9 重建：walk_fwd/back 3/3；新方向受教师上限限制
-  （官方 token 回放 95–270 步内倒）。
-- VAE-lite：后验坍缩；最佳 checkpoint 闭环 walk 0/3。
-- **最优结构**：显式 PCA 相位 + 离散原型查表（原型是流形精确点，闭环不漂移）。
-
-### 4.4 感知（P1）
-
-- 学生（粗 3×3+噪声 感知代理 + 基座状态）→ 特权 9×9 地图：corr 0.954。
-- 机制验证：感知能复原地图（论文 stage-4 同构）；真实 depth/LIDAR 需渲染环境。
-
-## 5. 对用户问题的最终回答
-
-1. **是否需要更好的数据？** 是，但覆盖只是必要不充分。补全 walk 方向后仍受
-   教师（SONIC 官方 token + 本 MuJoCo env）上限约束；要突破需换带力矩标注的
-   数据（论文 TO 方案）或换解码器/环境。
-2. **是否需要更好的网络？** 是，但必须是"带正则的结构化潜空间"，朴素条件回归
-   （v8c）与 VAE-lite 都会离开流形；显式相位 + 原型是当前数据下的最优结构。
-3. **先给地图、后蒸馏感知？** 顺序正确且已验证：特权地图已接入（E16），感知
-   复原机制已验证（P1）；但地图要产生价值，必须先有能消费它的 latent/gait
-   通道 + 强制任务奖励（E19 的相位锚定是第一步，anti-stop 正在补第二步）。
-
-## 6. 开源参考（佐证方向）
-
-- unitree_rl_mjlab（Apache-2.0）：地形 raycast 高度扫描直接进策略 + 显式
-  phase 观测 + 丰富 task/style 奖励 + 4096 envs。
-- Gaitor/VAE-Loco：连续可解释统一步态潜空间（与论文 TVAE 同思路）。
-- Isaac-Velocity-Flat-G1-v0/v1：Isaac Gym 版 G1 速度跟踪，v1 做过 sim-to-real。
-- CALM/ASE：latent skill + 对抗先验。
-
-## 7. 遗留与建议
-
-- **硬件**：RTX 3060 12GB 限制 64 envs；要复现论文级结果需 ≥4096 envs
-  （如 4090/A6000/多卡）。
-- **数据**：力矩标注数据（TO 或系统辨识）是解锁力矩级解码器的前提。
-- **解码器**：SONIC 位置 token 解码器对 off-manifold 输入敏感；力矩级解码器
-  （PD 稳定）才能容忍潜空间插值。
-- **渲染/视频**：无显示服务器无法出 3D 视频；本地有显示环境后可补。
-- **文档 "G 200 T"**：未找到，待用户提供路径。
-
-## 7b. 视频产出（2026-08-12 本地渲染）
-
-服务器无显示无法渲染，改在本地 Windows（Python 3.13 + mujoco 3.11 + CPU 推理）
-渲染成功，每个 42 秒（2100 帧 @50fps）：
-
-- v9（exp_all3 新方向数据）高光：`apt_g1/outputs/distill_v9/v9_reel_local.mp4`
-- v6（旧路由器，新方向 fallback）对照：`apt_g1/outputs/distill_final/v6_reel_local.mp4`
-
-两者场景一致（idle/walk_fwd/walk_back/walk±45°/walk+135°/jump/slow_walk），
-可直接对比"新数据路由器 vs fallback 行为"。脚本：
-`apt_g1/render_reel_local.py`、`render_reel_local_v6.py`。
-
-## 7c. MuJoCo 粗糙地形 + 力矩级解码器（2026-08-12 夜，详见 DATA_GENERALIZATION_LOG.md）
-
-### MuJoCo 本地 hfield 鲁棒性曲线（修复 MuJoCo 3.11 hfield 碰撞语义后）
-
-- 关键修复：`elevation` 是内联数字非文件；`base_z` 不参与碰撞（碰撞面 =
-  geom.pos.z + size[2]×data）。修复前机器人穿地（ncon=0），早期"全倒"为伪结果。
-- 本地地形（0.4m 粗格、σ=1.2、无坡度上限）比 Isaac 同标称更陡：0.02/0.03/0.04
-  的 p99 坡度 ≈ 0.08/0.12/0.16，max ≈ 0.11/0.16/0.22。
-- 曲线（walk 前进，3 seeds）：0.00–0.02 3/3（15.8–17.1m）→ 0.03 2/3（v9）→
-  0.04 0/3 → 0.06 0/3（v6 1/3 完成）→ 0.08/0.10 0/3。按坡度对齐后与 Isaac
-  阈值（0.06 3/3）一致 → 差异是生成参数不是控制器。
-- **平台对照闭合**：平滑地形（coarse 1.0m、σ=3.0，p99 坡度≈Isaac）下
-  0.06 **3/3 完成**（14.5–17.0m）、0.08 0/3——与 Isaac 完全一致。
-- 视频：陡地形 `rough_v9.mp4`（12.5s 倒）、`rough_v6.mp4`（30.9s 倒）；
-  平滑地形 `rough_v9_smooth.mp4` / `rough_v6_smooth.mp4`（走满 20s）；
-  结果 `outputs/rough_mujoco_sweep.json` / `rough_mujoco_smooth.json`。
-- 慢走组：0.06 上靠站住刷存活（vx≈0.01），无实际通过能力
-  （`rough_mujoco_slow.json`）。
-
-### 力矩级解码器（论文混合控制的最直接测试，结论为负面）
-
-1. 从 exp_all3 离线重算 PD 力矩标签（14,633 行）；phase+cmd→力矩 MLP
-   val RMSE 18.76 N·m（≈预测零 = 不可约反馈误差）。
-2. 论文式闭环（tau_dec + PD(q_default)，aux=0）：平坦 3/3 存活 20s 但
-   **vx≈0.03 不前进**；粗糙 0.06 62–82 步倒。混合式（token PD + tau_dec）
-   平坦 63–73 步倒（双倍反馈失稳）。
-3. **结论**：闭环 PD 力矩标签不是论文 TO 那种"规划前馈"，无法替代 token
-   位置路径；力矩通道无法用 PD 标签廉价补上。这从机制上解释了 E2–E20c
-   aux 全负面的根源。
-
-### E21a（进行中）：gate + anti-stop + 特权地图，rough 0.06 训练
-
-把地图给 gate 通道（而非 E16 的 aux 通道），检验"地图经步态选择通道产生
-价值"（论文/unitree_rl_mjlab 的主流接法）。若 0.08 上比 E20c（0/9）有提升，
-则地图+gate 机制成立。
-
-**E21a 结果**：gate-only 3/3（37–43m，= 先验）；gate+aux 2/3 慢走（vx 0.14）；
-0.08 上 gate-only 0/3（同 E20c）——**特权地图不能突破 token 流形上限**。
-另发现 E20c 训练本就带地图观测（checkpoint obs=172），E21a 与 E20c 的差异
-主要在 anti-stop 参数；E21a gate 在未见台阶上迁移更差（2/3 慢爬）。
-
-### E21b：先验×离散地形（Isaac 内置 4 类）
-
-| 地形 | 冻结先验 A60s | E20c gate-only | E20c gate+aux |
-|---|---|---|---|
-| stairs（4–8cm） | 3/3，18–22m | — | — |
-| stairs_hi（8–14cm） | 3/3，14–20m | 3/3，9–17m | 3/3 但 vx≈0.04 站住 |
-| discrete（5–10cm ×10） | 3/3，48m | — | — |
-| stones（0.3–0.5m 间距） | 0/3（2 步内倒） | 0/3 | — |
-
-**结论**：先验自带小台阶/小障碍跨越能力；垫脚石是明确盲区（需精确落脚）；
-gate-only 保持先验行为，aux 依旧破坏（台阶上站住不爬）。
-
-### P2-lite：深度图像 → 特权高程补丁（MuJoCo 本地，第 4 阶段机制验证）
-
-单目深度（128×96）→ 9×9 高程补丁回归：CNN 单帧 corr 0.74 → +GRU/BPTT
-0.87 → +跨地形数据（3 档振幅、3077 帧）**0.965（MAE 0.0265m）**，与几何
-反投影上界（0.0275m）持平，接近 P1 语义代理（0.0085m）。结论：感知复原
-地图完全可行，数据量+时序结构是关键；真实单目深度弱于语义代理，印证论文
-加 2D LIDAR 的动机。图：`outputs/depth_student_ladder.png`、
-`depth_student_p2lite.png`。
-
-## 8. 文件索引
-
-- 日志：`refine-logs/{MUJOCO_APT_LOG, ISAAC_APT_LOG, DISTILL_EXPERIMENT,
-  DATA_GENERALIZATION_LOG, EXPERIMENT_TRACKER, APT_PROJECT_SUMMARY}.md`
-- 代码：`apt_g1/`（isaac/、train_phase_router_v8/v8c/v9.py、train_vae_lite.py、
-  train_perception_distill.py、drive_exp3.py、eval_*.py）
-- 数据：`apt_g1/data/{exp_all, exp_all3, exp1_raw, exp2_raw, exp3_raw}/`
-- 结果：`apt_g1/outputs/{terr_*.json, eval_battery_v8/v9.json,
-  eval_vae_lite_ema0.3.json, percept_meta.json, terrain_summary.png}`
+**建议**：核心问题已答、边界已划清。若要继续，唯一值得投入的是方向 1（全身 TO）；否则本报告
+即项目收束。交接从 `HANDOFF/README.md` 开始。

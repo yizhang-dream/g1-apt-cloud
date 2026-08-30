@@ -3,10 +3,14 @@
 ## 1. 连接
 
 ```text
-IP/Host: 10.16.52.225
-用户:    cvgluser
-命令:    ssh cvgluser@10.16.52.225
+命令:    ssh lab-ts        # 本机 ~/.ssh/config 别名（Tailscale：100.112.92.62）
 ```
+
+- **与旧地址 `cvgluser@10.16.52.225` 是同一台机器**（2026-08-27 比对三把 sshd
+  host key 指纹完全一致，同一系统安装）：机器从校园网搬到家用路由网络
+  （192.168.31.x），改走 Tailscale 访问。`~/ros2_data` 及全部 canonical 产物不受影响。
+- 硬件即原训练机：Legion 刃 7000P，RTX 3060 12GB；跑大 batch Isaac 训练前核对显存。
+- gotcha：包装脚本在 `/tmp/run_apt_isaac.sh`，**机器重启即丢失**；重建方法见 §3。
 
 ## 2. 目录布局（/home/cvgluser/ros2_data）
 

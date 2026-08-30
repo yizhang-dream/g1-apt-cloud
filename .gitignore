@@ -47,3 +47,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# --- Agent session state (evo backend; local only) ---
+.openevo/

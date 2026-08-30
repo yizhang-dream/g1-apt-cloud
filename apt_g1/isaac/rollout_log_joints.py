@@ -1,9 +1,12 @@
-"""Log a latent-policy rollout's joint trajectory for offline skeleton animation.
+"""Log a latent-policy rollout's joint trajectory for offline rendering.
 
 Camera-free (enable_cameras=False) so it avoids the Isaac viewport/hydra render
-segfault on this server. Runs the E27/E29-style latent policy for N steps and
+segfault on this server. Runs the E27/E39-style latent policy for N steps and
 saves per-step base pose + 29 joint positions (SONIC G1_ISAACLab_ORDER) to npz.
-Feed the npz to animate_skeleton.py for a matplotlib stick-figure video.
+
+E41+: supports --terrain rough --terrain-noise --terrain-seed and exports the
+Isaac heightfield (full map) + tile-0 world origin so the MuJoCo renderer can
+build a matching hfield ground.
 """
 from __future__ import annotations
 
@@ -28,6 +31,10 @@ def main():
     ap.add_argument("--steps", type=int, default=400)
     ap.add_argument("--command-vx", type=float, default=0.8)
     ap.add_argument("--seed", type=int, default=0)
+    # E41: terrain options (export heights for the MuJoCo hfield renderer)
+    ap.add_argument("--terrain", choices=["plane", "rough"], default="plane")
+    ap.add_argument("--terrain-noise", type=float, default=0.06)
+    ap.add_argument("--terrain-seed", type=int, default=0)
     ap.add_argument(
         "--decoder-path",
         default=(
@@ -58,7 +65,9 @@ def main():
 
     cfg = AptFlatG1EnvCfg()
     cfg.scene.num_envs = 1
-    cfg.terrain = make_terrain_importer_cfg("plane", 0.0, seed=cli.seed)
+    cfg.terrain = make_terrain_importer_cfg(
+        cli.terrain, cli.terrain_noise, seed=cli.terrain_seed
+    )
     cfg.sonic_decoder_path = cli.decoder_path
     cfg.router_model_dir = cli.router_model_dir
     cfg.use_2hz_gate = True
@@ -113,17 +122,66 @@ def main():
             # keep the commanded vx pinned (some envs resample)
             env._commands[0, 0] = cli.command_vx
 
+    # E41: export a terrain height window around the trajectory from the USD
+    # mesh (best effort; done after the rollout so base_xyz is known)
+    heights = None
+    tile_origin = None
+    try:
+        from pxr import UsdGeom
+
+        def _find_mesh(p):
+            if p.GetTypeName() == "Mesh":
+                return p
+            for c in p.GetChildren():
+                r = _find_mesh(c)
+                if r is not None:
+                    return r
+            return None
+
+        stage = simulation_app.context.get_stage()
+        mp = _find_mesh(stage.GetPrimAtPath("/World/ground/terrain"))
+        if mp is not None:
+            pts = np.asarray(UsdGeom.Mesh(mp).GetPointsAttr().Get(), dtype=np.float32)
+            bx, by = base_xyz[:, 0], base_xyz[:, 1]
+            x0, x1 = float(bx.min()) - 1.5, float(bx.max()) + 1.5
+            y0, y1 = float(by.min()) - 1.5, float(by.max()) + 1.5
+            m = ((pts[:, 0] >= x0) & (pts[:, 0] <= x1)
+                 & (pts[:, 1] >= y0) & (pts[:, 1] <= y1)
+                 & (pts[:, 2] > -0.1))
+            w = pts[m]
+            gx = np.unique(np.round(w[:, 0] / 0.1) * 0.1)
+            gy = np.unique(np.round(w[:, 1] / 0.1) * 0.1)
+            zi = np.zeros((len(gy), len(gx)), dtype=np.float32)
+            ix = np.searchsorted(gx, np.round(w[:, 0] / 0.1) * 0.1)
+            iy = np.searchsorted(gy, np.round(w[:, 1] / 0.1) * 0.1)
+            np.maximum.at(zi, (iy, ix), w[:, 2])
+            heights = zi
+            tile_origin = np.array([gx[0], gy[0], 0.0], dtype=np.float32)
+            print(f"[rollout] terrain window export: {len(pts)} verts -> "
+                  f"grid {heights.shape} x[{gx[0]:.1f},{gx[-1]:.1f}] "
+                  f"y[{gy[0]:.1f},{gy[-1]:.1f}] "
+                  f"hmin {heights.min():.3f} hmax {heights.max():.3f}")
+    except Exception as e:  # noqa: BLE001
+        print("[rollout] terrain export failed:", repr(e))
+
     out = Path(cli.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        out,
+    kw = dict(
         base_xyz=base_xyz,
         base_quat=base_quat,
         joint_pos=joint_pos,
         command_vx=np.float32(cli.command_vx),
         fell_at=np.int32(fell_at),
         body_names=np.array(env._body_names),
+        terrain=cli.terrain,
+        terrain_noise=np.float32(cli.terrain_noise),
+        terrain_seed=np.int32(cli.terrain_seed),
     )
+    if heights is not None:
+        kw["heights"] = heights
+    if tile_origin is not None:
+        kw["tile_origin"] = tile_origin
+    np.savez_compressed(out, **kw)
     disp = float(np.linalg.norm(base_xyz[-1, :2] - base_xyz[0, :2]))
     mean_vx = float((base_xyz[-1, 0] - base_xyz[0, 0]) / (N / 50.0))
     print(f"[rollout] steps={N} fell_at={fell_at} disp={disp:.2f}m mean_vx={mean_vx:.3f}")

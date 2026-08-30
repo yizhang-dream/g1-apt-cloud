@@ -60,6 +60,9 @@ gr00t/
 
 ## 未决事项（摘要）
 
-- mjlab 从零训练暂停于 ~900/5000 iters（checkpoint 已存，resume 命令见 HANDOFF/04）。
+- **mjlab 从零训练（M-FROM0）已完成**：resume 到总 6500 iters，末迭代
+  fell_over 0.125（model_6499.pt + policy.onnx）；E28–E39 速度/方向条件化
+  潜空间见 `STAGE_SUMMARY_2026-08-13.md` 方向 D（E37 快且直 0.37 档；E38
+  证明方向解耦不是解锁 0.535 的钥匙；E39 双解耦达潜空间线最佳 24.65m）。
 - 自洽 TO/逆动力学"规划"力矩数据：复现论文 aux 正向价值的最后前置条件，当前不可得。
 - `apt_g1/isaac/server_*.py` 三件与非 server 版同源但已分叉演进，哪套为"正统"未判定。

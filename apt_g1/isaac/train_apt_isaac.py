@@ -43,6 +43,21 @@ def build_args():
     ap.add_argument("--phase-mode", action="store_true")
     ap.add_argument("--phase-anchor", action="store_true")
     ap.add_argument("--latent-mode", action="store_true")
+    # E44: decoder fine-tuning. Action space = 29-d joint targets; the policy
+    # owns a trainable SONIC decoder (E39 latent -> VAE -> token -> decoder).
+    ap.add_argument("--decft", action="store_true")
+    ap.add_argument("--decoder-reg", type=float, default=1.0)
+    # E44: separate (smaller) LR for the fine-tuned decoder; None = same LR
+    ap.add_argument("--decoder-lr", type=float, default=None)
+    # E44v2: weight-space anchor + action noise scale (guards against the
+    # decoder drifting off the official manifold, which broke E44 v1)
+    ap.add_argument("--decoder-wreg", type=float, default=0.0)
+    ap.add_argument("--decft-aux-std", type=float, default=-2.0)
+    # E44 two-phase: phase 1 trains z against the FROZEN official decoder
+    ap.add_argument("--freeze-decoder", action="store_true")
+    # E44p1-fix: z-noise scale (phase_init_std); larger = real z exploration so
+    # the z-head gets a usable score-function gradient through the decoder
+    ap.add_argument("--decft-phase-std", type=float, default=-4.0)
     ap.add_argument(
         "--latent-vae-path",
         default="/home/cvgluser/ros2_data/apt_g1/outputs/token_vae_e27/vae.pt",
@@ -60,11 +75,29 @@ def build_args():
     ap.add_argument("--latent-kl-prior", choices=["zero", "walk"], default="zero")
     # E31: speed-conditioned VAE decoder (D(z, phase, v_bin) -> token)
     ap.add_argument("--latent-speed-bins", action="store_true")
-    # E35: direction+speed-conditioned VAE decoder (D(z, phase, v_bin, psi_bin))
+    # E35: direction+speed-conditioned VAE decoder (D(z,phi,v_bin,psi_bin))
     ap.add_argument("--latent-dir-bins", action="store_true")
+    # E48: full-joint residual escape channel (RuN/ReSkill-style). Action
+    # becomes [z(16), res(29)]; q_des = q_decoder(z) + res_scale*clamp(res).
+    ap.add_argument("--latent-residual", action="store_true")
+    ap.add_argument("--res-scale", type=float, default=0.4)
+    ap.add_argument("--res-clip", type=float, default=1.0)
+    ap.add_argument("--res-l2", type=float, default=0.0)
+    # E48c: freeze the residual (zeroed in the env) for the first N control
+    # steps so the z-head first learns a working controller on terrain.
+    ap.add_argument("--res-freeze-steps", type=int, default=0)
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
+    ap.add_argument("--to-ref", action="store_true",
+                    help="TO38: append the 12-d TO reference obs block (zeros without --to-ref-npz)")
+    ap.add_argument("--to-ref-npz", default="",
+                    help="TO38: LUT from apt_g1/to38_export_ref.py (empty = zero block, paired control arm)")
+    ap.add_argument("--to-ref-obs-zero", action="store_true",
+                    help="TO38: control arm -- load LUT (clock/diagnostics) but zero the obs block")
+    ap.add_argument("--to-ref-w", type=float, default=0.0, help="TO38: tracking reward weight")
+    ap.add_argument("--to-ref-sigma2", type=float, default=0.1)
+    ap.add_argument("--to-ref-gate-sigma2", type=float, default=0.0036)
     ap.add_argument("--aux-scale", type=float, default=0.2)
     ap.add_argument("--aux-l2", type=float, default=0.0)
     ap.add_argument("--aux-rate", type=float, default=0.0)
@@ -76,7 +109,7 @@ def build_args():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="outputs/isaac_apt_aux")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
-    ap.add_argument("--terrain", choices=["plane", "rough"], default="plane")
+    ap.add_argument("--terrain", choices=["plane", "rough", "rough_paper", "rough_sym"], default="plane")
     ap.add_argument("--terrain-noise", type=float, default=0.04)
     ap.add_argument("--terrain-seed", type=int, default=0)
     ap.add_argument("--use-elevation", type=int, default=0)
@@ -84,6 +117,8 @@ def build_args():
     ap.add_argument("--progress-scale", type=float, default=0.0)
     ap.add_argument("--anti-stop", type=float, default=0.0)
     ap.add_argument("--anti-stop-thresh", type=float, default=0.3)
+    # E44v3: penalty on yaw-rate (omega_z^2) to suppress the spin gait
+    ap.add_argument("--yaw-rate-penalty", type=float, default=0.0)
     ap.add_argument("--resume", default=None)
     ap.add_argument(
         "--router-model-dir",
@@ -153,6 +188,7 @@ def main():
     cfg.progress_scale = cli.progress_scale
     cfg.anti_stop_scale = cli.anti_stop
     cfg.anti_stop_thresh = cli.anti_stop_thresh
+    cfg.yaw_rate_penalty = cli.yaw_rate_penalty
     if cfg.use_gate_sel:
         cfg.action_space = 13  # aux(12) + gate(1)
     cfg.phase_mode = cli.phase_mode
@@ -161,8 +197,22 @@ def main():
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_speed_bins = cli.latent_speed_bins
     cfg.latent_dir_bins = cli.latent_dir_bins
+    cfg.latent_residual = cli.latent_residual
+    cfg.res_scale = cli.res_scale
+    cfg.res_clip = cli.res_clip
+    cfg.res_l2_scale = cli.res_l2
+    cfg.res_freeze_steps = cli.res_freeze_steps
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
+    cfg.to_ref = cli.to_ref
+    cfg.to_ref_npz = cli.to_ref_npz
+    cfg.to_ref_obs_zero = cli.to_ref_obs_zero
+    cfg.to_ref_w = cli.to_ref_w
+    cfg.to_ref_sigma2 = cli.to_ref_sigma2
+    cfg.to_ref_gate2 = cli.to_ref_gate_sigma2
+    if cfg.to_ref:
+        # obs block: [sin psi, cos psi, q_ref6_rel, pitch, z, heel_x_rel, heel_z]
+        cfg.observation_space += 12
     cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
     cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
     cfg.latent_phase_rate_max = cli.latent_phase_rate_max
@@ -170,6 +220,15 @@ def main():
     if cli.latent_mode:
         cfg.action_space = 16  # latent z only (no aux / gate)
         cfg.observation_space += 14  # _last_phase 2 -> 16 in the observation
+        if cli.latent_residual:
+            cfg.action_space = 16 + 29  # z(16) + full-joint residual(29)
+            cfg.observation_space += 29  # residual action feedback
+    if cli.decft:
+        from apt_g1.isaac.decft_policy import OBS_DIM as DECFT_OBS_DIM
+
+        cfg.decft_mode = True
+        cfg.action_space = 29  # normalized joint targets (decoder output)
+        cfg.observation_space = DECFT_OBS_DIM  # 91 base + 930 hist + 2 phase
     cfg.aux_scale = cli.aux_scale
     cfg.aux_l2_scale = cli.aux_l2
     cfg.aux_rate_scale = cli.aux_rate
@@ -189,11 +248,25 @@ def main():
             hidden_dim=256,
             use_phase=False,
         ).to("cuda:0")
+    elif cli.decft:
+        from apt_g1.isaac.decft_policy import DecFtPolicy
+
+        env = AptFlatG1Env(cfg)
+        policy = DecFtPolicy(
+            obs_dim=cfg.observation_space,
+            vae_path=cli.latent_vae_path,
+            decoder_path=cli.decoder_path,
+            vx_max=cli.vx_max,
+            aux_init_std=cli.decft_aux_std,
+            phase_init_std=cli.decft_phase_std,
+            freeze_decoder=cli.freeze_decoder,
+            device="cuda:0",
+        ).to("cuda:0")
     else:
         env = AptFlatG1Env(cfg)
         policy = AptPPOPolicy(
             obs_dim=cfg.observation_space,
-            aux_dim=12,
+            aux_dim=29 if cli.latent_residual else 12,
             gate_k=3 if cfg.use_gate_sel else 0,
             hidden_dim=256,
             use_phase=not cfg.use_gate_sel and not cfg.latent_mode,
@@ -201,6 +274,10 @@ def main():
         ).to("cuda:0")
     latent_prior_mean = None
     if cli.latent_mode and cli.latent_kl_prior == "walk":
+        zw = np.load(str(Path(cli.latent_vae_path).parent / "z_walk.npy"))
+        latent_prior_mean = torch.from_numpy(zw).float().to("cuda:0")
+    if cli.decft and cli.latent_kl_prior == "walk":
+        # E44: keep z near the E39 walk manifold while the decoder adapts
         zw = np.load(str(Path(cli.latent_vae_path).parent / "z_walk.npy"))
         latent_prior_mean = torch.from_numpy(zw).float().to("cuda:0")
     trainer = PPOTrainer(
@@ -212,10 +289,25 @@ def main():
         latent_prior_mean=latent_prior_mean,
         max_iters=cli.iters,
         device="cuda:0",
+        decoder_reg_coef=cli.decoder_reg if cli.decft else 0.0,
+        decoder_lr=cli.decoder_lr if cli.decft else None,
+        decoder_wreg_coef=cli.decoder_wreg if cli.decft else 0.0,
     )
     start_it = 0
     if cli.resume:
-        policy.load_state_dict(torch.load(cli.resume, map_location="cuda:0"))
+        sd = torch.load(cli.resume, map_location="cuda:0")
+        if cli.decft:
+            # partial warm start: keep encoder/z-head/critic from the E39
+            # checkpoint; decoder stays at official init, aux heads are dropped
+            cur = policy.state_dict()
+            sd = {
+                k: v
+                for k, v in sd.items()
+                if k in cur and tuple(v.shape) == tuple(cur[k].shape)
+            }
+            policy.load_state_dict(sd, strict=False)
+        else:
+            policy.load_state_dict(sd)
         start_it = int(Path(cli.resume).stem.split("_")[-1])
         if start_it >= cli.iters:
             raise SystemExit(
@@ -225,7 +317,7 @@ def main():
 
     rollout = cli.rollout
     T, N, D = rollout, env.num_envs, cfg.observation_space
-    aux_dim = 29 if cli.env == "vanilla" else 12
+    aux_dim = 29 if (cli.env == "vanilla" or cli.decft or cli.latent_residual) else 12
     phase_labels_buf = None
     if cli.env == "vanilla":
         buf_phase_none = True
@@ -246,7 +338,7 @@ def main():
     buf = {
         "obs": torch.zeros(T, N, D, device="cuda:0"),
         "phase": torch.zeros(
-            T, N, 16 if cli.latent_mode else 2, device="cuda:0"
+            T, N, 16 if (cli.latent_mode or cli.decft) else 2, device="cuda:0"
         ),
         "aux": torch.zeros(T, N, aux_dim, device="cuda:0"),
         "logp": torch.zeros(T, N, device="cuda:0"),
@@ -276,7 +368,11 @@ def main():
         for t in range(T):
             act, logp, ent, val, _ = policy.act(obs)
             buf["obs"][t] = obs
-            if cli.env == "vanilla":
+            if cli.decft:
+                buf["phase"][t] = act["phase"].detach()
+                buf["aux"][t] = act["aux"].detach()
+                action = act["aux"]
+            elif cli.env == "vanilla":
                 buf["aux"][t] = act["aux"].detach()
                 action = act["aux"]
             else:
@@ -288,7 +384,10 @@ def main():
                     )
                 else:
                     buf["phase"][t] = act["phase"].detach()
-                    if cfg.latent_mode:
+                    if cfg.latent_mode and cfg.latent_residual:
+                        # E48: [z(16), res(29)] -- the aux head IS the residual
+                        action = torch.cat([act["phase"], act["aux"]], dim=1)
+                    elif cfg.latent_mode:
                         action = act["phase"]
                     else:
                         action = torch.cat([act["phase"], act["aux"]], dim=1)
@@ -345,11 +444,25 @@ def main():
         )
         hist["vx"].append(vx)
         if it % 10 == 0 or it == cli.iters - 1:
+            dec_dw = 0.0
+            if cli.decft:
+                # E44: total weight drift of the fine-tuned decoder vs official
+                dec_dw = float(
+                    sum(
+                        (p.detach() - rp.detach()).pow(2).sum().item()
+                        for p, rp in zip(
+                            policy.decoder.net.parameters(),
+                            policy.decoder_ref.net.parameters(),
+                        )
+                    )
+                    ** 0.5
+                )
             print(
                 f"[{it}/{cli.iters}] rew={mean_rew:.3f} fall={fall_rate:.3f} "
                 f"vx={vx:.3f} loss={stats['loss']:.4f} ploss={stats['ploss']:.4f} "
                 f"ent={stats['ent']:.4f} kl={stats['kl']:.6f} "
-                f"expl={stats['expl']:.5f} dt={it_time:.1f}s",
+                f"expl={stats['expl']:.5f} dreg={stats['dreg']:.5f} "
+                f"dec_dw={dec_dw:.4f} dt={it_time:.1f}s",
                 flush=True,
             )
         if (it + 1) % 50 == 0 or it == cli.iters - 1:

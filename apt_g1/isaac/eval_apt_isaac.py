@@ -33,6 +33,10 @@ def build_args():
     ap.add_argument("--phase-anchor", action="store_true")
     ap.add_argument("--aux-scale", type=float, default=0.2)
     ap.add_argument("--latent-mode", action="store_true")
+    # E44: decoder fine-tuning policy (29-d joint-target actions). The
+    # checkpoint contains the fine-tuned SONIC decoder; run A/B/C only (the
+    # D jump test needs the router mode path, which decft bypasses).
+    ap.add_argument("--decft", action="store_true")
     ap.add_argument(
         "--latent-vae-path",
         default="/home/cvgluser/ros2_data/apt_g1/outputs/token_vae_e27/vae.pt",
@@ -46,13 +50,23 @@ def build_args():
     ap.add_argument("--latent-speed-bins", action="store_true")
     # E35: direction+speed-conditioned VAE decoder (must mirror training)
     ap.add_argument("--latent-dir-bins", action="store_true")
+    # E48: full-joint residual escape channel (must mirror training). aux head
+    # of the checkpoint is 29-d; --aux-zero gives the residual-off ablation.
+    ap.add_argument("--latent-residual", action="store_true")
+    ap.add_argument("--res-scale", type=float, default=0.4)
+    ap.add_argument("--res-clip", type=float, default=1.0)
+    ap.add_argument("--use-elevation", type=int, default=0)
     # E32: heading/yaw reward (rollout dynamics only; no effect on eval metrics)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
+    # TO38: reference obs injection (must match the trained policy's obs dim)
+    ap.add_argument("--to-ref", action="store_true")
+    ap.add_argument("--to-ref-npz", default="")
+    ap.add_argument("--to-ref-obs-zero", action="store_true")
     # E33: open-loop yaw-bias compensation (rad/s). Cancels a systematic
     # turning bias (e.g. E31's ~-0.07 rad/s = -4 deg/s left drift).
     ap.add_argument("--yaw-bias-comp", type=float, default=0.0)
-    ap.add_argument("--terrain", choices=["plane", "rough"], default="plane")
+    ap.add_argument("--terrain", choices=["plane", "rough", "rough_paper", "rough_sym"], default="plane")
     ap.add_argument("--terrain-noise", type=float, default=0.04)
     ap.add_argument("--terrain-seed", type=int, default=0)
     ap.add_argument(
@@ -194,6 +208,12 @@ def rollout(
                 with torch.no_grad():
                     act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
                 action = act["aux"]
+            elif getattr(env, "_decft", False):
+                # E44: policy action IS the 29-d joint-target vector
+                if not use_aux:  # should not happen (decft keys force use_aux)
+                    with torch.no_grad():
+                        act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                action = act["aux"]
             elif getattr(env, "_gate_policy", False):
                 with torch.no_grad():
                     act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
@@ -204,6 +224,14 @@ def rollout(
                 with torch.no_grad():
                     act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
                 action = act["latent"]
+                if getattr(env, "_latent_residual", False):
+                    # E48: append the full-joint residual (policy aux head).
+                    # noaux / aux_zero rollouts zero it -> pure-prior ablation.
+                    if use_aux and not aux_zero:
+                        res = act["aux"]
+                    else:
+                        res = torch.zeros_like(act["aux"])
+                    action = torch.cat([action, res], dim=1)
             else:
                 action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
                 action[:, 2:] = aux
@@ -283,13 +311,31 @@ def main():
         policy = AptPPOPolicy(
             obs_dim=cfg.observation_space, aux_dim=29, use_phase=False
         ).to("cuda:0")
+    elif cli.decft:
+        from apt_g1.isaac.decft_policy import DecFtPolicy, OBS_DIM as DECFT_OBS_DIM
+
+        cfg = AptFlatG1EnvCfg()
+        cfg.observation_space = DECFT_OBS_DIM
+        policy = DecFtPolicy(
+            obs_dim=cfg.observation_space,
+            vae_path=cli.latent_vae_path,
+            decoder_path=cli.decoder_path,
+            vx_max=0.8,
+        ).to("cuda:0")
     else:
         cfg = AptFlatG1EnvCfg()
         if cli.latent_mode:
             cfg.observation_space += 14  # _last_phase 2 -> 16 in the observation
+        cfg.use_elevation = bool(cli.use_elevation)
+        if cfg.use_elevation:
+            cfg.observation_space += cfg.elev_grid * cfg.elev_grid
+        if cli.latent_residual:
+            cfg.observation_space += 29  # residual action feedback
+        if cli.to_ref:
+            cfg.observation_space += 12  # TO38 reference block
         policy = AptPPOPolicy(
             obs_dim=cfg.observation_space,
-            aux_dim=12,
+            aux_dim=29 if cli.latent_residual else 12,
             use_phase=not cli.latent_mode,
             latent_dim=16 if cli.latent_mode else 0,
         ).to("cuda:0")
@@ -303,11 +349,18 @@ def main():
     cfg.phase_mode = cli.phase_mode
     cfg.phase_anchor = cli.phase_anchor
     cfg.latent_mode = cli.latent_mode
+    cfg.decft_mode = cli.decft
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_speed_bins = cli.latent_speed_bins
     cfg.latent_dir_bins = cli.latent_dir_bins
+    cfg.latent_residual = cli.latent_residual
+    cfg.res_scale = cli.res_scale
+    cfg.res_clip = cli.res_clip
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
+    cfg.to_ref = cli.to_ref
+    cfg.to_ref_npz = cli.to_ref_npz
+    cfg.to_ref_obs_zero = cli.to_ref_obs_zero
     cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
     cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
     cfg.latent_phase_rate_max = cli.latent_phase_rate_max
@@ -330,6 +383,8 @@ def main():
 
     # initial obs
     env._vanilla = cli.env == "vanilla"
+    env._decft = cli.decft
+    env._latent_residual = cli.latent_residual
     obs_dict, _ = env.reset()
     env._last_obs = obs_dict["policy"]
 
@@ -339,11 +394,18 @@ def main():
     pz = cli.phase_zero
     az = cli.aux_zero
     lp = cli.latent_mode
+    if cli.decft:
+        # single policy key (no aux/noaux split; D needs the router mode path)
+        key_list = ["aux"]
+        if "D" in tests:
+            tests.discard("D")
+    else:
+        key_list = ["aux", "noaux"] if not pp else ["phaseaux"]
 
     # ---- A. 60s walk @ 0.8 ----
 
     if "A" in tests:
-        for key in (["aux", "noaux"] if not pp else ["phaseaux"]):
+        for key in key_list:
             out["A_walk60"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
@@ -355,7 +417,7 @@ def main():
 
     if "B" in tests:
         dirs = {"fwd": [500.0, 0, 0], "back": [-500.0, 0, 0], "left": [0, 500.0, 0], "right": [0, -500.0, 0]}
-        for key in (["aux", "noaux"] if not pp else ["phaseaux"]):
+        for key in key_list:
             out["B_disturbance"][key] = {}
             use_aux = key != "noaux"
             for dname, dvec in dirs.items():
@@ -373,7 +435,7 @@ def main():
             (0.0, 0.0, 3), (0.25, 0.0, 6), (0.0, 0.0, 3), (0.25, -0.43, 6),
             (0.0, 0.0, 3), (0.25, 0.43, 6), (0.0, 0.0, 3), (0.8, 0.0, 8),
         ]
-        for key in (["aux", "noaux"] if not pp else ["phaseaux"]):
+        for key in key_list:
             out["C_switch"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
@@ -389,7 +451,7 @@ def main():
             mdir=np.array([1.0, 0.0, 0.0], dtype=np.float32),
             fdir=np.array([1.0, 0.0, 0.0], dtype=np.float32),
         )
-        for key in (["aux", "noaux"] if not pp else ["phaseaux"]):
+        for key in key_list:
             out["D_jump"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:

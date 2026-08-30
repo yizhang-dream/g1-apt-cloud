@@ -146,10 +146,34 @@ class PPOTrainer:
         max_iters: int = 500,
         value_coef: float = 0.5,
         device: str = "cuda:0",
+        decoder_reg_coef: float = 1.0,  # E44: drift regularizer for decoder fine-tune
+        decoder_lr: "float | None" = None,  # E44: separate (smaller) decoder LR
+        decoder_wreg_coef: float = 0.0,  # E44v2: weight-space anchor to official
+        skip_nan: bool = True,  # E44: skip optimizer step if any grad is NaN
     ):
         self.policy = policy.to(device)
         self.device = device
-        self.optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
+        if decoder_lr is not None and getattr(policy, "decoder_ft", False):
+            dec_params = [
+                p
+                for n, p in policy.named_parameters()
+                if n.startswith("decoder.") and p.requires_grad
+            ]
+            rest_params = [
+                p
+                for n, p in policy.named_parameters()
+                if not n.startswith("decoder.") and p.requires_grad
+            ]
+            self.optimizer = torch.optim.Adam(
+                [
+                    {"params": rest_params},
+                    {"params": dec_params, "lr": decoder_lr},
+                ],
+                lr=lr,
+            )
+        else:
+            self.optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
+        self.skip_nan = skip_nan
         self.gamma = gamma
         self.lam = lam
         self.clip_eps = clip_eps
@@ -166,6 +190,8 @@ class PPOTrainer:
         self.max_grad_norm = max_grad_norm
         self.max_iters = max_iters
         self.value_coef = value_coef
+        self.decoder_reg_coef = decoder_reg_coef
+        self.decoder_wreg_coef = decoder_wreg_coef
         self.it = 0
 
     def compute_gae(
@@ -227,8 +253,16 @@ class PPOTrainer:
         for start in range(0, T * N, self.minibatch_size):
             mb = idx[start : start + self.minibatch_size]
             p = self.policy.forward_actor(obs[mb])
-            ad = Normal(p["aux_mean"], p["aux_log_std"].exp())
-            lp = ad.log_prob(aux[mb]).sum(-1)
+            if getattr(self.policy, "decoder_ft", False):
+                # E44: the decoder is the policy's mean network. Recompute mu
+                # from the STORED latent z (phase) so PPO gradients reach the
+                # decoder weights; reg keeps it near the official decoder.
+                aux_mean, dec_reg = self.policy.action_mean(phase[mb], obs[mb])
+                ad = Normal(aux_mean, p["aux_log_std"].exp())
+                lp = ad.log_prob(aux[mb]).sum(-1)
+            else:
+                ad = Normal(p["aux_mean"], p["aux_log_std"].exp())
+                lp = ad.log_prob(aux[mb]).sum(-1)
             if phase is not None:
                 pd = Normal(p["phase_mean"], p["phase_log_std"].exp())
                 lp = lp + pd.log_prob(phase[mb]).sum(-1)
@@ -268,10 +302,33 @@ class PPOTrainer:
                     + phase_warm_coef
                     * torch.nn.functional.mse_loss(p["phase_mean"], phase_labels[mb])
                 )
+            if getattr(self.policy, "decoder_ft", False):
+                # E44: keep the fine-tuned decoder near the official one
+                loss = loss + self.decoder_reg_coef * dec_reg
+                if self.decoder_wreg_coef > 0.0:
+                    # E44v2: direct weight-space anchor (||theta - theta_ref||^2)
+                    wdrift = sum(
+                        (p - rp).pow(2).sum()
+                        for p, rp in zip(
+                            self.policy.decoder.net.parameters(),
+                            self.policy.decoder_ref.net.parameters(),
+                        )
+                    )
+                    loss = loss + self.decoder_wreg_coef * wdrift
             self.optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-            self.optimizer.step()
+            nan_skip = 0.0
+            if self.skip_nan and any(
+                p.grad is not None and not torch.isfinite(p.grad).all()
+                for p in self.policy.parameters()
+            ):
+                # E44: NaN guard -- drop this minibatch's update (keeps the
+                # fine-tuned decoder from exploding the run)
+                self.optimizer.zero_grad()
+                nan_skip = 1.0
+            else:
+                self.optimizer.step()
             losses.append(
                 {
                     "loss": loss.item(),
@@ -280,6 +337,12 @@ class PPOTrainer:
                     "ent": ent.mean().item(),
                     "kl": kl.mean().item() if phase is not None else 0.0,
                     "expl": expl_coef,
+                    "dreg": (
+                        dec_reg.item()
+                        if getattr(self.policy, "decoder_ft", False)
+                        else 0.0
+                    ),
+                    "nan_skip": nan_skip,
                 }
             )
         self.it += 1

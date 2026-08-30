@@ -100,6 +100,13 @@ def build_mode0_obs(
         obs[p : p + 29] = jv[idx]
         p += 29
 
+    # The "g1" encoder mode requires only 4 observations; the three between
+    # joint_velocities and anchor_orientation_10frame are zero-filled but still
+    # occupy their offsets in the 1762-d layout:
+    #   motion_root_z_position_10frame_step5 (10) + motion_root_z_position (1)
+    #   + motion_anchor_orientation (6) = 17
+    p += 17
+
     for f in range(num_frames):
         idx = min(frame + f * step, total_frames - 1)
         new_ref = quat_norm(quat_mul(apply_delta, bq[idx, 0]))

@@ -145,11 +145,20 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     progress_scale: float = 0.0  # forward-progress bonus (forces traversal)
     anti_stop_scale: float = 0.0  # penalty for vx < 0.3 (anti-idle/anti-backward)
     anti_stop_thresh: float = 0.3
+    # E44v3: direct yaw-rate penalty (kills the spin gait that decoder fine-tune
+    # otherwise discovers; track_xy/progress use body-frame vx which a turning
+    # robot still scores high on).
+    yaw_rate_penalty: float = 0.0
     phase_mode: bool = False  # True: policy selects phase (joint RL)
     phase_anchor: bool = False  # True: phase = router clock + bounded offset
     phase_anchor_ema: bool = True  # True: EMA-smooth the router clock (like encode_batch)
     phase_offset_scale: float = 0.15  # max offset magnitude when anchored
     latent_mode: bool = False  # True: policy outputs 16-d latent -> VAE -> token -> SONIC
+    # E44: decoder fine-tuning. Policy action = 29-d normalized joint targets
+    # (decoder output space); the policy owns the trainable SONIC decoder, the
+    # env only applies q_des = default + action*scale. obs adds 930-d proprio
+    # history + 2-d walk-clock phase (see decft_policy.py layout).
+    decft_mode: bool = False
     latent_vae_path: str = ""  # frozen TokenWindowVAE checkpoint
     latent_phase_rate: float = 0.0  # 0 -> read from pca.npz (walk cadence)
     # E28: command-conditioned gait cadence. When True, the latent phase clock
@@ -172,11 +181,39 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # only picks speed — fixing E31's systematic yaw drift.
     latent_dir_bins: bool = False
     latent_vae_n_dbins: int = 8
+    # E48: full-joint residual escape channel (RuN/ReSkill-style,
+    # LITERATURE_SURVEY_FROZEN_DECODER.md solution 2). In latent mode the
+    # action becomes [z(16), res(29)] and q_des = q_decoder(z) +
+    # res_scale * clamp(res) over ALL 29 joints -- vs the old weak aux
+    # (12-d lower body, scale 0.2) that E15-E22b showed is never enough.
+    latent_residual: bool = False
+    res_scale: float = 0.4  # rad; max joint-target offset from the prior
+    res_clip: float = 1.0
+    res_l2_scale: float = 0.0  # penalty on the raw residual (keep prior dominant)
+    # E48c: zero the residual for the first N control steps (z-head learns a
+    # working controller first; the residual is only freed afterwards --
+    # ReSkill-style residual on top of a working base policy).
+    res_freeze_steps: int = 0
     # E32: heading/velocity-direction reward. yaw_scale multiplies the base
     # track_yaw term; heading_scale adds exp(-(vy/vx vs cmd heading)^2)-style
     # alignment reward to fight the high-speed yaw drift E31 showed.
     yaw_scale: float = 0.5  # default = E31 base behavior
     heading_scale: float = 0.0
+
+    # TO38: TO36 F11b reference injection (obs + cmd-gated tracking reward).
+    # The reference clock psi free-runs at the solution's natural stride
+    # period T -- it deliberately does NOT share the decoder walk clock
+    # (pca cadence ~0.49 s/cycle vs TO 2.4 s/stride; forcing them together
+    # would drag the decoder gait off the VAE manifold). obs block (12):
+    # [sin psi, cos psi, q_ref6_rel, pitch, z, heel_x_rel, heel_z].
+    to_ref: bool = False  # master flag: appends a 12-d obs block (zeros if no npz)
+    to_ref_npz: str = ""  # LUT from apt_g1/to38_export_ref.py; "" -> zero block (paired control arm)
+    # control arm: load the LUT anyway so the clock and tracking diagnostics
+    # run identically, but zero the obs block (paired isolation)
+    to_ref_obs_zero: bool = False
+    to_ref_w: float = 0.0  # tracking reward weight (0 = reward off)
+    to_ref_sigma2: float = 0.1  # tracking kernel width (rad^2)
+    to_ref_gate2: float = 0.0036  # cmd-proximity gate sigma^2 (default 0.06^2)
 
     # privileged local elevation map (teacher-style terrain observation)
     use_elevation: bool = False
@@ -258,13 +295,45 @@ class AptFlatG1Env(DirectRLEnv):
         # root body index for disturbance
         self._root_body_idx, _ = self.robot.find_bodies("pelvis")
 
+        # TO38: sagittal joints in SONIC/MuJoCo order (L hip/knee/ankle pitch,
+        # R hip/knee/ankle pitch) -- the to_ref LUT columns are already in this
+        # order with the B-gate sign map applied (to38_export_ref.py).
+        self._sag_idx = torch.tensor([0, 3, 4, 6, 9, 10], dtype=torch.long, device=self.device)
+        self._to_q = self._to_scal = self._to_def_sag = None
+        if self.cfg.to_ref:
+            self._to_phase = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+            if self.cfg.to_ref_npz:
+                lut = np.load(self.cfg.to_ref_npz)
+                T = float(lut["T"])
+                self._to_m = lut["q_ref6"].shape[0]
+                self._to_rate = math.tau / (T * self.cfg.sim.dt * self.cfg.decimation)
+                self._to_vavg = float(lut["v_avg"])
+                self._to_q = torch.from_numpy(lut["q_ref6"]).float().to(self.device)
+                self._to_scal = torch.from_numpy(
+                    np.concatenate([lut["pitch"][:, None], lut["z"][:, None], lut["heel_rel"]], 1)
+                ).float().to(self.device)
+                self._to_def_sag = self._sonic_default_t[self._sag_idx]
+
         if self.cfg.use_sonic_prior:
             self._decoder = SonicTorchDecoder(self.cfg.sonic_decoder_path, device=self.device)
             self._router = BatchedPhaseRouter(self.cfg.router_model_dir, device=self.device)
             self._vae = None
-            if self.cfg.latent_mode:
+            if self.cfg.latent_mode or self.cfg.decft_mode:
                 import numpy as _np
 
+                # walk-clock cadence (both latent and decft modes drive the VAE
+                # phase from this clock; the VAE itself is only loaded in
+                # latent mode -- decft loads it inside DecFtPolicy).
+                pca = _np.load(
+                    str(Path(self.cfg.latent_vae_path).parent / "pca.npz")
+                )
+                self._latent_phase_rate = float(
+                    self.cfg.latent_phase_rate or pca["rate"]
+                )
+                self._latent_phase = torch.zeros(
+                    self.num_envs, dtype=torch.float32, device=self.device
+                )
+            if self.cfg.latent_mode:
                 from apt_g1.isaac.token_window_vae import (
                     DirSpeedPhaseTokenVAE,
                     PhaseTokenVAE,
@@ -286,15 +355,6 @@ class AptFlatG1Env(DirectRLEnv):
                 )
                 vae.eval()
                 self._vae = vae
-                pca = _np.load(
-                    str(Path(self.cfg.latent_vae_path).parent / "pca.npz")
-                )
-                self._latent_phase_rate = float(
-                    self.cfg.latent_phase_rate or pca["rate"]
-                )
-                self._latent_phase = torch.zeros(
-                    self.num_envs, dtype=torch.float32, device=self.device
-                )
             self._router_state = (
                 self._router.reset_state(self.num_envs)
                 if not self.cfg.phase_mode
@@ -353,6 +413,7 @@ class AptFlatG1Env(DirectRLEnv):
         self._last_aux = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
         self._prev_aux = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
         self._aux_rate = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
+        self._last_res = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         self._disturb = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._disturb_dir = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
@@ -418,6 +479,17 @@ class AptFlatG1Env(DirectRLEnv):
             .astype(np.float32)
         )
 
+    def _proprio_t(self) -> torch.Tensor:
+        """930-d proprio history as a GPU tensor (decft obs component)."""
+        parts = [
+            self._hist_ang_vel,
+            self._hist_joint_pos,
+            self._hist_joint_vel,
+            self._hist_last_actions,
+            self._hist_gravity,
+        ]
+        return torch.cat([p.reshape(self.num_envs, -1) for p in parts], dim=1)
+
     def _base_lin_vel(self) -> torch.Tensor:
         return self.robot.data.root_lin_vel_b
 
@@ -451,8 +523,10 @@ class AptFlatG1Env(DirectRLEnv):
         _push(self._hist_last_actions, last_actions)
         _push(self._hist_gravity, gravity)
 
-    def _compute_q_des(self, phase: torch.Tensor, aux: torch.Tensor) -> torch.Tensor:
-        """Decode token prior + aux into (N, 29) SONIC-order joint targets."""
+    def _compute_q_des(
+        self, phase: torch.Tensor, aux: torch.Tensor, res: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Decode token prior + aux (+ optional full-joint residual) into (N, 29) targets."""
         cmds = self._build_commands_list()
         proprio = self._proprio_np()
         if self.cfg.latent_mode:
@@ -560,27 +634,74 @@ class AptFlatG1Env(DirectRLEnv):
         q_des = default + action_t * scale
         aux_c = torch.clamp(aux, -self.cfg.aux_clip, self.cfg.aux_clip)
         q_des[:, self._lower_aux_idx] += self.cfg.aux_scale * aux_c
+        if res is not None:
+            # E48: full-joint residual on top of the frozen-decoder prior
+            res_c = torch.clamp(res, -self.cfg.res_clip, self.cfg.res_clip)
+            q_des = q_des + self.cfg.res_scale * res_c
         return q_des
 
     # --------------------------------------------------------------- RL API
     def _pre_physics_step(self, actions: torch.Tensor):
         self._sample_disturbance()
         self._update_gate()
-        if self.cfg.use_gate_sel:
-            aux = actions[:, :12]
-            self._gate_sel = actions[:, 12].long()
-            phase = torch.zeros_like(aux[:, :2])
-        elif self.cfg.latent_mode:
-            phase = actions
-            aux = torch.zeros(
+        if self.cfg.to_ref:
+            # TO38: advance the free-running reference clock once per control
+            # step (period = the TO solution's natural stride time).
+            self._to_phase = (self._to_phase + self._to_rate) % math.tau
+        if self.cfg.decft_mode:
+            # E44: action = 29-d normalized joint targets (decoder output space).
+            # The policy owns the trainable SONIC decoder; advance the walk
+            # clock here and expose (sin, cos) of the POST-advance phase so the
+            # policy's token decode (next act()) matches the env's phase clock.
+            self._q_des = (
+                self._sonic_default_t + actions * self._sonic_scale_t
+            ).detach()
+            phi = self._latent_phase
+            if self.cfg.latent_cmd_phase_rate:
+                mult = torch.clamp(
+                    self._commands[:, 0] / self.cfg.latent_phase_rate_ref,
+                    min=0.0,
+                    max=self.cfg.latent_phase_rate_max,
+                )
+                self._latent_phase = (phi + self._latent_phase_rate * mult) % math.tau
+            else:
+                self._latent_phase = (phi + self._latent_phase_rate) % math.tau
+            self._last_phase = torch.stack(
+                [torch.sin(self._latent_phase), torch.cos(self._latent_phase)], dim=1
+            )
+            self._last_aux = torch.zeros(
                 self.num_envs, 12, dtype=torch.float32, device=self.device
             )
         else:
-            phase = actions[:, :2]
-            aux = actions[:, 2:14]
-        self._q_des = self._compute_q_des(phase, aux).detach()
-        self._last_phase = phase.detach()
-        self._last_aux = aux.detach()
+            if self.cfg.use_gate_sel:
+                aux = actions[:, :12]
+                self._gate_sel = actions[:, 12].long()
+                phase = torch.zeros_like(aux[:, :2])
+            elif self.cfg.latent_mode:
+                phase = actions[:, :16]
+                if self.cfg.latent_residual:
+                    # E48: action = [z(16), res(29)] -- res is the full-joint
+                    # escape channel added on top of the frozen-decoder prior.
+                    res = actions[:, 16:45]
+                    if self.cfg.res_freeze_steps > 0 and (
+                        self.common_step_counter < self.cfg.res_freeze_steps
+                    ):
+                        # E48c: residual still frozen -> pure z/prior control
+                        res = torch.zeros_like(res)
+                else:
+                    res = None
+                aux = torch.zeros(
+                    self.num_envs, 12, dtype=torch.float32, device=self.device
+                )
+            else:
+                phase = actions[:, :2]
+                aux = actions[:, 2:14]
+                res = None
+            self._q_des = self._compute_q_des(phase, aux, res).detach()
+            self._last_phase = phase.detach()
+            self._last_aux = aux.detach()
+            if res is not None:
+                self._last_res = res.detach()
         self._aux_rate = self._last_aux - self._prev_aux
         self._prev_aux = self._last_aux
         self._actions = actions.clone()
@@ -600,6 +721,17 @@ class AptFlatG1Env(DirectRLEnv):
         )
         full[:, self._body_idx] = self._q_des
         self.robot.set_joint_position_target(full, joint_ids=None)
+
+    def _to_ref_lookup(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """TO38: per-env reference at the current psi. Linear interp on the
+        stride LUT (two dircol phases concatenated, time-normalized)."""
+        x = self._to_phase / math.tau * self._to_m
+        i0 = x.floor().long().clamp(0, self._to_m - 1)
+        i1 = (i0 + 1) % self._to_m
+        a = (x - x.floor()).unsqueeze(1)
+        q = (1 - a) * self._to_q[i0] + a * self._to_q[i1]
+        s = (1 - a) * self._to_scal[i0] + a * self._to_scal[i1]
+        return q, s
 
     def _get_observations(self) -> dict:
         base_lin_vel = self.robot.data.root_lin_vel_b
@@ -654,6 +786,25 @@ class AptFlatG1Env(DirectRLEnv):
                     device=self.device,
                 )
             parts.append(elev)
+        if self.cfg.latent_residual:
+            # E48: residual action feedback (like _last_aux for the aux modes)
+            parts.append(self._last_res)
+        if self.cfg.decft_mode:
+            # E44: full 930-d proprio history (decoder input) + walk-clock phase
+            parts.append(self._proprio_t())
+            parts.append(self._last_phase)
+        if self.cfg.to_ref:
+            if self._to_q is not None and not self.cfg.to_ref_obs_zero:
+                q_ref, scal = self._to_ref_lookup()
+                clocks = torch.stack(
+                    [torch.sin(self._to_phase), torch.cos(self._to_phase)], dim=1
+                )
+                parts.append(torch.cat([clocks, q_ref - self._to_def_sag, scal], dim=1))
+            else:
+                # paired control arm (or no LUT): same obs dim, zero block
+                parts.append(
+                    torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
+                )
         obs = torch.cat(
             [
                 *parts,
@@ -687,6 +838,8 @@ class AptFlatG1Env(DirectRLEnv):
             + 0.5 * height
             + stillness
         )
+        if self.cfg.yaw_rate_penalty > 0.0:
+            reward = reward - self.cfg.yaw_rate_penalty * (base_ang_vel[:, 2] ** 2)
         if self.cfg.heading_scale > 0.0:
             # E32: reward velocity direction aligned with commanded heading.
             # world-frame vx/vy vs command frame (yaw from root quat).
@@ -706,6 +859,19 @@ class AptFlatG1Env(DirectRLEnv):
             reward = reward + self.cfg.progress_scale * torch.clamp(
                 base_lin_vel[:, 0], 0.0, 1.0
             )
+        if self.cfg.to_ref and self.cfg.to_ref_w > 0.0 and self._to_q is not None:
+            # TO38: sagittal-joint tracking of the TO reference, gated by
+            # commanded-speed proximity to the solution speed -- envs commanded
+            # away from v_TO are untouched by the reference (isolation).
+            q_ref, _ = self._to_ref_lookup()
+            q_sag = self.robot.data.joint_pos[:, self._body_idx][:, self._sag_idx]
+            err = ((q_sag - q_ref) ** 2).sum(-1)
+            gate = torch.exp(
+                -((self._commands[:, 0] - self._to_vavg) ** 2) / self.cfg.to_ref_gate2
+            )
+            reward = reward + self.cfg.to_ref_w * torch.exp(
+                -err / self.cfg.to_ref_sigma2
+            ) * gate
         if self.cfg.anti_stop_scale > 0.0:
             reward = reward - self.cfg.anti_stop_scale * torch.clamp(
                 self.cfg.anti_stop_thresh - base_lin_vel[:, 0], min=0.0, max=None
@@ -714,6 +880,8 @@ class AptFlatG1Env(DirectRLEnv):
             reward = reward - self.cfg.aux_l2_scale * (self._last_aux ** 2).sum(-1)
         if self.cfg.aux_rate_scale > 0.0:
             reward = reward - self.cfg.aux_rate_scale * (self._aux_rate ** 2).sum(-1)
+        if self.cfg.res_l2_scale > 0.0 and self.cfg.latent_residual:
+            reward = reward - self.cfg.res_l2_scale * (self._last_res ** 2).sum(-1)
         reward = reward - self.cfg.termination_penalty * self.reset_terminated.float()
         return reward
 
@@ -777,8 +945,15 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.use_2hz_gate and self._router is not None:
             self._held_groups_np = self._router.select_groups(self._build_commands_list())
         self._last_phase[env_ids] = 0.0
-        if self.cfg.latent_mode:
+        if self.cfg.latent_mode or self.cfg.decft_mode:
             self._latent_phase[env_ids] = torch.rand(
+                len(env_ids), dtype=torch.float32, device=self.device
+            ) * math.tau
+        if self.cfg.to_ref:
+            # random stride phase at spawn (same treatment as the walk clock;
+            # the policy must handle any phase offset since it cannot observe
+            # the latent clock either)
+            self._to_phase[env_ids] = torch.rand(
                 len(env_ids), dtype=torch.float32, device=self.device
             ) * math.tau
         self._phase_ema[env_ids] = 0.0
@@ -788,6 +963,7 @@ class AptFlatG1Env(DirectRLEnv):
         self._last_aux[env_ids] = 0.0
         self._prev_aux[env_ids] = 0.0
         self._aux_rate[env_ids] = 0.0
+        self._last_res[env_ids] = 0.0
         self._disturb[env_ids] = False
         # schedule a single push per episode with probability disturbance_prob
         self._disturb_step[env_ids] = -1
