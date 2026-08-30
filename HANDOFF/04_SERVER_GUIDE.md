@@ -112,6 +112,16 @@ nohup /home/cvgluser/ros2_data/.venv_mjlab/bin/python scripts/train.py \
 6. **评测脚本**：`--tests A` 只过滤输出字典；旧版本仍会跑完全部 rollout
    （新版已修成真正跳过）。phase/latent 模式下 `aux` 与 `noaux` 键结果相同
    （latent 无 aux 通道），评测时间翻倍属正常。
+7. **云开发机 Isaac 冷启动（2026-08-31 验证为系统性问题）**：LimX 镜像
+   IsaacSim 4.5/IsaacLab 2.0.0 上经 `isaaclab.sh -p`（即 app_launcher 带
+   experience 文件路径）启动 Kit 一律 pybind
+   `Unable to cast <class 'list'>` 于 `app.startup`；裸
+   `SimulationApp({'headless': True})` 可引导但首启需在线拉扩展且带
+   experience 的变体安静早退。上会话「--out 触发」归因不成立（去 --out
+   无效）。**需平台侧介入；开机/查询 API 已验证**：
+   `POST /dev-api/api/dev-instance/{id}/start|stop`、
+   `GET /dev-api/api/dev-instance/list`（X-Api-Key 认证，细节见
+   `LimX云平台调研.md` §10）。TO38 双臂因此改 lab-ts 本地跑。
 
 ## 6. 环境版本
 

@@ -59,6 +59,9 @@ def build_args():
     # E32: heading/yaw reward (rollout dynamics only; no effect on eval metrics)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
+    # TO38: override test A's commanded vx (default 0.8 = E-battery standard;
+    # low-speed band evals pass e.g. 0.277 / 0.2 / 0.35)
+    ap.add_argument("--a-cmd-vx", type=float, default=0.8)
     # TO38: reference obs injection (must match the trained policy's obs dim)
     ap.add_argument("--to-ref", action="store_true")
     ap.add_argument("--to-ref-npz", default="")
@@ -405,13 +408,14 @@ def main():
     # ---- A. 60s walk @ 0.8 ----
 
     if "A" in tests:
+        out["A_walk60"]["cmd_vx"] = cli.a_cmd_vx
         for key in key_list:
             out["A_walk60"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(0.8, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
+                r = rollout(env, policy, [(cli.a_cmd_vx, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
                 out["A_walk60"][key][f"seed{seed}"] = r
-                print(f"A walk60 {key} seed{seed} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
+                print(f"A walk{cli.a_cmd_vx} {key} seed{seed} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
 
     # ---- B. disturbance grid ----
 

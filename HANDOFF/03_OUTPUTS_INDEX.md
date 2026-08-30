@@ -145,6 +145,10 @@
 | `to36_world_knots.npz` | 同上 | Stage A 世界系 81 样本/相（B 门 verify / C 门 closedloop 共用，骨盆解析加度+FK 目标） |
 | `to36_verify_b.json` + `to36_verify_b_samples.npz` + `to36_verify_b.log` | 同上 | B 门双验证判定（逐关节/逐相分解 + 逐样本时序；D5） |
 | `to36_closedloop.json` | 同上 | C 门闭环判定与归因诊断（D5） |
+| `to37_seed.npz` / `to37_fast56_v0435.npz` / `to37_fast48b_v0678.npz` | 同上 | TO37 速度网格三点解族（0.277/0.435/0.678，全审计 PASS） |
+| `to37_decoder.json` / `to37_decoder.pt` | 同上 | TO37b 条件化解码器（单速度压缩 PASS / 跨速度泛化 FAIL） |
+| `to38_ref.npz` | 同上 | TO38 RL 注入 LUT（M=120，角色→SONIC 重排 + B 门符号 + wrap_gap=0 meta） |
+| `to38a/` / `to38b/` | 同上 | TO38 双臂 ckpt + train_log（主臂 obs 注入 w=0.3 / 对照臂 obs 零块 w=0，128 envs×2000 iters） |
 
 ## 9. 汇总图表（2026-08-27 补生成，服务器与本地 `apt_g1/outputs/figs/`）
 
