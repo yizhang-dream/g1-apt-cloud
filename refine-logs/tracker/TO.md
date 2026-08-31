@@ -830,6 +830,16 @@ TO38+ 之后的独立正路，不在 TO38 范围内**（TO38 只用 F11b 单速�
 | TO39b-eval | b 臂低速带评测（obs 零块） | 同上，`--to-ref-obs-zero` | 同上 | DONE | 首跑 TASK_20260831_075 秒挂（startScript `--extra --flag` 形式 argparse 拒收，改 `--extra=--flag` 重建 TASK_20260831_085）：**15/15 存活但低速爬行**——cmd{0.08–0.2} 全部 vx≈0.099、**效率 0.14–0.17（绕圈/原地）**；0.277 直行 0.621/eff 0.89（快步态健康，慢带全坏） |
 | TO39c-eval | c 臂低速带评测（obs-only，ckpt it150 经 /personal 镜像跨 pod 取用） | 同 a/b | 同上 | DONE | TASK_20260831_096：15/15 存活，**地板抬到 0.167**（cmd{0.08–0.2} vx 0.166–0.168）、效率 0.37–0.53（半直行）；0.277 亦绕圈（eff 0.15） |
 
+## TO40：力矩主线 Rung 0/1（2026-08-31 主路线化后起号）
+
+> 主路线宣言见 `TO_TORQUE_MAINLINE.md`（用户 2026-08-31 拍板：TO 力矩路线
+> 升主线，E 线既往成功降为基座/参照）。TO40a 为 Rung 1 前置（条件化解码器
+> 插值测试，grill 选 b：论文形态优先），结果 FAIL 回落门控方案（Rung 0）。
+
+| Run ID | Purpose | Variant | Metric | Status | Result |
+|--------|---------|---------|--------|--------|--------|
+| TO40a | 条件化 τ 解码器插值测试（Rung 1 前置） | 3 点网格（0.277/0.435/0.678，576 样本）× 4 架构（base_raw/base_norm/v-embed/FiLM）× 留一速度 3 折 × 3 seed，4000 epochs full-batch L1（`train_torque_decoder_cond.py`，lab-ts .venv_mjlab ~4 min） | 插值折 MAE <20% std = PASS | DONE | **FAIL（数据密度问题，非架构问题）**：插值折（0.277+0.678→0.435）四架构几乎无差 48.4/48.4/50.1/49.8% std——2 点训练对中间速度力矩曲线零约束；外推折崩（172–209%）；embed 上外推略好（126% vs 172%）方向正确但远不够；FiLM 小数据不稳定（418%）。全量拟合 MAE 0.06–0.34 N·m（压缩无碍）。**结论：论文形态全域 τ_dec 必须先加密速度网格（Rung 1 升级为「需要更多 dircol 解」）；TO40-C 的 τ_ff 回落门控单速度方案（q3 选 a）**。产物 `outputs/sync/to40_cond_results.json` + `to40_cond_decoder.pt`（全量版，备 TO40-C 参照） |
+
 **TO39 收束（2026-08-31，云任务 route 首个完整实验）**：三臂 45 rollout
 全存活，**剂量-响应单调、机制判读落预期分支（obs 主体 + reward 增益）**：
 低速带速度地板 b 0.099 → c 0.167 → a 0.197，路径效率 b 0.15 → c 0.5 →
