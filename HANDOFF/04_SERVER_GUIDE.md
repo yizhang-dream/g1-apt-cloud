@@ -125,6 +125,10 @@ nohup /home/cvgluser/ros2_data/.venv_mjlab/bin/python scripts/train.py \
    chdir）。ckpt 平台自动发现 output/**.pt，`flux task model list` 可取；
    任务 route 算力 ESKU000004 A10=¥4.01/时。任务 JSON 模板见
    `gr00t/tmp/task_to39*.json`。
+   **单仓多端（08-31）**：GitHub `yizhang-dream/g1-apt-cloud` = 本地 gr00t
+   仓强推的统一历史；lab-ts 克隆在 `~/ros2_data/g1-apt-cloud-sync`
+   （user.name/email 已配，可 push）；关键产物放 `apt_g1/outputs/sync/`
+   （白名单跟踪），/personal 不可信。
 
 ## 6. 环境版本
 

@@ -19,9 +19,19 @@ Science Robotics 2026 的 APT-RL（动作预训练 Transformer 强化学习）�
   `HANDOFF/04_SERVER_GUIDE.md` §1），目录 `~/ros2_data`，经包装脚本
   `/tmp/run_apt_isaac.sh`（source venv + PYTHONPATH + cwd=GR00T-WholeBodyControl）。
   命令模板、目录布局见同文件后续章节。
-- `apt_g1/data/` 与 `apt_g1/outputs/` 被 gitignore；clone 后为空，canonical 产物
+- `apt_g1/data/` 与 `apt_g1/outputs/` 默认 gitignore；clone 后为空，canonical 产物
   在服务器，索引见 `HANDOFF/03_OUTPUTS_INDEX.md`。仓库还全局忽略
   mp4/png/npy/pt/onnx 等重型产物，不要试图提交它们。
+- **单仓多端同步（2026-08-31 起）**：本仓 = `github.com/yizhang-dream/g1-apt-cloud`
+  （公开），四端同历史：本地 Windows（push 端）/ lab-ts
+  `~/ros2_data/g1-apt-cloud-sync`（pull+push，git user 已配）/ 云任务 pod
+  （flux task git 方式按仓名 clone，路径 `g1-apt-cloud/...` 不变）/
+  `Documents/g1-apt-cloud-serve`（云 bundle 工作树，同仓）。
+  需要跨端同步的关键产物放 **`apt_g1/outputs/sync/`**（gitignore 白名单，
+  里面全量跟踪：TO 解族 npz / eval JSONs / ckpt / 原始 rollout 行）；
+  云端运行资产（gear_sonic、gear_sonic_deploy、token_vae_e39、
+  distill_final）也已入仓白名单。`/personal` 只当临时中转不可信（训练
+  镜像出现过写入后消失）。大文件纪律：单文件 <90MB，数据集/视频不进仓。
 
 ## 改代码前必读（按序）
 
