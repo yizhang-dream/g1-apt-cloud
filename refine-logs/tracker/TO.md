@@ -825,6 +825,20 @@ TO38+ 之后的独立正路，不在 TO38 范围内**（TO38 只用 F11b 单速�
 | Run ID | Purpose | Variant | Metric | Status | Result |
 |--------|---------|---------|--------|--------|--------|
 | TO39-0 | 云任务路线打通（8 轮冒烟） | 公开仓 g1-apt-cloud + flux task（git 方式 codeType=2）+ gm-run 相对路径 | 2 iters 冒烟 rew 正常 + ckpt 自动发现 | DONE | **pybind 真根因 = sys.path 塞入 PosixPath 对象**（08-30 注入头，dev 实例 pp1–pp8 二分定位，str() 修复；此前「镜像系统性问题」归因作废）。连带修复：镜像 IsaacLab 2.0.0 无 effort_limit_sim kwarg（改 effort_limit）、apt_g1/encoder 包与 G1 URDF 67 STL mesh 入仓、ASSET_DIR 绝对路径（kit 启动后 chdir）。冒烟 rew 1.96→2.41 与 lab-ts 一致；ckpt 平台自动发现 output/**.pt |
-| TO39c-train | c 臂（obs-only w=0）训练 seed 0 | E47 配方 + `--to-ref --to-ref-npz to38_ref.npz --to-ref-w 0.0`，128 envs×2000 iters | 曲线 + best 窗口 ckpt | RUN | 云任务 TASK_20260831_073（A10） |
-| TO39a-eval | a 臂低速带评测（复用 it150） | cmds {0.08,0.12,0.15,0.2,0.277} × seed{0,1,2}，A 60s | floor + \|vx−cmd\| + 路径效率 | RUN | 云任务 TASK_20260831_074 |
-| TO39b-eval | b 臂低速带评测（obs 零块） | 同上，`--to-ref-obs-zero` | 同上 | RUN | 云任务 TASK_20260831_075 |
+| TO39c-train | c 臂（obs-only w=0）训练 seed 0 | E47 配方 + `--to-ref --to-ref-npz to38_ref.npz --to-ref-w 0.0`，128 envs×2000 iters | 曲线 + best 窗口 ckpt | DONE | 云任务 TASK_20260831_073（A10，~35 min）。rew 峰值在前段（采样日志头部 2.0–2.4，尾部 1.75–1.9 与 a/b 同款退化）；best ckpt 取 it150（与 a 臂同窗口规则；完整 train_log.json 在 /personal/flux_runs/to39c/，云平台任务日志仅采样 ~10% 行） |
+| TO39a-eval | a 臂低速带评测（复用 it150） | cmds {0.08,0.12,0.15,0.2,0.277} × seed{0,1,2}，A 60s | floor + \|vx−cmd\| + 路径效率 | DONE | TASK_20260831_074：**全 15/15 存活、速度地板 0.2**——cmd{0.08,0.12,0.15,0.2} 全走出 vx≈0.197、效率 0.78–0.80（直行）；0.277 跳 0.6 步态绕圈（eff 0.21，复现 TO38） |
+| TO39b-eval | b 臂低速带评测（obs 零块） | 同上，`--to-ref-obs-zero` | 同上 | DONE | 首跑 TASK_20260831_075 秒挂（startScript `--extra --flag` 形式 argparse 拒收，改 `--extra=--flag` 重建 TASK_20260831_085）：**15/15 存活但低速爬行**——cmd{0.08–0.2} 全部 vx≈0.099、**效率 0.14–0.17（绕圈/原地）**；0.277 直行 0.621/eff 0.89（快步态健康，慢带全坏） |
+| TO39c-eval | c 臂低速带评测（obs-only，ckpt it150 经 /personal 镜像跨 pod 取用） | 同 a/b | 同上 | DONE | TASK_20260831_096：15/15 存活，**地板抬到 0.167**（cmd{0.08–0.2} vx 0.166–0.168）、效率 0.37–0.53（半直行）；0.277 亦绕圈（eff 0.15） |
+
+**TO39 收束（2026-08-31，云任务 route 首个完整实验）**：三臂 45 rollout
+全存活，**剂量-响应单调、机制判读落预期分支（obs 主体 + reward 增益）**：
+低速带速度地板 b 0.099 → c 0.167 → a 0.197，路径效率 b 0.15 → c 0.5 →
+a 0.79。能力主张成立（有条件）：TO 注入把「可靠低速行走带」扩展到
+0.15–0.2 m/s（a 臂 4/5 点效率 ≥0.7）；但 0.08/0.12 是钳到地板而非真
+跟踪——**真正 0.08 步态三臂均未实现**，正路仍是 TO37 低速解族条件化或
+cmd 联动参考缩放（TO40）。两个副产物结论：① 弧线走由 obs 参考自身引起
+（c 臂无 reward 也绕圈），非 reward 副作用；② b 臂 0.277 直行 eff 0.89
+对照确认「解码器快步态健康、慢带空洞」的流形诊断。统计 caveat：每臂
+n=1 训练 seed（a/b 复用 TO38 单 seed，c 新训单 seed），lowband 结论靠
+b 臂失效的流形性质背书，补 seed 留待需要时执行。云任务成本：~6 任务
+× ~40 min × ¥4.01 ≈ ¥16。
