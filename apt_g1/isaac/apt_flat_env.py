@@ -221,8 +221,12 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # left for later). Obs dim unchanged -> to38b stays a valid control.
     to_tau: bool = False
     to_tau_w: float = 1.0
-    to_tau_kp: tuple = (99.09843, 99.09843, 40.17924,
-                        99.09843, 99.09843, 40.17924)  # Lh,Lk,La,Rh,Rk,Ra
+    # NOTE: kp must match the **actuator stiffness actually used** (implicit PD:
+    # dq 精确等价 τ_ff 的前提是 kp 用对)。腿每侧排序 [hip_pitch, hip_roll,
+    # hip_yaw, knee, ...]，踝的 stiffness = 2×STIFFNESS_5020 = 28.50125，不是
+    # hip_yaw 的 40.17924（曾错位，已修正）。运行优先读 sim 实际值（见 init）。
+    to_tau_kp: tuple = (99.09843, 99.09843, 28.50125,
+                        99.09843, 99.09843, 28.50125)  # Lh,Lk,La,Rh,Rk,Ra
 
     # privileged local elevation map (teacher-style terrain observation)
     use_elevation: bool = False
@@ -322,8 +326,24 @@ class AptFlatG1Env(DirectRLEnv):
                     np.concatenate([lut["pitch"][:, None], lut["z"][:, None], lut["heel_rel"]], 1)
                 ).float().to(self.device)
                 self._to_tau = torch.from_numpy(lut["tau_ref6"]).float().to(self.device)
-                self._to_kp = torch.tensor(
-                    list(self.cfg.to_tau_kp), dtype=torch.float32, device=self.device)
+                # TO40-C: kp 用 sim 实际执行器 stiffness（隐式 PD 的真实增益），
+                # 而非硬编码；只读默认值，不 set 回（不改动基座动力学）。读取失败
+                # 回退 cfg.to_tau_kp 并打印警告。
+                _sim_kp = None
+                if hasattr(self.robot.data, "default_joint_stiffness") and \
+                        self.robot.data.default_joint_stiffness is not None:
+                    _sim_kp = self.robot.data.default_joint_stiffness[
+                        0, self._body_idx][self._sag_idx]
+                if _sim_kp is not None and torch.isfinite(_sim_kp).all() and \
+                        (_sim_kp > 0).all():
+                    self._to_kp = _sim_kp.clone().to(self.device)
+                    print(f"[to40c] kp from sim (sagittal6) = "
+                          f"{[round(float(v), 4) for v in self._to_kp]}")
+                else:
+                    self._to_kp = torch.tensor(
+                        list(self.cfg.to_tau_kp), dtype=torch.float32, device=self.device)
+                    print("[to40c] WARN: sim default_joint_stiffness 不可用，回退 cfg "
+                          f"{list(self.cfg.to_tau_kp)}")
                 self._to_def_sag = self._sonic_default_t[self._sag_idx]
 
         if self.cfg.use_sonic_prior:
