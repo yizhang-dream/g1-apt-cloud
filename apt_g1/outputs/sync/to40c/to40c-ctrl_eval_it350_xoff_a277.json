@@ -1,0 +1,63 @@
+{
+ "A_walk60": {
+  "cmd_vx": 0.277,
+  "aux": {
+   "seed0": {
+    "steps": 3000,
+    "completed": true,
+    "fall_step": null,
+    "h_min": 0.741,
+    "vx": 0.589,
+    "disp": 31.129,
+    "v_speed": 0.598
+   },
+   "seed1": {
+    "steps": 3000,
+    "completed": true,
+    "fall_step": null,
+    "h_min": 0.741,
+    "vx": 0.59,
+    "disp": 31.493,
+    "v_speed": 0.599
+   },
+   "seed2": {
+    "steps": 3000,
+    "completed": true,
+    "fall_step": null,
+    "h_min": 0.736,
+    "vx": 0.587,
+    "disp": 30.619,
+    "v_speed": 0.597
+   }
+  },
+  "noaux": {
+   "seed0": {
+    "steps": 3000,
+    "completed": true,
+    "fall_step": null,
+    "h_min": 0.755,
+    "vx": 0.592,
+    "disp": 31.46,
+    "v_speed": 0.601
+   },
+   "seed1": {
+    "steps": 3000,
+    "completed": true,
+    "fall_step": null,
+    "h_min": 0.742,
+    "vx": 0.59,
+    "disp": 31.232,
+    "v_speed": 0.599
+   },
+   "seed2": {
+    "steps": 3000,
+    "completed": true,
+    "fall_step": null,
+    "h_min": 0.74,
+    "vx": 0.589,
+    "disp": 30.984,
+    "v_speed": 0.599
+   }
+  }
+ }
+}

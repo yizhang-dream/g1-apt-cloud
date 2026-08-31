@@ -83,7 +83,7 @@ def main():
             n = min(len(ca), len(oa))
             for i in range(n):
                 if ca[i]["done"] and oa[i]["done"]:
-                    diffs.append(ca[i]["err"] - oa[i]["err"])
+                    diffs.append(oa[i]["err"] - ca[i]["err"])
         if diffs:
             md = float(np.mean(diffs))
             # 分层互斥判定（评审修正，见 TO40C_PLAN §9）：未决窗 (0.02,0.04] 与
@@ -96,7 +96,7 @@ def main():
             for cmd in cmds:
                 ca = metric[ctrl].get(cmd); oa = metric[other].get(cmd)
                 if not ca or not oa: continue
-                n = min(len(ca), len(oa)); cd = [ca[i]["err"] - oa[i]["err"] for i in range(n) if ca[i]["done"] and oa[i]["done"]]
+                n = min(len(ca), len(oa)); cd = [oa[i]["err"] - ca[i]["err"] for i in range(n) if ca[i]["done"] and oa[i]["done"]]
                 if cd: per_cmd.append((cmd, float(np.mean(cd))))
             print("  per-cmd diff:", "  ".join(f"{c}:{d:+.3f}" for c,d in per_cmd))
             if window_lo < abs(md) <= delta_hard:
@@ -117,7 +117,7 @@ def main():
     print("\n== 2x2 cross-injection @0.277 ==")
     for a in arms:
         for x in ("off", "on"):
-            p = sorted(path.glob(f"{a}_eval_{args.ckpt}_x{x}_a0277.json"))
+            p = sorted(path.glob(f"{a}_eval_{args.ckpt}*_x{x}_a277.json"))
             if not p:
                 print(f"  {a} x{x}: 缺文件"); continue
             d = json.loads(p[0].read_text())
