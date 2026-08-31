@@ -738,7 +738,7 @@ class AptFlatG1Env(DirectRLEnv):
             _q, _s, tau = self._to_ref_lookup()
             w = torch.exp(-((self._commands[:, 0] - self._to_vavg) ** 2)
                           / self.cfg.to_ref_gate2)
-            dq = (self.cfg.to_tau_w * w / self._to_kp).unsqueeze(1) * tau
+            dq = tau * (self.cfg.to_tau_w * w).unsqueeze(1) / self._to_kp
             full[:, self._body_idx[self._sag_idx]] = (
                 full[:, self._body_idx[self._sag_idx]] + dq)
         self.robot.set_joint_position_target(full, joint_ids=None)
