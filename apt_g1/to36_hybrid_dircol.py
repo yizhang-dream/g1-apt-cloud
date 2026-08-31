@@ -1275,6 +1275,10 @@ def _dump(kits, Ps, best, N, mode, stages, last_ok):
         print(f"[dump] 能量审计 {ph}: 相内 knot 间 |dE| max = {drift:.3f} J"
               f"（>2 J 判混叠伪解，加 knot/收 v-cap 重解）", flush=True)
 
+    global OUT_NPZ
+    if getattr(args, "out_npz", None):
+        OUT_NPZ = args.out_npz
+    print(f"[dump] 输出 = {OUT_NPZ}")
     Path(OUT_NPZ).parent.mkdir(parents=True, exist_ok=True)
     np.savez(OUT_NPZ, X_left=Xl, X_right=Xr, U_left=Ul, U_right=Ur,
              XM_left=np.array(best["XM_left"]), XM_right=np.array(best["XM_right"]),
@@ -1321,6 +1325,9 @@ def _dump(kits, Ps, best, N, mode, stages, last_ok):
 
 def do_check(args):
     """解后自检（读 npz，不起 Drake）：A 门 + 离地 + 冲击 KE。"""
+    if getattr(args, "out_npz", None):
+        global OUT_NPZ
+        OUT_NPZ = args.out_npz
     d = np.load(OUT_NPZ, allow_pickle=True)
     print(f"[check] mode={d['mode']} knots={int(d['knots'])} "
           f"T={float(d['T']):.3f}s（L {float(d['T_left']):.3f} / "
@@ -1398,9 +1405,13 @@ def main():
                         "slope_deg=重力倾斜同伦：斜坡被动步态种子，退火到 0"
                         "后力矩接管——平地冷/热启动均进不了 v_td 盆"
                         "（vmax3–6 定论））")
+    p.add_argument("--out-npz", default=None,
+                   help="落盘 npz 路径（默认 apt_g1/outputs/to36_hybrid_gait.npz；"
+                        "并行求解必须各自指定——TO37 mid45/mid55 共名覆盖丢失教训）")
     p.set_defaults(fn=do_solve)
 
     p = sub.add_parser("check", help="解后自检（读 npz）")
+    p.add_argument("--out-npz", default=None, help="与 solve --out-npz 对应")
     p.set_defaults(fn=do_check)
 
     args = ap.parse_args()
