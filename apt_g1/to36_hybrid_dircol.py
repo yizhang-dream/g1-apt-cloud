@@ -1089,6 +1089,10 @@ def _diag_infeasible_impl(kits, Ps, sol, N, tag, eps=0.0):
 
 
 def do_solve(args):
+    global OUT_NPZ
+    if getattr(args, "out_npz", None):
+        OUT_NPZ = args.out_npz
+        print(f"[dump] 输出 = {OUT_NPZ}")
     from pydrake.solvers import IpoptSolver
 
     mode = args.mode
@@ -1275,9 +1279,6 @@ def _dump(kits, Ps, best, N, mode, stages, last_ok):
         print(f"[dump] 能量审计 {ph}: 相内 knot 间 |dE| max = {drift:.3f} J"
               f"（>2 J 判混叠伪解，加 knot/收 v-cap 重解）", flush=True)
 
-    global OUT_NPZ
-    if getattr(args, "out_npz", None):
-        OUT_NPZ = args.out_npz
     print(f"[dump] 输出 = {OUT_NPZ}")
     Path(OUT_NPZ).parent.mkdir(parents=True, exist_ok=True)
     np.savez(OUT_NPZ, X_left=Xl, X_right=Xr, U_left=Ul, U_right=Ur,
