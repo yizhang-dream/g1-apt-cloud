@@ -150,6 +150,8 @@
 | `to38_ref.npz` | 同上 | TO38 RL 注入 LUT（M=120，角色→SONIC 重排 + B 门符号 + wrap_gap=0 meta） |
 | `to38a/` / `to38b/` | 同上 | TO38 双臂 ckpt + train_log（主臂 obs 注入 w=0.3 / 对照臂 obs 零块 w=0，128 envs×2000 iters） |
 | `to38{a,b}_eval_*.json`（14 组） | 同上 | TO38 配对评测：两臂 {best,final}×低速带 A + best 全 battery；配对差分结论见 tracker/TO.md TO38-eval 行 |
+| `to39c/` | 同上 | TO39c（obs-only）关键 ckpt it150/it200/it2000（自云平台 checkpoint 系统迁出，it2000 尾部退化仅存档） |
+| `to39_lowband/` | 同上 | TO39 三臂原始 rollout 行（各 31 行）+ c 臂采样训练曲线；云上 /personal 另有 15 个评测 JSON summary（平台内） |
 
 ## 9. 汇总图表（2026-08-27 补生成，服务器与本地 `apt_g1/outputs/figs/`）
 

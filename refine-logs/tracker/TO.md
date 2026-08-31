@@ -842,3 +842,14 @@ cmd 联动参考缩放（TO40）。两个副产物结论：① 弧线走由 obs 
 n=1 训练 seed（a/b 复用 TO38 单 seed，c 新训单 seed），lowband 结论靠
 b 臂失效的流形性质背书，补 seed 留待需要时执行。云任务成本：~6 任务
 × ~40 min × ¥4.01 ≈ ¥16。
+
+**数据迁出审计（2026-08-31 补）**：三层保障中 /personal 镜像对**训练任务
+不可靠**——to39c 的 32MB ckpt 镜像曾在 /personal 出现（c-eval 12:32 成功
+读取），13:35 审计时消失（lowband 三目录 66KB 反而留存，机制平台侧不明）；
+平台 checkpoint 系统留存全部 41 个 ckpt（7 天签名 URL，底层留存策略未知）。
+已迁出到 canonical（lab-ts `outputs/to39c/` + `outputs/to39_lowband/`）：
+c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样训练
+曲线（201/2000 行，平台日志采样所致；完整 train_log.json 已随 /personal
+消失=遗失，best-window 选择依据受损但结论不受影响——三臂曲线形态一致
+且评测数据完整）。后续云训练的可靠迁出正路：任务内直接产出 → 平台 ckpt
+系统 + 任务日志 → **当轮即下载**，/personal 仅作临时中转。
