@@ -89,7 +89,7 @@ class CondNet(nn.Module):
         if mode in ("embed", "film"):
             self.venc = nn.Sequential(nn.Linear(1, vemb), nn.SiLU(),
                                       nn.Linear(vemb, vemb))
-        trunk_in = 3 + (vemb if mode == "embed" else 0)
+        trunk_in = 3 + (vemb if mode == "embed" else (1 if mode.startswith("base") else 0))
         self.t1 = nn.Linear(trunk_in, hidden)
         self.t2 = nn.Linear(hidden, hidden)
         self.head = nn.Linear(hidden, 6)
