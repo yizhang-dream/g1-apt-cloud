@@ -165,8 +165,9 @@ def main():
     results = {"speeds": speeds, "n_samples": len(X),
                "tau_std": ystd.tolist(), "folds": {}}
     for tr_v, te_v, tag in FOLDS:
-        tr = np.isin(V, tr_v)
-        te = V == te_v
+        tr = np.isclose(V[:, None], np.array(tr_v, dtype=np.float32)[None, :],
+                        atol=1e-3).any(1)
+        te = np.isclose(V, te_v, atol=1e-3)
         te_std = float(Y[te].std(axis=0).mean())
         entry = {}
         for arch in ARCHS:
