@@ -112,16 +112,19 @@ nohup /home/cvgluser/ros2_data/.venv_mjlab/bin/python scripts/train.py \
 6. **评测脚本**：`--tests A` 只过滤输出字典；旧版本仍会跑完全部 rollout
    （新版已修成真正跳过）。phase/latent 模式下 `aux` 与 `noaux` 键结果相同
    （latent 无 aux 通道），评测时间翻倍属正常。
-7. **云开发机 Isaac 冷启动（2026-08-31 验证为系统性问题）**：LimX 镜像
-   IsaacSim 4.5/IsaacLab 2.0.0 上经 `isaaclab.sh -p`（即 app_launcher 带
-   experience 文件路径）启动 Kit 一律 pybind
-   `Unable to cast <class 'list'>` 于 `app.startup`；裸
-   `SimulationApp({'headless': True})` 可引导但首启需在线拉扩展且带
-   experience 的变体安静早退。上会话「--out 触发」归因不成立（去 --out
-   无效）。**需平台侧介入；开机/查询 API 已验证**：
-   `POST /dev-api/api/dev-instance/{id}/start|stop`、
-   `GET /dev-api/api/dev-instance/list`（X-Api-Key 认证，细节见
-   `LimX云平台调研.md` §10）。TO38 双臂因此改 lab-ts 本地跑。
+7. **云上 Isaac 训练（2026-08-31 已全链打通，走 flux task 而非开发机）**：
+   **pybind `Unable to cast <class 'list'>` 的真根因**（dev 实例 pp1–pp8
+   二分定位）：train 头部注入 `sys.path.insert(0, Path(__file__).parent)`
+   把 **PosixPath 对象**塞进 sys.path，kit 启动时把 sys.path 列表传给
+   C++ 转换失败——`str()` 包装修复（此前「镜像系统性问题/需要平台介入」
+   的归因不成立）。云训练官方正路 = `flux task`（git 方式 codeType=2，
+   公开仓；startScript 必须 `gm-run <repo-dir>/script.py` 相对
+   /workspace/isaaclab）而非开发机 SSH。已修的兼容问题清单：镜像
+   IsaacLab 2.0.0 无 `effort_limit_sim`（用 `effort_limit`）、apt_g1/encoder
+   包与 G1 URDF mesh（67 STL）需入仓、`ASSET_DIR` 须绝对路径（kit 启动后
+   chdir）。ckpt 平台自动发现 output/**.pt，`flux task model list` 可取；
+   任务 route 算力 ESKU000004 A10=¥4.01/时。任务 JSON 模板见
+   `gr00t/tmp/task_to39*.json`。
 
 ## 6. 环境版本
 

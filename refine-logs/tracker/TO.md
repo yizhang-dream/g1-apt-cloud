@@ -805,3 +805,26 @@ TO38+ 之后的独立正路，不在 TO38 范围内**（TO38 只用 F11b 单速�
 代价为中速带弧线走（时钟冲突显形）。云开发机 pybind 系统性问题留档
 （服务器指南 §5.7），TO 线下次训练仍走 lab-ts。E47 配方 + TO 注入的
 代码面（`to_ref*` flags）已进 train/eval 常规参数。
+
+## TO39：低速空洞推深 + obs-only 消融（2026-08-31 grill-me 定稿并开跑）
+
+> TO38 收束四条候选路中取 **a+d 组合**（grill-me 六问拍板）：把「TO 注入
+> 填补解码器低速空洞」从解释升格为能力主张 + obs-only 第三臂坐实机制。
+> 设计要点：① cmd 点 {0.08, 0.12, 0.15} 新 + {0.2, 0.277} 复测（0.2 衔接
+> TO38 作复现锚点，0.277 监测弧线）；② 三臂 = to38a（注入 w=0.3，ckpt
+> it150 复用）/ to38b（对照 obs 零块，it300 复用）/ to39c（obs-only
+> w=0 新训 seed 0）；③ 两步走——c 训完 + 三臂低速带评后再决定补 seed；
+> ④ 判据：floor（存活+h_min≥0.6）+ 主指标 |vx−cmd| + **新增主指标路径
+> 效率 disp/(v_speed·T)（吸取 TO38 弧线漏网教训，<0.5 判绕圈）**；能力
+> 主张成立 = a 或 c 在 ≥2 个低点 |vx−cmd|≤0.05 且效率≥0.7 且 floor 过；
+> ⑤ 机制判读：a 好 c 好 b 坏→obs 主体（预期）；a 好 c 坏→reward 主体；
+> a/c 均坏→注入稀疏区救不了，正路 = gate 居中随 cmd/解族条件化（TO40）。
+> 低点 0.08 处 gate≈e^−10.8≈0，低点表现纯测 obs 通道。执行平台 = 云任务
+> route（TASK_20260831_073/074/075，A10 ¥4.01/时）。
+
+| Run ID | Purpose | Variant | Metric | Status | Result |
+|--------|---------|---------|--------|--------|--------|
+| TO39-0 | 云任务路线打通（8 轮冒烟） | 公开仓 g1-apt-cloud + flux task（git 方式 codeType=2）+ gm-run 相对路径 | 2 iters 冒烟 rew 正常 + ckpt 自动发现 | DONE | **pybind 真根因 = sys.path 塞入 PosixPath 对象**（08-30 注入头，dev 实例 pp1–pp8 二分定位，str() 修复；此前「镜像系统性问题」归因作废）。连带修复：镜像 IsaacLab 2.0.0 无 effort_limit_sim kwarg（改 effort_limit）、apt_g1/encoder 包与 G1 URDF 67 STL mesh 入仓、ASSET_DIR 绝对路径（kit 启动后 chdir）。冒烟 rew 1.96→2.41 与 lab-ts 一致；ckpt 平台自动发现 output/**.pt |
+| TO39c-train | c 臂（obs-only w=0）训练 seed 0 | E47 配方 + `--to-ref --to-ref-npz to38_ref.npz --to-ref-w 0.0`，128 envs×2000 iters | 曲线 + best 窗口 ckpt | RUN | 云任务 TASK_20260831_073（A10） |
+| TO39a-eval | a 臂低速带评测（复用 it150） | cmds {0.08,0.12,0.15,0.2,0.277} × seed{0,1,2}，A 60s | floor + \|vx−cmd\| + 路径效率 | RUN | 云任务 TASK_20260831_074 |
+| TO39b-eval | b 臂低速带评测（obs 零块） | 同上，`--to-ref-obs-zero` | 同上 | RUN | 云任务 TASK_20260831_075 |
