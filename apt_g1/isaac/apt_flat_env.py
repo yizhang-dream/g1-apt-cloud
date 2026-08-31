@@ -214,6 +214,15 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     to_ref_w: float = 0.0  # tracking reward weight (0 = reward off)
     to_ref_sigma2: float = 0.1  # tracking kernel width (rad^2)
     to_ref_gate2: float = 0.0036  # cmd-proximity gate sigma^2 (default 0.06^2)
+    # TO40-C: gated torque feedforward (paper hybrid-control analog, leg level).
+    # tau_ff(psi) from the same LUT, applied ONLY when cmd is near the solution
+    # speed (gate reuse) -- injection as position offset dq = w*tau/kp on the 6
+    # sagittal joints (implicit PD semantics guaranteed; effort superposition
+    # left for later). Obs dim unchanged -> to38b stays a valid control.
+    to_tau: bool = False
+    to_tau_w: float = 1.0
+    to_tau_kp: tuple = (99.09843, 99.09843, 40.17924,
+                        99.09843, 99.09843, 40.17924)  # Lh,Lk,La,Rh,Rk,Ra
 
     # privileged local elevation map (teacher-style terrain observation)
     use_elevation: bool = False
@@ -299,8 +308,8 @@ class AptFlatG1Env(DirectRLEnv):
         # R hip/knee/ankle pitch) -- the to_ref LUT columns are already in this
         # order with the B-gate sign map applied (to38_export_ref.py).
         self._sag_idx = torch.tensor([0, 3, 4, 6, 9, 10], dtype=torch.long, device=self.device)
-        self._to_q = self._to_scal = self._to_def_sag = None
-        if self.cfg.to_ref:
+        self._to_q = self._to_scal = self._to_def_sag = self._to_tau = None
+        if self.cfg.to_ref or self.cfg.to_tau:
             self._to_phase = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
             if self.cfg.to_ref_npz:
                 lut = np.load(self.cfg.to_ref_npz)
@@ -312,6 +321,9 @@ class AptFlatG1Env(DirectRLEnv):
                 self._to_scal = torch.from_numpy(
                     np.concatenate([lut["pitch"][:, None], lut["z"][:, None], lut["heel_rel"]], 1)
                 ).float().to(self.device)
+                self._to_tau = torch.from_numpy(lut["tau_ref6"]).float().to(self.device)
+                self._to_kp = torch.tensor(
+                    list(self.cfg.to_tau_kp), dtype=torch.float32, device=self.device)
                 self._to_def_sag = self._sonic_default_t[self._sag_idx]
 
         if self.cfg.use_sonic_prior:
@@ -644,8 +656,8 @@ class AptFlatG1Env(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor):
         self._sample_disturbance()
         self._update_gate()
-        if self.cfg.to_ref:
-            # TO38: advance the free-running reference clock once per control
+        if self.cfg.to_ref or self.cfg.to_tau:
+            # TO38/40: advance the free-running reference clock once per control
             # step (period = the TO solution's natural stride time).
             self._to_phase = (self._to_phase + self._to_rate) % math.tau
         if self.cfg.decft_mode:
@@ -720,6 +732,15 @@ class AptFlatG1Env(DirectRLEnv):
             self.num_envs, self.robot.num_joints, dtype=torch.float32, device=self.device
         )
         full[:, self._body_idx] = self._q_des
+        if self.cfg.to_tau and self._to_tau is not None:
+            # TO40-C: gated torque feedforward as position offset dq = w*tau/kp
+            # on the sagittal joints (cmd-gated; obs/pairing untouched).
+            _q, _s, tau = self._to_ref_lookup()
+            w = torch.exp(-((self._commands[:, 0] - self._to_vavg) ** 2)
+                          / self.cfg.to_ref_gate2)
+            dq = (self.cfg.to_tau_w * w / self._to_kp).unsqueeze(1) * tau
+            full[:, self._body_idx[self._sag_idx]] = (
+                full[:, self._body_idx[self._sag_idx]] + dq)
         self.robot.set_joint_position_target(full, joint_ids=None)
 
     def _to_ref_lookup(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -731,7 +752,9 @@ class AptFlatG1Env(DirectRLEnv):
         a = (x - x.floor()).unsqueeze(1)
         q = (1 - a) * self._to_q[i0] + a * self._to_q[i1]
         s = (1 - a) * self._to_scal[i0] + a * self._to_scal[i1]
-        return q, s
+        tau = ((1 - a) * self._to_tau[i0] + a * self._to_tau[i1]
+               if self._to_tau is not None else None)
+        return q, s, tau
 
     def _get_observations(self) -> dict:
         base_lin_vel = self.robot.data.root_lin_vel_b
@@ -795,7 +818,7 @@ class AptFlatG1Env(DirectRLEnv):
             parts.append(self._last_phase)
         if self.cfg.to_ref:
             if self._to_q is not None and not self.cfg.to_ref_obs_zero:
-                q_ref, scal = self._to_ref_lookup()
+                q_ref, scal, _ = self._to_ref_lookup()
                 clocks = torch.stack(
                     [torch.sin(self._to_phase), torch.cos(self._to_phase)], dim=1
                 )
@@ -863,7 +886,7 @@ class AptFlatG1Env(DirectRLEnv):
             # TO38: sagittal-joint tracking of the TO reference, gated by
             # commanded-speed proximity to the solution speed -- envs commanded
             # away from v_TO are untouched by the reference (isolation).
-            q_ref, _ = self._to_ref_lookup()
+            q_ref, _, _ = self._to_ref_lookup()
             q_sag = self.robot.data.joint_pos[:, self._body_idx][:, self._sag_idx]
             err = ((q_sag - q_ref) ** 2).sum(-1)
             gate = torch.exp(
@@ -949,7 +972,7 @@ class AptFlatG1Env(DirectRLEnv):
             self._latent_phase[env_ids] = torch.rand(
                 len(env_ids), dtype=torch.float32, device=self.device
             ) * math.tau
-        if self.cfg.to_ref:
+        if self.cfg.to_ref or self.cfg.to_tau:
             # random stride phase at spawn (same treatment as the walk clock;
             # the policy must handle any phase offset since it cannot observe
             # the latent clock either)

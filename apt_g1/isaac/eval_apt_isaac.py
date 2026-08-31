@@ -66,6 +66,8 @@ def build_args():
     ap.add_argument("--to-ref", action="store_true")
     ap.add_argument("--to-ref-npz", default="")
     ap.add_argument("--to-ref-obs-zero", action="store_true")
+    ap.add_argument("--to-tau", action="store_true")
+    ap.add_argument("--to-tau-w", type=float, default=1.0)
     # E33: open-loop yaw-bias compensation (rad/s). Cancels a systematic
     # turning bias (e.g. E31's ~-0.07 rad/s = -4 deg/s left drift).
     ap.add_argument("--yaw-bias-comp", type=float, default=0.0)
@@ -364,6 +366,8 @@ def main():
     cfg.to_ref = cli.to_ref
     cfg.to_ref_npz = cli.to_ref_npz
     cfg.to_ref_obs_zero = cli.to_ref_obs_zero
+    cfg.to_tau = cli.to_tau
+    cfg.to_tau_w = cli.to_tau_w
     cfg.latent_cmd_phase_rate = cli.latent_cmd_phase_rate
     cfg.latent_phase_rate_ref = cli.latent_phase_rate_ref
     cfg.latent_phase_rate_max = cli.latent_phase_rate_max

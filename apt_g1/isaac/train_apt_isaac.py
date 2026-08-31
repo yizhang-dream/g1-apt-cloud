@@ -98,6 +98,9 @@ def build_args():
     ap.add_argument("--to-ref-w", type=float, default=0.0, help="TO38: tracking reward weight")
     ap.add_argument("--to-ref-sigma2", type=float, default=0.1)
     ap.add_argument("--to-ref-gate-sigma2", type=float, default=0.0036)
+    ap.add_argument("--to-tau", action="store_true",
+                    help="TO40-C: cmd-gated torque feedforward from the LUT (no obs change)")
+    ap.add_argument("--to-tau-w", type=float, default=1.0)
     ap.add_argument("--aux-scale", type=float, default=0.2)
     ap.add_argument("--aux-l2", type=float, default=0.0)
     ap.add_argument("--aux-rate", type=float, default=0.0)
@@ -210,6 +213,8 @@ def main():
     cfg.to_ref_w = cli.to_ref_w
     cfg.to_ref_sigma2 = cli.to_ref_sigma2
     cfg.to_ref_gate2 = cli.to_ref_gate_sigma2
+    cfg.to_tau = cli.to_tau
+    cfg.to_tau_w = cli.to_tau_w
     if cfg.to_ref:
         # obs block: [sin psi, cos psi, q_ref6_rel, pitch, z, heel_x_rel, heel_z]
         cfg.observation_space += 12
