@@ -173,6 +173,7 @@
 | `to36_setup_drake_env.sh` | DEV | 服务器 `.venv_drake` 建 env 脚本（无 sudo：`--without-pip`+get-pip 引导 + `pip install drake`） | TO36 |
 | `to38_analyze.py` | 评测 | **TO38（2026-08-31）**：双臂配对差分分析——读 `to38{a,b}_eval_*.json`，floor 检查 + 低速带 vx 跟踪误差配对差分 + 三分支判定（决策表在 TO38_PLAN §0/§4）；支持多 ckpt 配对（每臂 best=各自窗口最优） | TO38 |
 | `to38_export_ref.py` | 模块 | **TO38（2026-08-31）**：`to36_world_knots.npz` → RL 注入用紧凑 LUT `to38_ref.npz`（M=120：q_ref6/tau_ref6/pitch/z/heel_rel + meta）。**关键：world npz q6 列序按角色排**（[支撑 A/K/H, 摆动 H/K/A]，两相互为镜像、符号按角色）——本脚本做逐相角色→SONIC 重排 + B 门符号 + 周期闭合检查（wrap_gap）。配套注入代码：`isaac/apt_flat_env.py` 的 `to_ref*` cfg（12 维 obs 块 + cmd 门控矢状跟踪 reward + 独立 ψ 时钟）、`train_apt_isaac.py`/`eval_apt_isaac.py` 的 `--to-ref*` CLI | TO38 |
+| `to40c_analyze.py` | 评测 | **TO40C（2026-09-01）**：三臂（ctrl/t10/t05）配对差分分析——读 `{arm}_eval_{ck}*_a{cmd}.json`，floor 检查（completed/h_min≥0.6/disp>0.5）+ 门开带 vx 跟踪误差配对差分（δ=0.03 等效边界）+ 路径效率（disp/(v_speed·60s)，<0.5 判绕圈）+ 2×2 交叉注入诊断（{arm}_eval_{ck}_x{on|off}_a0277.json）；判定逻辑见 `refine-logs/TO40C_PLAN.md` §5。配套注入代码：`isaac/apt_flat_env.py` 的 `to_tau*`（kp 从 sim 读取） | TO40C |
 
 ## 6. `refine-logs/tools/` —— 文档树工具（2026-08-29 增补登记，非实验代码）
 

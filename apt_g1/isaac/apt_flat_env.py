@@ -329,14 +329,24 @@ class AptFlatG1Env(DirectRLEnv):
                 # TO40-C: kp 用 sim 实际执行器 stiffness（隐式 PD 的真实增益），
                 # 而非硬编码；只读默认值，不 set 回（不改动基座动力学）。读取失败
                 # 回退 cfg.to_tau_kp 并打印警告。
+                # default_joint_stiffness 按 sim 的 URDF joint 顺序排，
+                # **不是** SONIC 顺序；因此要按关节名逐一取回，重排到 sagittal6
+                # [Lhip,Lknee,Lankle,Rhip,Rknee,Rankle]（与 LUT 列序一致）。
+                _sag_names = ["left_hip_pitch_joint", "left_knee_joint",
+                              "left_ankle_pitch_joint", "right_hip_pitch_joint",
+                              "right_knee_joint", "right_ankle_pitch_joint"]
                 _sim_kp = None
                 if hasattr(self.robot.data, "default_joint_stiffness") and \
                         self.robot.data.default_joint_stiffness is not None:
-                    _sim_kp = self.robot.data.default_joint_stiffness[
-                        0, self._body_idx][self._sag_idx]
+                    _stiff = self.robot.data.default_joint_stiffness[0]
+                    try:
+                        _uids = [self.robot.joint_names.index(n) for n in _sag_names]
+                        _sim_kp = _stiff[_uids]
+                    except ValueError:
+                        _sim_kp = None
                 if _sim_kp is not None and torch.isfinite(_sim_kp).all() and \
                         (_sim_kp > 0).all():
-                    self._to_kp = _sim_kp.clone().to(self.device)
+                    self._to_kp = _sim_kp.to(torch.float32).to(self.device)
                     print(f"[to40c] kp from sim (sagittal6) = "
                           f"{[round(float(v), 4) for v in self._to_kp]}")
                 else:

@@ -75,8 +75,8 @@ hip_yaw, knee, ankle_pitch, ankle_roll]，取前三个当 [髋, 膝, 踝] 是错
 口径不成立，实验测的就不是它声称的东西。
 
 **修法（本轮开跑前做，属实验前置而非结果）**：
-1. 运行时**直接从 articulation 读实际 stiffness**（`robot.data.joint_stiffness`
-   / `default_joint_stiffness`）取 6 个矢状关节的 kp，作为唯一真值；
+1. 运行时**直接从 articulation 读实际 stiffness**（`robot.data.default_joint_stiffness`）
+   取 6 个矢状关节的 kp，作为唯一真值；
 2. cfg 默认值改为正确的 (99.09843, 99.09843, 28.50125) ×2，仅作读取失败时的回退；
 3. 启动时打印 sim 读到的 kp 与 |dq| 峰值，进日志作为可追溯证据。
 
@@ -161,3 +161,17 @@ canonical 在 lab-ts `~/ros2_data/apt_g1/outputs/`（`to40c_*`），
 小产物（eval JSON / train_log / 汇总）同步进仓 `apt_g1/outputs/sync/to40c/`；
 `EXPERIMENT_TRACKER.md` 行数同步、`apt_g1/SCRIPT_MAP.md` 登记新脚本、
 `python refine-logs/tools/tree_check.py` 三项全绿后提交。
+
+---
+
+## 8. 开跑前落地的实现（2026-09-01，已进代码）
+
+1. **kp 口径修正落地**：`apt_flat_env.py` 的 `to_tau_kp` 默认值改为
+   (99.09843, 99.09843, 28.50125)×2；**运行时优先从 `robot.data.default_joint_stiffness`
+   按关节名（不按 SONIC 顺序）重排取 6 个矢状关节真值**，仅不可用时回退 cfg。
+   冒烟实测打印 `kp from sim (sagittal6) = [99.0984, 99.0984, 28.5012, 99.0984,
+   99.0984, 28.5012]`（与 §2 预算一致，踝 28.50 而非 40.18）。
+2. **冒烟 2 iters 通过**：rew 2.007→2.357、fall 0、kp 打印正确、无 NaN，ckpt/train_log
+   正常落盘。
+3. **注入口径复述**：`dq = tau_ref6 * (w_gate * w_tau / kp)`，只加在 6 个矢状关节的
+   位置目标上；obs 三臂都是 12 维零块（`--to-ref-obs-zero`），仅 τ 通道不同。
