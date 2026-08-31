@@ -1,0 +1,42 @@
+{
+ "switch": {
+  "fall_step": 999,
+  "h_min": 0.738,
+  "vx": 0.427,
+  "vy": 0.012
+ },
+ "schedule": [
+  [
+   "idle",
+   5
+  ],
+  [
+   "walk_fwd",
+   10
+  ],
+  [
+   "idle",
+   5
+  ],
+  [
+   "slow_back",
+   10
+  ],
+  [
+   "turn_left",
+   8
+  ],
+  [
+   "slow_fwd",
+   10
+  ],
+  [
+   "jump",
+   5
+  ],
+  [
+   "idle",
+   5
+  ]
+ ]
+}

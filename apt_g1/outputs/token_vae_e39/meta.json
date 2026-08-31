@@ -1,0 +1,15 @@
+{
+ "window": 10,
+ "latent_dim": 16,
+ "hidden": 256,
+ "token_dim": 64,
+ "phase_dim": 2,
+ "n_vbins": 3,
+ "n_dbins": 8,
+ "adv_dir": 3.0,
+ "adv_spd": 3.0,
+ "val_mse": 0.005923719374564163,
+ "val_mae": 0.07696570258604908,
+ "dir_head_acc": 0.1189427301287651,
+ "speed_head_acc": 0.577826738357544
+}

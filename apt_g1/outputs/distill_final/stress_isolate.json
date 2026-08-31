@@ -1,0 +1,66 @@
+{
+ "walk_back_60s": {
+  "seed0": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.735,
+   "h_mean": 0.759,
+   "vx": -0.797,
+   "vy": -0.015,
+   "displacement": 48.72
+  },
+  "seed1": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.733,
+   "h_mean": 0.76,
+   "vx": -0.797,
+   "vy": -0.017,
+   "displacement": 48.73
+  },
+  "seed2": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.732,
+   "h_mean": 0.76,
+   "vx": -0.798,
+   "vy": -0.018,
+   "displacement": 48.8
+  }
+ },
+ "walk40_idle_jump": {
+  "seed0": {
+   "steps": 2267,
+   "completed": false,
+   "fall_step": 2266,
+   "h_min": 0.224,
+   "h_mean": 0.749,
+   "vx": 0.786,
+   "vy": 0.048,
+   "displacement": 36.67
+  },
+  "seed1": {
+   "steps": 2400,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.206,
+   "h_mean": 0.734,
+   "vx": 0.747,
+   "vy": 0.033,
+   "displacement": 37.37
+  },
+  "seed2": {
+   "steps": 2400,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.231,
+   "h_mean": 0.733,
+   "vx": 0.772,
+   "vy": 0.04,
+   "displacement": 38.31
+  }
+ }
+}

@@ -1,0 +1,354 @@
+{
+ "idle": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.785,
+   "h_min": 0.76,
+   "vx": 0.004,
+   "vy": -0.0,
+   "speed": 0.005,
+   "path": 0.09
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.786,
+   "h_min": 0.759,
+   "vx": 0.003,
+   "vy": 0.001,
+   "speed": 0.012,
+   "path": 0.24
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.786,
+   "h_min": 0.759,
+   "vx": 0.004,
+   "vy": 0.0,
+   "speed": 0.008,
+   "path": 0.17
+  }
+ },
+ "slow_fwd": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.781,
+   "h_min": 0.745,
+   "vx": 0.097,
+   "vy": -0.002,
+   "speed": 0.138,
+   "path": 2.75
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.782,
+   "h_min": 0.759,
+   "vx": 0.079,
+   "vy": -0.008,
+   "speed": 0.117,
+   "path": 2.33
+  },
+  "seed2": {
+   "fall_step": 688,
+   "completed": false,
+   "h_mean": 0.76,
+   "h_min": 0.211,
+   "vx": 0.232,
+   "vy": 0.064,
+   "speed": 0.37,
+   "path": 5.09
+  }
+ },
+ "slow_back": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.785,
+   "h_min": 0.758,
+   "vx": 0.001,
+   "vy": 0.001,
+   "speed": 0.045,
+   "path": 0.91
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.785,
+   "h_min": 0.757,
+   "vx": 0.001,
+   "vy": 0.002,
+   "speed": 0.045,
+   "path": 0.9
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.785,
+   "h_min": 0.757,
+   "vx": 0.001,
+   "vy": 0.001,
+   "speed": 0.043,
+   "path": 0.87
+  }
+ },
+ "walk_fwd": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.757,
+   "h_min": 0.684,
+   "vx": 0.828,
+   "vy": 0.043,
+   "speed": 0.844,
+   "path": 16.88
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.758,
+   "h_min": 0.69,
+   "vx": 0.831,
+   "vy": 0.041,
+   "speed": 0.846,
+   "path": 16.92
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.758,
+   "h_min": 0.69,
+   "vx": 0.83,
+   "vy": 0.043,
+   "speed": 0.845,
+   "path": 16.91
+  }
+ },
+ "walk_back": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.76,
+   "h_min": 0.735,
+   "vx": -0.784,
+   "vy": -0.017,
+   "speed": 0.8,
+   "path": 16.01
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.76,
+   "h_min": 0.735,
+   "vx": -0.782,
+   "vy": -0.012,
+   "speed": 0.798,
+   "path": 15.97
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.76,
+   "h_min": 0.734,
+   "vx": -0.782,
+   "vy": -0.01,
+   "speed": 0.798,
+   "path": 15.96
+  }
+ },
+ "jump": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.343,
+   "h_min": 0.203,
+   "vx": 0.215,
+   "vy": -0.045,
+   "speed": 0.277,
+   "path": 5.55
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.3,
+   "h_min": 0.204,
+   "vx": 0.14,
+   "vy": -0.046,
+   "speed": 0.184,
+   "path": 3.68
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.358,
+   "h_min": 0.211,
+   "vx": 0.278,
+   "vy": -0.047,
+   "speed": 0.316,
+   "path": 6.32
+  }
+ },
+ "turn_right": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.756,
+   "h_min": 0.68,
+   "vx": 0.02,
+   "vy": 0.138,
+   "speed": 0.19,
+   "path": 3.79
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.754,
+   "h_min": 0.672,
+   "vx": 0.085,
+   "vy": 0.106,
+   "speed": 0.246,
+   "path": 4.92
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.76,
+   "h_min": 0.746,
+   "vx": -0.028,
+   "vy": 0.139,
+   "speed": 0.161,
+   "path": 3.22
+  }
+ },
+ "turn_left": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.781,
+   "h_min": 0.758,
+   "vx": 0.008,
+   "vy": -0.0,
+   "speed": 0.017,
+   "path": 0.34
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.752,
+   "h_min": 0.698,
+   "vx": 0.478,
+   "vy": 0.043,
+   "speed": 0.503,
+   "path": 10.07
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.759,
+   "h_min": 0.708,
+   "vx": 0.346,
+   "vy": 0.043,
+   "speed": 0.371,
+   "path": 7.42
+  }
+ },
+ "strafe_right": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.781,
+   "h_min": 0.759,
+   "vx": 0.143,
+   "vy": -0.014,
+   "speed": 0.172,
+   "path": 3.44
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.781,
+   "h_min": 0.758,
+   "vx": 0.138,
+   "vy": -0.014,
+   "speed": 0.168,
+   "path": 3.36
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.781,
+   "h_min": 0.758,
+   "vx": 0.146,
+   "vy": -0.012,
+   "speed": 0.176,
+   "path": 3.51
+  }
+ },
+ "strafe_left": {
+  "seed0": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.784,
+   "h_min": 0.758,
+   "vx": 0.003,
+   "vy": -0.001,
+   "speed": 0.021,
+   "path": 0.43
+  },
+  "seed1": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.756,
+   "h_min": 0.721,
+   "vx": 0.397,
+   "vy": 0.041,
+   "speed": 0.422,
+   "path": 8.44
+  },
+  "seed2": {
+   "fall_step": 999,
+   "completed": true,
+   "h_mean": 0.784,
+   "h_min": 0.757,
+   "vx": 0.003,
+   "vy": -0.001,
+   "speed": 0.022,
+   "path": 0.44
+  }
+ },
+ "stealth": {
+  "seed0": {
+   "fall_step": 356,
+   "completed": false,
+   "h_mean": 0.665,
+   "h_min": 0.208,
+   "vx": 0.854,
+   "vy": -0.182,
+   "speed": 0.962,
+   "path": 6.87
+  },
+  "seed1": {
+   "fall_step": 402,
+   "completed": false,
+   "h_mean": 0.695,
+   "h_min": 0.201,
+   "vx": 0.969,
+   "vy": -0.129,
+   "speed": 1.016,
+   "path": 8.19
+  },
+  "seed2": {
+   "fall_step": 439,
+   "completed": false,
+   "h_mean": 0.696,
+   "h_min": 0.202,
+   "vx": 0.965,
+   "vy": -0.106,
+   "speed": 1.004,
+   "path": 8.83
+  }
+ }
+}

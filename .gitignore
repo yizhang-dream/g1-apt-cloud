@@ -50,3 +50,14 @@ Thumbs.db
 
 # --- Agent session state (evo backend; local only) ---
 .openevo/
+
+# --- Multi-end sync whitelist (2026-08-31: one-repo layout; overrides the
+# global binary ignores above — these paths ARE tracked on purpose) ---
+!gear_sonic/**
+!gear_sonic_deploy/**
+!apt_g1/outputs/token_vae_e39/
+!apt_g1/outputs/token_vae_e39/**
+!apt_g1/outputs/distill_final/
+!apt_g1/outputs/distill_final/**
+!apt_g1/outputs/sync/
+!apt_g1/outputs/sync/**
