@@ -17,6 +17,7 @@ def load(path, arm, ck, ctag):
     return None
 
 def row_metrics(r, cmd):
+    # 路径效率(直线度) = 60s 净位移 / (实测平均速度模长·60s)；直行≈1.0、绕圈<0.5
     eff = r["disp"] / (r["v_speed"] * T) if r["v_speed"] > 1e-6 else 0.0
     return dict(vx=r["vx"], h=r["h_min"], disp=r["disp"], done=r["completed"],
                 eff=eff, err=abs(r["vx"] - cmd))
@@ -85,8 +86,30 @@ def main():
                     diffs.append(ca[i]["err"] - oa[i]["err"])
         if diffs:
             md = float(np.mean(diffs))
-            print(f"\n配对差分 ctrl-{other} (n={len(diffs)}): {md:+.4f} (δ={args.delta})"
-                  f" -> {'等效' if abs(md)<=args.delta else ('显著优于' if md<-args.delta else '显著劣于')}")
+            # 分层互斥判定（评审修正，见 TO40C_PLAN §9）：未决窗 (0.02,0.04] 与
+            # 三分支互斥；主指标须逐 cmd 达标，合并均值只作报告。
+            print(f"\n配对差分 ctrl-{other} (n={len(diffs)}): {md:+.4f}")
+            # per-cmd pass: each cmd diff must be <= +delta_hard (0.04) to count usable
+            delta_hard = 0.04
+            window_lo = 0.02
+            per_cmd = []
+            for cmd in cmds:
+                ca = metric[ctrl].get(cmd); oa = metric[other].get(cmd)
+                if not ca or not oa: continue
+                n = min(len(ca), len(oa)); cd = [ca[i]["err"] - oa[i]["err"] for i in range(n) if ca[i]["done"] and oa[i]["done"]]
+                if cd: per_cmd.append((cmd, float(np.mean(cd))))
+            print("  per-cmd diff:", "  ".join(f"{c}:{d:+.3f}" for c,d in per_cmd))
+            if window_lo < abs(md) <= delta_hard:
+                layer = "未决窗：补第二训练 seed（不进三分支）"
+            elif abs(md) <= window_lo:
+                layer = "分支①：通道可用（等效或正向）"
+            elif md < -delta_hard:
+                layer = "通道正向（明显优）"
+            elif md > delta_hard:
+                layer = "分支③：通道毁基座（明显劣）"
+            else:
+                layer = "未知"
+            print(f"  -> 分层判定 窗({window_lo},{delta_hard}): {layer}")
         else:
             print(f"\n配对差分 ctrl-{other}: 无有效对")
 
