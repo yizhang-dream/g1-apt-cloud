@@ -352,6 +352,33 @@ identity / conformance 检查）→ execution freeze → experiment。
    （planned sequence 已产出）；**Decision 2″ 未决（速度定位机制 + 容差带）
    前 manifest 不 freeze、campaign 不 launch**。
 
+### 5.7 Decision 2″ 裁决与 smoke 协议（十七轮）
+
+**裁定（owner，十七轮）：接受提案**——机制 = `--stages` 末段
+`v_min = requested_v`（现有旗标实例化，**暂不扩 solver**；`--v-target`
+仅在 smoke 失败时作为 reopen 议题评估）。容差判据⑨：
+`|v_realized − v| ≤ 0.02 m/s` 入 §5.2 机械验收。
+
+**解释纪律（三条，不得突破）**：
+1. 0.02 是 **material validity gate**，不是相邻 target speed 的统计可
+   区分界（0.250/0.275/0.277 间距 < 0.02）——它只回答「解是否足够接近
+   被要求的目标」，不回答「realized speed 可代表哪个 target」。
+2. material manifest 必存 `requested_v / v_realized / abs_error`；
+   canonical identity = **requested_v + canonical seed/order**——不得按
+   v_realized 重命名、合并或替换材料。`v_min = v` 是 target specification
+   mechanism，`v_realized` 是 material-generation outcome，二者不得互换。
+3. **campaign log 固定语句**：passing v_realized 只是材料生成容差内命中
+   目标的证据，**不是**冻结解码器或 τ 机制科学有效的证据。
+
+**smoke 协议（manifest freeze 的前置）**：v = 0.277，ladder k=0 tuple
+（knots=14 / max-iter=4000 / retries=0 / cold）+ 末段 v_min=0.277。验收
+五条：① CLI 解析末段 v_min 符合预期；② v_realized 可获得；③
+|v_realized − 0.277| ≤ 0.02；④ 同一完整 tuple 重跑具有确定性；⑤
+`_audit_pass` 正常接管机械验收。**smoke 失败 → 不许调 knobs 凑 ±0.02 →
+Decision 2″ reopen → 评估 --v-target solver 扩展**。smoke 通过则 run A
+追认为 campaign start k=0@0.277（配置与 ladder 完全一致），run B 为
+确定性见证（预声明：见证不占 56-start 预算）。
+
 ## 6. implementation audit 八问（每步自检）
 
 1 YAML 是否被原样消费？ 2 7 个 cmd 是否全部 launch？ 3 τ_ff ON/OFF 是否

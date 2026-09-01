@@ -5,7 +5,19 @@
 artifact_id: rung1-tau-material-campaign
 schema_version: 1
 material_spec: TO41_RUNG1_IMPL.md §5（FROZEN，十五轮）
-freeze_status: planned（Decision 2″ 裁定 + 本文件 freeze 于 launch 时执行）
+freeze_status: awaiting-smoke（Decision 2″ 已裁定，见下；smoke 五条验收通过后 freeze + launch）
+
+speed_targeting:
+  ruling: Decision 2″ APPROVED（十七轮）
+  mechanism: --stages 末段 v_min = requested_v（现有旗标实例化，暂不扩 solver）
+  tolerance_gate: |v_realized − v| ≤ 0.02 m/s（§5.2 机械判据⑨；material validity gate，
+    非相邻 target speed 的统计可区分界）
+  identity: canonical = requested_v + canonical seed/order——不得按 v_realized
+    重命名/合并/替换材料；manifest 必存 requested_v / v_realized / abs_error
+  smoke: v=0.277 + ladder k=0 + 末段 v_min=0.277；五条验收（CLI 解析 /
+    v_realized 可得 / ≤0.02 / 重跑确定性 / _audit_pass 接管）；失败 → 不调
+    knobs 凑数 → Decision 2″ reopen 评估 --v-target。smoke 通过则 run A 追认
+    start k=0@0.277，run B 为确定性见证（不占预算）
 
 target_speeds: [0.200, 0.225, 0.250, 0.275, 0.277, 0.300, 0.325]
 
@@ -53,9 +65,6 @@ boundary: >-
 
 open_item:
   id: Decision 2″
-  question: G(v) 的速度定位机制与容差带
-  proposal: >-
-    机制 = --stages 末段 v_min = v（现有旗标，launch 前 smoke start 验证语义）；
-    验收 = §5.2 追加机械判据⑨ |v_realized − v| ≤ 0.02 m/s（容差带，
-    十六轮提案待批）。
-  gate: 裁定前 manifest 不 freeze、campaign 不 launch
+  status: RESOLVED（十七轮，见 speed_targeting）
+  residual: campaign log 固定语句——passing v_realized 只是材料生成容差内
+    命中目标的证据，不是冻结解码器或 τ 机制科学有效的证据
