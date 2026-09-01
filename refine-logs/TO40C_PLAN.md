@@ -370,28 +370,39 @@ decoder 是冻结基座，本项目的科学问题是「decoder 冻结后 τ_ff 
 artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一致性 diff = 空）
 进 §7 产物清单。
 
-### 10.8 设计冻结审查清单（design-freeze review，七轮评审落盘）
+### 10.8 设计冻结审查清单（design-freeze review，七/八轮评审落盘）
 
-> **状态板（七轮评审，9.8/10）**：Protocol FROZEN ｜ Grid APPROVED ｜
-> Estimands LOCKED ｜ Stopping rules LOCKED ｜ Anti-selection LOCKED ｜
-> Decoder invariance = ENTRY GATE ｜ Treatment mapping **GENERATED**
-> （`apt_g1/configs/rung1_tau_dec_mapping.yaml` @468a1e7，
-> freeze_status = generated-not-frozen，**维持不冻结**）｜ A Schema
-> **PASS** ｜ B Determinism **PASS**（byte-identical 重跑）｜ C Operator
-> **CONDITIONAL PASS**（Q1/Q2 冻结后复核）｜ D Runtime conformance
-> **PENDING**（唯一剩余技术 gate）｜ **STATUS = CONDITIONAL PASS →
-> NEXT = D dry-run**。
+> **状态板（八轮评审，9.9/10；两层 freeze 语义——Specification FROZEN ≠
+> execution frozen，不得混写）**：
+> Specification **FROZEN**（grid APPROVED、estimands/stopping/anti-selection
+> LOCKED、mapping GENERATED @468a1e7 = generated-not-frozen、invariance
+> requirements LOCKED）｜ Implementation **STARTED**（八轮授权：instantiate
+> the frozen specification, not reinterpret）｜ D1/D2/D3 **PENDING**
+> （最小样本 execution integrity test：7 speeds × τ_ff ON/OFF × 最小
+> episode/seed；**非小型实验、效应估计为零目的**；D3 逐点对照表入产物）｜
+> Execution freeze **PENDING**（owner decision）｜ **Compute BLOCKED**
+> （D + execution freeze 全过前不得开跑）。
 >
 > **D 三层判定（七轮定稿；三层全 PASS 才算 D PASS，禁用「dry-run
 > successful」式模糊表述）**：
 > **D1** decoder invariance——checkpoint / architecture / preprocessing /
-> normalization 四哈希与冻结基线一致；
+> normalization 四哈希与冻结基线一致，**且 decoder 参数/state 不因
+> τ_dec treatment 改变（conditioning 只选择、不修改）**；
 > **D2** assignment invariance——同 target_speed 下 τ_ff ON/OFF → 同
 > decoder condition（bin 仅依赖 cmd_vx、构造上正交；违反则 DiD 解释等级
 > 下降）；
 > **D3** artifact-runtime conformance——在运行环境中以冻结实现对同 7 个
 > cmd 求值，runtime assignment 与 YAML records **逐项相等**（比哈希更强的
 > 端到端证明，封堵 generator 与冻结实现两条执行路径的 divergence risk）。
+>
+> **implementation 纪律（八轮）**：实现只实例化冻结规格、不得重新解释——
+> 禁改 grid / bin mapping / 默认值 / τ_ff ON-OFF 定义 / outcome / pairing，
+> 禁条件筛选、禁按 dry-run 结果调 treatment、禁为跑通改 decoder、禁合并
+> 条件或速度点（0.275≠0.277）；规格无法一致实现 → **report incompatibility
+> → stop → owner 决定是否 reopen**（章程/代码面测绘/incompatibility 报告：
+> `TO41_RUNG1_IMPL.md`）。变量身份进代码命名：target_speed = treatment ｜
+> decoder_condition = conditioning state ｜ τ_ff = intervention ｜
+> achieved speed = outcome/diagnostic；禁止含义模糊的裸 `speed` 命名。
 >
 > **冻结纪律（七轮）**：
 > ① freeze 动作 = **纯状态迁移**——freeze commit 只改 freeze_status，
