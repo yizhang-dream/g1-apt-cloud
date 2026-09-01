@@ -254,7 +254,7 @@ C1/C2 是人为 assignment，不自动等同两个自然 gait/ecological regimes
 - D 全 PASS → owner freeze（纯状态迁移 commit，只改 freeze_status）→
   EXECUTION-READY → compute。
 
-## 5. τ(v) material specification 草案（Mode A；owner 冻结后生效）
+## 5. τ(v) material specification（Mode A；十五轮 spec FROZEN）
 
 ### 5.1 生成规则 G（确定性，无代表速度）
 
@@ -273,27 +273,55 @@ outcome/achieved-speed 反推）自动满足。产物 = 7 份材料 + 一份 man
 NaN/Inf；⑦ 确定性复现（同参数重跑 LUT hash 一致）；⑧ 每份 sha256 入
 manifest。
 
-### 5.3 infeasibility 规则（预注册）
+### 5.3 infeasibility 规则、stop rule 与搜索预算（十五轮定稿）
 
-慢速点（0.200/0.225/0.250）dircol 收敛风险真实存在（TO36 F 线最好
-0.318 m/s；低速 = 更长 T、更难收敛）。预注册：每速度 multi-start 预算
-【提案】≤ 8 进程并行 × 确定性 seed 列表；预算耗尽仍无过审计解 → 该 v 记
-**material-unavailable** → 对应 cells 按 §10.4 判 invalid（不插值/不跳过/
-不合并/**不换代表速度凑数**）。material-unavailable 清单入 D 报告。
+**搜索预算（两层，防止「预算超支但 protocol 没写」的争议）**：
+- **Hard resource cap**：每速度最多 **8 个预注册 deterministic starts**；
+  全战役最多 **7 × 8 = 56 starts**；服务器同时最多 **8 个 dircol 进程**
+  （8-way concurrency）。
+- **Planning estimate（非上限、非承诺）**：预计每速度 1–2 starts 收敛，
+  单 start 40–60 min；实际墙钟取决于并行调度与提前成功停止（纯求解量级
+  2–7 h + overhead），**不做单点「≤X 天」承诺**。
 
-### 5.4 compute 授权申请（待批）
+**per-speed stop rule（canonical material identity 闭环）**：每速度按
+**预注册 deterministic seed order** 顺序尝试；**首个完整通过 §5.2 机械
+验收的候选即冻结为该速度 canonical material，并停止该速度后续 starts**
+——不因预算未用完而继续跑。**禁止按 outcome 选候选**：「最平滑」「残差
+最小」「机器人跑得最好看」均属 post-hoc material optimization。同一 v
+多解合格时，canonical = 预注册 seed order 中**首个**全过验收者——material
+identity 由规则唯一确定，零挑选自由度。
 
-估算【提案】：7 解 × 40–60 min × multi-start 均摊 ≤ 2 start/解 ≈ 服务器
-CPU 8 路并行下 **≤ 1 天墙钟**。授权边界：仅 material generation（**非**
-experimental compute）；产出过 §5.2 验收并冻结后，Rung 1 experimental
-compute 仍须 execution freeze 后另行启动。
+**seed tuple（完整生成输入身份）**：manifest 必须记录完整 start 身份——
+solver seed / initial-state seed / initial-guess source / continuation /
+warm-start policy——只记 RNG seed 不保证 same optimization problem。预注册
+seed order 的具体 tuple 表在 campaign manifest 固化（launch preparation
+产物）；**规则本身**（顺序尝试、首过即停、完整 tuple 记录）由本节冻结。
 
-### 5.5 freeze 程序
+**infeasibility**：某速度 8 starts 全部失败 → **material-unavailable** →
+对应 cells 判 invalid（不插值/不跳过/不合并/不换代表速度）。低速点
+0.200/0.225/0.250 风险真实（TO36 F 线最好 0.318 m/s）。
 
-owner 批准本节（含 5.3 预算数值）→ material spec FROZEN → material
-compute 授权 → dircol 生成 → §5.2 验收 → manifest + 材料冻结（纯状态
-迁移）→ D1/D2/D3 dry-run（含 τ material identity / conformance 检查）→
-execution freeze → experiment。
+**报告纪律（十五轮）**：**material-unavailable ≠ experimental null**——
+最终分析必须区分「treatment material 生成失败 / 不支持的工作点」与「实验
+测得效应 ≈ 0」；低速 cells 因材料缺席消失时，报告不得被解读为「τ_ff 低速
+无效应」。
+
+### 5.4 compute 授权（十五轮：授权预算，不授权结果）
+
+授权语义 = **authorize the pre-registered search budget**：最多 56 starts、
+8-way concurrency——**不是**「保证 7 个速度全部产出可用 τ」（低速
+material-unavailable 是本 spec 明示的可能结局）。范围仅 material
+generation（**非** experimental compute）；Rung 1 experimental compute 仍须
+execution freeze 后另行启动。
+
+### 5.5 freeze 程序与当前状态（十五轮）
+
+**本节（§5 material specification）已获 owner 批准并 FROZEN（十五轮）；
+material-generation compute 已授权（campaign budget：≤56 starts / 8-way
+concurrency）**。执行序：campaign manifest（完整 seed tuple 表）固化 →
+dircol 生成（按 5.3 stop rule 顺序尝试、首过即停）→ §5.2 机械验收 →
+manifest + 材料冻结（纯状态迁移）→ D1/D2/D3 dry-run（含 τ material
+identity / conformance 检查）→ execution freeze → experiment。
 
 ## 6. implementation audit 八问（每步自检）
 

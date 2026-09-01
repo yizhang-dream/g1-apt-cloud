@@ -385,19 +385,19 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 > v1 退役为自然 assignment 参照；**A PASS / B PASS**，C 待冻结复核，
 > D pending）｜ Implementation **STARTED**（Unambiguous parts PROCEEDING，
 > Conditioning realization = eval-time 条件覆写，随 v2 spec）｜
-> **B 链位置（十四轮更新）**：① mapping reopen ✅ → ② 同速双-condition
+> **B 链位置（十五轮更新）**：① mapping reopen ✅ → ② 同速双-condition
 > assignment spec ✅（v2 全交叉，A/B PASS）→ ③ **Decision 2′ = Mode A
-> 裁定**（τ(v,C) = τ(v)：同 v 同 τ 材料、只变 decoder condition；R1/R2
-> 消解；Mode B 永久关闭）→ ④ **material specification 草案完成**
-> （`TO41_RUNG1_IMPL.md` §5：G(v)=TO36 dircol 逐网格点、机械验收八判据、
-> infeasibility→material-unavailable→cells invalid 规则；**待 owner
-> 冻结**）→ 材料生成（单独算力授权已附估算 ≈ ≤1 天墙钟）→ ⑤ 机械验收 →
-> ⑥ A/B/C/D 重走（＋ τ material identity / conformance 检查）→ ⑦
-> execution freeze → experiment。**Conditioning runtime BLOCKED**
-> （override 仅限 condition-selection plumbing；plumbing 之外的内容变化 →
-> D1 重定义——预声明 ≠ invariance）。**Δ_cond v2 恒等式 =
-> Δ_ff(v,C1) − Δ_ff(v,C2)**（Mode A 下即「同 v 同 τ、只变 decoder
-> condition」的受控对比；reopen delta，随 v2 freeze 批准）。
+> 裁定**（τ(v,C) = τ(v)：R1/R2 消解；Mode B 永久关闭）→ ④ **material
+> specification FROZEN**（章程 §5：G(v)=TO36 dircol 逐网格点、机械验收
+> 八判据、hard cap ≤56 starts/8-way + planning estimate、首过即停
+> canonical rule、完整 seed tuple、material-unavailable ≠ null 报告纪律）
+> → **material-generation compute 已授权**（campaign budget）→ dircol
+> 战役 → ⑤ 机械验收 → 材料冻结 → ⑥ A/B/C/D 重走（＋ τ material
+> identity / conformance 检查）→ ⑦ execution freeze → experiment。
+> **Conditioning runtime BLOCKED**（override 仅限 condition-selection
+> plumbing；plumbing 之外的内容变化 → D1 重定义——预声明 ≠ invariance）。
+> **Δ_cond v2 恒等式 = Δ_ff(v,C1) − Δ_ff(v,C2)**（Mode A 下即「同 v 同 τ、
+> 只变 decoder condition」的受控对比；reopen delta，随 v2 freeze 批准）。
 > D1/D2/D3 **PENDING**
 > （最小样本 execution integrity test：7 speeds × τ_ff ON/OFF × 最小
 > episode/seed；**非小型实验、效应估计为零目的**；D3 逐点对照表入产物）｜
