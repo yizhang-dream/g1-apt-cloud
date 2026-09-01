@@ -65,18 +65,26 @@ def gate_audit(d):
                 f"[hs/impact/interface 由管线生成时审计把关]")
 
 
-def gate_solver(log_path, n_stages=5):
-    """solver terminal status：末级 stage 成功才算 terminal success。"""
+def gate_solver(log_path, n_stages=None):
+    """G2 按 TO36 冻结验收哲学（F6/F5 教训：证书非必要非充分，审计为唯一
+    验收口径）：terminal = 末级 stage 抵达；audit_admitted = 管线审计采纳。
+    IPOPT 证书记录（present/absent）但不作门——solver status 与 material
+    validity 分离（十九轮两字段制）。"""
     txt = Path(log_path).read_text(errors="replace") if log_path else ""
     stages = re.findall(r"\[solve\] stage (\d+)/(\d+):", txt)
     results = re.findall(r"\[solve\] stage (\d+): success=(True|False)", txt)
-    if not stages or not results:
-        return False, "no stage records in solve log"
+    if not stages:
+        return False, "no stage records in solve log", "unknown"
     max_idx = max(int(n) for n, _ in stages)
+    n_st = max(int(m) for _, m in stages)
     last = {int(n): s for n, s in results}
-    terminal_ok = last.get(max_idx) == "True" and max_idx == n_stages
-    detail = f"reached stage {max_idx}/{n_stages}, terminal success={last.get(max_idx)}"
-    return terminal_ok, detail
+    terminal_reached = max_idx == n_st
+    audit_admitted = ("审计验收采纳本解" in txt) and terminal_reached
+    certificate = "present" if last.get(n_st) == "True" else "absent"
+    ok = terminal_reached and audit_admitted
+    detail = (f"terminal stage {max_idx}/{n_st} reached={terminal_reached}, "
+              f"audit_admitted={audit_admitted}, ipopt_certificate={certificate}")
+    return ok, detail, certificate
 
 
 def validate(npz_path, requested_v, solve_log, expected_knots=None):
@@ -85,21 +93,25 @@ def validate(npz_path, requested_v, solve_log, expected_knots=None):
     g6, m6 = gate_nan(d)
     g7, m7 = gate_v(d, requested_v)
     g345, m345 = gate_audit(d)
-    g2, m2 = gate_solver(solve_log)
+    g2, m2, cert = gate_solver(solve_log)
     knots_ok, m8 = True, "not checked"
     if expected_knots is not None:
         knots_ok = int(d["knots"]) == int(expected_knots)
         m8 = f"knots={int(d['knots'])} expected={expected_knots}"
-    gates = {"G1_fields": g1, "G2_solver_terminal": g2, "G345_audit": g345,
-             "G6_nan_inf": g6, "G7_v_tolerance": g7, "G8_config_identity": knots_ok}
-    details = {"G1_fields": m1, "G2_solver_terminal": m2, "G345_audit": m345,
-               "G6_nan_inf": m6, "G7_v_tolerance": m7, "G8_config_identity": m8}
-    solver_terminal_status = "solver_success" if g2 else "solver_failed"
+    gates = {"G1_fields": g1, "G2_solver_terminal_audit_admitted": g2,
+             "G345_audit": g345, "G6_nan_inf": g6,
+             "G7_v_tolerance": g7, "G8_config_identity": knots_ok}
+    details = {"G1_fields": m1, "G2_solver_terminal_audit_admitted": m2,
+               "G345_audit": m345, "G6_nan_inf": m6, "G7_v_tolerance": m7,
+               "G8_config_identity": m8}
+    solver_terminal_status = "solver_success" if cert == "present" else \
+        ("audit_admitted_no_certificate" if g2 else "solver_failed")
     material_status = "mechanically_valid" if all(gates.values()) else "mechanically_invalid"
     return {"npz": str(npz_path), "requested_v": requested_v,
             "v_realized": float(d["v_avg"]), "abs_error": abs(float(d["v_avg"]) - requested_v),
             "gates": gates, "details": details,
             "solver_terminal_status": solver_terminal_status,
+            "ipopt_certificate": cert,
             "material_status": material_status,
             "PASS": all(gates.values())}
 
