@@ -186,3 +186,4 @@
 | 脚本 | 角色 | 用途 | 对应实验 |
 |---|---|---|---|
 | `gen_tau_dec_mapping.py` | DEV | 生成 Rung 1 treatment mapping artifact（`configs/rung1_tau_dec_mapping.yaml`，**schema v2 全交叉**：7 speeds × {C1,C2} = 14 rows，十二轮 B reopen 后 supersedes v1 恒等物化）：cfg 默认值从冻结 `apt_flat_env.py` 正则提取，bin 算子与冻结代码逐字同源（torch bucketize right=False），同输入重跑 byte-identical；产物 pre-run-only（无 observed/expected 字段），内建 gate A schema 自检；验收 gate 见 `refine-logs/TO40C_PLAN.md` §10.8、B 链状态见 `TO41_RUNG1_IMPL.md` | TO40C→Rung 1 |
+| `to41_material_driver.py` | DEV | τ(v) material campaign driver：`validate` 子命令做全门集判定（G1 字段/G2 solver terminal success/G345 审计镜像 `_audit_pass`/G6 NaN-Inf/G7 速度容差 0.02/G8 配置身份），输出两字段 accounting JSON（solver_terminal_status ⊥ material_status）；`run` 子命令待 hot-start source 冻结后启用。规格与状态见 `refine-logs/TO41_RUNG1_IMPL.md` §5 | TO41（Rung 1） |
