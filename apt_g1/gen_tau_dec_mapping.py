@@ -66,16 +66,20 @@ def main() -> None:
     # dir bin：forward cmd（y=0）→ ang=0；公式镜像冻结行（*8/%8 为冻结实现硬编码）
     db = int(math.floor((0.0 + math.pi) / (2.0 * math.pi) * n_dbins)) % n_dbins
 
-    records = [dict(target_speed=v, decoder_condition_id=f"vb{b}_db{db}")
-               for v, b in zip(GRID, vb)]
-    conditions = {}
-    for r in records:
-        conditions.setdefault(r["decoder_condition_id"], []).append(r["target_speed"])
+    natural = {v: f"vb{b}_db{db}" for v, b in zip(GRID, vb)}
+    # 十二轮裁定 Decision 1 = B：condition 为可干预 treatment axis，C 与 v 全交叉。
+    # C1/C2 是 assignment 槽位（identity 取自冻结 binning 的两个 condition 注册项），
+    # 不声称 gait 语义；non-natural 配对（如 0.20→vb1）即干预所在。
+    CONDITION_ARMS = {"C1": "vb0_db4", "C2": "vb1_db4"}
+    records = [dict(target_speed=v, condition_arm=arm, decoder_condition_id=cid,
+                    natural_condition=natural[v])
+               for v in GRID for arm, cid in CONDITION_ARMS.items()]
+    conditions = dict(CONDITION_ARMS)
 
     # ── gate A 自检：schema 完整性 + pre-run-only ──
-    assert len(records) == 7, f"records={len(records)} != 7"
-    assert len(conditions) == 2, f"unique conditions={len(conditions)} != 2"
-    assert sum(len(v) for v in conditions.values()) == 7, "condition 注册表未覆盖全部 records"
+    assert len(records) == 14, f"records={len(records)} != 14 (7 speeds × 2 arms)"
+    assert set(conditions.values()) == {"vb0_db4", "vb1_db4"}, "condition 注册表不符"
+    assert len({(r["target_speed"], r["condition_arm"]) for r in records}) == 14, "(v, arm) 不唯一"
     hashes = {
         "decoder_checkpoint_hash": sha256(VAE_PT),
         "decoder_architecture_hash": sha256(VAE_PY),
@@ -88,8 +92,9 @@ def main() -> None:
         "# Rung 1 pre-registered treatment mapping artifact",
         "# 身份 = treatment specification（pre-run-only，无任何结果字段）；冻结后改动 = Rung 1 身份失效",
         "artifact_id: rung1-tau-dec-mapping",
-        "schema_version: 1",
-        "mapping_rule_version: 1",
+        "schema_version: 2",
+        "mapping_rule_version: 2",
+        "supersedes: schema v1（自然 bucketize 恒等物化，十二轮 B reopen 后退役为自然 assignment 参照，见 git 历史 468a1e7）",
         "created_from:",
         f"  binning_source: apt_g1/isaac/apt_flat_env.py@{env_commit}",
         f"  decoder_checkpoint: apt_g1/outputs/token_vae_e39/vae.pt@{vae_commit}",
@@ -99,22 +104,25 @@ def main() -> None:
         "mapping_provenance:",
         f"  source_commit: {env_commit}",
         "  generation_procedure: >-",
-        "    gen_tau_dec_mapping.py v1：正则提取 apt_flat_env.py 冻结 cfg 默认值"
-        " (latent_vae_n_bins, latent_vae_n_dbins, vx_max) → edges = torch.linspace(0, vx_max, n+1)[1:-1]"
-        " → vb = torch.bucketize(cmd_vx, edges) (right=False) → dir bin 镜像冻结公式；",
-        "    算子与冻结代码逐字同源，不重新实现判定逻辑；同输入重跑 byte-identical。",
+        "    gen_tau_dec_mapping.py v2（十二轮 Decision 1=B reopen）：全交叉规则",
+        "    T(v, c) = cond_c（C1=vb0_db4、C2=vb1_db4，槽位 identity 取自冻结 binning",
+        "    注册表）；每 speed × 每 arm 一行，共 14 行；零人工挑选自由度；",
+        "    同输入重跑 byte-identical。",
         "",
         "command_regime: target_speed = episode 恒定 cmd_vx（eval 实物口径，单值贯穿 60s）；forward cmd (y=0)",
         "",
         "decoder_conditions:",
     ]
     band = {0: "slow", 1: "mid"}
-    for cid in sorted(conditions):
+    for arm, cid in sorted(conditions.items()):
         b = int(cid[2:cid.index("_")])
-        lines.append(f"  {cid}: {{speed_bin: {b}, dir_bin: {db}, band: {band.get(b, f'vb{b}')}}}")
+        lines.append(f"  {cid}: {{arm: {arm}, speed_bin: {b}, dir_bin: {db}, bin_label: {band.get(b, f'vb{b}')}}}")
     lines.append("mappings:")
     for r in records:
-        lines.append(f"  - {{target_speed: {r['target_speed']:.3f}, decoder_condition_id: {r['decoder_condition_id']}}}")
+        lines.append(
+            f"  - {{target_speed: {r['target_speed']:.3f}, condition_arm: {r['condition_arm']}, "
+            f"decoder_condition_id: {r['decoder_condition_id']}, natural_condition: {r['natural_condition']}}}"
+        )
     lines += [
         "",
         "decoder_checkpoint_hash: " + hashes["decoder_checkpoint_hash"],
@@ -123,20 +131,35 @@ def main() -> None:
         "normalization_hash: " + hashes["normalization_hash"],
         "",
         "generation_notes:",
+        "  ruling_provenance: >-",
+        "    十二轮 owner 裁定 Decision 1 = B（condition 为可干预 treatment axis）：",
+        "    同一 target speed 下主动改变 decoder condition 以识别",
+        "    condition-dependent τ_ff effect；随附推翻条款——若同速双 condition",
+        "    最终无法科学构造，推翻 B 而非硬造 condition。",
+        "  structure: >-",
+        "    14 mapping rows（7 target speeds × 2 condition arms）→ 28 eval cells",
+        "    （× τ_ff ON/OFF）；natural_condition 列标出非自然配对（干预所在：",
+        "    如 0.200→C2/vb1、0.325→C1/vb0）。全交叉使 positivity/cell coverage",
+        "    by construction 成立；任何 cell 运行失败 = invalid（不插值/不跳过/",
+        "    不合并）。",
+        "  condition_semantics: >-",
+        "    C1/C2 为 assignment 槽位，本 artifact 只支持 controlled",
+        "    decoder-condition contrast；不得称 gait-condition effect——bin=gait",
+        "    属后续解释，非本 artifact 身份。Δ_cond(v2 恒等式) = Δ_ff(v,C1) −",
+        "    Δ_ff(v,C2)，其中 Δ_ff(v,C) = Y(τ ON,C) − Y(τ OFF,C)。",
+        "  realization: >-",
+        "    条件覆写为 eval 时作用于冻结 decode 路径的干预；τ_ff 为另一",
+        "    treatment 轴，不在本 artifact（mapping 只管 condition assignment）。",
         "  boundary_semantics: >-",
         f"    bucketize right=False：恰在边界的值归上侧 bin；edges = [{edges[0].item():.7f},",
         f"    {edges[1].item():.7f}]，本网格无点触界（0.2667 是机制边界，非网格点，不新增测试点）。",
-        "  structure: 7 target-speed records × 2 unique decoder conditions（非逐速条件化）。",
         "  diagnostic_alignment: >-",
-        "    slow/mid 边界 0.2667 与 TO40C 观察的 0.25→0.277 行为分裂带对齐——",
-        "    post hoc consistency observation（诊断事实），不是网格设计依据，",
-        "    不得反向用作 grid validity 论证。",
-        "  assignment_integrity: >-",
-        "    bin 选择仅依赖 cmd_vx，τ_ff ON/OFF 不进入计算——treatment assignment",
-        "    构造上正交；D gate dry-run 复核两臂同 target_speed 的 bin assignment 一致。",
+        "    自然 bin 边界 0.2667 与 TO40C 观察的 0.25→0.277 行为分裂带对齐——",
+        "    post hoc consistency observation（诊断事实），不是网格设计依据。",
         "  deterministic_not_sufficient: >-",
-        "    无人工挑选自由度 ≠ 两态 conditioning 足以控制 decoder mismatch；",
-        "    后者正是 Rung 1 的识别问题。",
+        "    D3/conformance PASS 只说 implementation conforms to treatment",
+        "    specification；不证明 conditioning valid 或 C1/C2 是两个真实 gait",
+        "    regimes；无人工挑选自由度 ≠ mismatch 已被控制。",
         f"  environment: torch/{torch.__version__} python/{sys.version.split()[0]}（同环境重跑 byte-identical）",
     ]
     text = "\n".join(lines) + "\n"

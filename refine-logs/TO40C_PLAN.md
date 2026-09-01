@@ -378,11 +378,18 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 > no implementation may reinterpret it——protocol frozen against
 > implementation drift，仅 owner 可因 genuine incompatibility 决定 reopen；
 > grid APPROVED、estimands/stopping/anti-selection
-> LOCKED、mapping GENERATED @468a1e7 = generated-not-frozen、invariance
-> requirements LOCKED）｜ Implementation **STARTED**（八轮授权：instantiate
-> the frozen specification, not reinterpret；Unambiguous parts PROCEEDING =
-> 章程/harness 骨架，**Conditioning impl BLOCKED**——incompatibility #1
-> OPEN，十轮定稿为单一科学问题 + A/B 后果链，见 `TO41_RUNG1_IMPL.md` §3）｜
+> LOCKED、invariance requirements LOCKED）｜ **Incompatibility #1
+> RESOLVED（十二轮 owner 裁定 Decision 1 = YES / B，附推翻条款：
+> 同速双 condition 无法科学构造则推翻 B）**｜ mapping **v2 GENERATED**
+> （schema 2 全交叉 14 rows × τ ON/OFF = 28 cells，generated-not-frozen；
+> v1 退役为自然 assignment 参照；**A PASS / B PASS**，C 待冻结复核，
+> D pending）｜ Implementation **STARTED**（Unambiguous parts PROCEEDING，
+> Conditioning realization = eval-time 条件覆写，随 v2 spec）｜
+> **B 链位置**：① mapping reopen ✅ → ② 同速双-condition assignment
+> spec ✅ → ③ 代表速度规则【提案 R1 待批】→ ④ τ material generation
+> BLOCKED → ⑤ mechanical acceptance → ⑥ A/B/C/D 重走 → ⑦ execution
+> freeze → compute。**Δ_cond v2 恒等式 = Δ_ff(v,C1) − Δ_ff(v,C2)**
+> （reopen delta，随 v2 freeze 批准）。
 > D1/D2/D3 **PENDING**
 > （最小样本 execution integrity test：7 speeds × τ_ff ON/OFF × 最小
 > episode/seed；**非小型实验、效应估计为零目的**；D3 逐点对照表入产物）｜

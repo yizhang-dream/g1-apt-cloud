@@ -120,6 +120,58 @@ mismatch 后识别 τ_ff 真实效应」，则读法 A 使其不可识别（C(v)
 YES → B 链七步（上）；NO → A 链五步（上）。裁定前：Conditioning impl
 BLOCKED、τ material BLOCKED、Compute BLOCKED（含材料生成）。
 
+### 3.1 裁决与 reopen 执行（十二轮）
+
+**裁定（owner，十二轮）：Decision 1 = YES / B**——Rung 1 在相同 target
+speed 下主动改变 decoder condition，识别 condition-dependent τ_ff effect。
+理由 = 项目原始科学目标（真 0.277 步态 / 全域 τ_dec 精确解 / 为每个速度
+生产匹配 τ）本身指向 controlled condition。**随附推翻条款**：若同速双
+condition 最终无法科学构造，推翻 B 而非硬造 condition。
+
+**阶段命名约束**：本阶段只叫 **controlled decoder-condition contrast**；
+不得称 gait-condition effect——C₁/C₂ 是 assignment 槽位，「bin = gait」
+是后续解释、非本阶段身份。
+
+**mapping reopen 已执行（v2，generated-not-frozen）**：生成器升级 v2——
+全交叉 `T(v, c) = cond_c`，14 rows（7 speeds × {C1, C2}）× τ ON/OFF =
+**28 eval cells**；`natural_condition` 列标出非自然配对（0.275/0.277/0.30/
+0.325 × C1 与 0.20/0.225/0.25 × C2 为干预所在）。v1 退役为自然 assignment
+参照（schema v1，git 468a1e7）。**realization 语义**：条件覆写 = eval 时
+作用于冻结 decode 路径的干预；训练臂不变（τ ON/OFF × 2 seeds）；
+**Δ_cond v2 恒等式 = Δ_ff(v,C1) − Δ_ff(v,C2)**，Δ_ff(v,C) = Y(ON,C) −
+Y(OFF,C)。
+
+**设计矩阵（28 eval cells；矩阵本身 = positivity / cell coverage 证据）**：
+
+| target_speed | C1·OFF | C1·ON | C2·OFF | C2·ON |
+|---|---|---|---|---|
+| 0.200 | RUN | RUN | RUN | RUN |
+| 0.225 | RUN | RUN | RUN | RUN |
+| 0.250 | RUN | RUN | RUN | RUN |
+| 0.275 | RUN | RUN | RUN | RUN |
+| 0.277 | RUN | RUN | RUN | RUN |
+| 0.300 | RUN | RUN | RUN | RUN |
+| 0.325 | RUN | RUN | RUN | RUN |
+
+（C1 = vb0_db4、C2 = vb1_db4；任一 cell 无法运行 = invalid——不插值/
+不跳过/不合并，与 §10.4 纪律一致。）
+
+**代表性速度规则（B 链第③步，【提案】待批——批前 τ material 生成维持
+BLOCKED）**：
+- **R1（提案）**：v_c = 各 bin 内距边界最远的已批准网格点（slow→0.20，
+  mid→0.325）。理由：bin 归属最纯（离 0.2667 边界最远）、均为已批准
+  网格点、完全确定性。
+- R2（备选）：v_c = bin 中点最近网格点——对当前几何与 R1 重合
+  （slow 中点 0.1333→0.20；mid 中点 0.40→0.325）。
+- 十轮独立性硬约束适用：v_c 不得以任何 outcome / achieved-speed 调整。
+  v_c 批准 + material spec 冻结后，material-generation compute 单独授权
+  （dircol@0.20 与 @0.325 两解，TO36 管线，服务器 CPU）。
+
+**当前状态**：Specification FROZEN*（§10.3 的 Δ_cond v2 恒等式为 reopen
+delta，随 v2 freeze 一并批准）｜ mapping **v2 GENERATED**（A PASS / B
+PASS / C 待冻结复核 / D pending）｜ τ material BLOCKED（待 v_c 规则
+批准）｜ Compute BLOCKED。
+
 ## 4. D dry-run 设计（execution integrity test，非小型实验）
 
 - 最小样本：7 target speeds × τ_ff ON/OFF × 最小 episode/seed；
