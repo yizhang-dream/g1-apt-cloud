@@ -215,29 +215,95 @@ material BLOCKED ｜ material-generation BLOCKED ｜ D1/D2/D3 BLOCKED ｜
 execution freeze BLOCKED ｜ compute BLOCKED ｜ **Decision 2′ OPEN
 （owner）**。
 
+### 3.3 裁决与 Mode A 落地（十四轮）
+
+**裁定（owner，十四轮）：Decision 2′ = Mode A**——`τ(v,C) = τ(v)`。理由 =
+estimand identification 干净：同 v、同 τ 材料、只变 decoder condition，
+Δ_cond 才回答「**相同目标速度、相同 τ_ff 材料下，decoder condition 本身
+是否改变 τ_ff 的效应**」。三好处：① 消除 C→τ 混杂（C1/C2 不再携带不同
+τ material）；② R1/R2 失效且无需替代（representative speed 不再是
+treatment specification 的组成部分，v_c = v）；③ 与原始目标「为每个速度
+生产匹配 τ」同构。**Mode B 整条路线永久关闭**（除非未来另开实验回答
+joint condition/material question）。
+
+**实现契约**：(v, z, C1, τ(v)) vs (v, z, C2, τ(v))——同一 v 下逐 cell 使用
+**完全相同的 τ material identity**，唯一预定改变 = decoder condition
+selection。**D2/D3 扩展检查（十四轮）**：same target speed → same τ
+material identity across C1/C2（防 Mode A 被偷偷做成 Mode B）；每速度另过
+material conformance check：`τ_runtime(v) == τ_frozen-material(v)`。
+
+**科学边界（保留）**：Mode A 成功也不得写「证明了 decoder condition 是
+τ_ff effect 的机制」——识别的是 **controlled decoder-condition contrast**；
+C1/C2 是人为 assignment，不自动等同两个自然 gait/ecological regimes。
+
 ## 4. D dry-run 设计（execution integrity test，非小型实验）
 
 - 最小样本：7 target speeds × τ_ff ON/OFF × 最小 episode/seed；
   **效应估计为零目的**，dry-run 结果不得用于调整 treatment。
 - **D1**：四哈希对冻结基线 + decoder state_dict 前后全等（conditioning
   只选择、不修改参数）。
-- **D2**：两臂同 target_speed 的 decoder condition 逐项一致。
+- **D2**：两臂同 target_speed 的 decoder condition 逐项一致；**＋ τ
+  material identity 一致（Mode A，十四轮）：同一 v 下 C1/C2 cells 使用
+  同一 τ(v) 身份——防 Mode A 被偷偷做成 Mode B**。
 - **D3**：运行环境冻结实现对 7 cmd 求值 vs YAML——**逐点对照表**入产物
   （`0.200 yaml=vb0_db4 runtime=vb0_db4 PASS` / …），不只报总 PASS。
   **D3 范围限制（九轮）**：只证明 decoder condition assignment 正确；
   若 Decision 2 落地，τ material 另需自己的 **material conformance check**
-  （`τ_runtime(C) == τ_frozen-material(C)` 逐项对照），不得并入 D3 解释。
+  （`τ_runtime(v) == τ_frozen-material(v)` 逐速度对照——**十四轮起适用**，
+  Mode A 下按 v 逐点），不得并入 D3 解释。
 - D 全 PASS → owner freeze（纯状态迁移 commit，只改 freeze_status）→
   EXECUTION-READY → compute。
 
-## 5. implementation audit 八问（每步自检）
+## 5. τ(v) material specification 草案（Mode A；owner 冻结后生效）
+
+### 5.1 生成规则 G（确定性，无代表速度）
+
+`τ(v) = G(v)`：对每个已批准网格点 v ∈ {0.200, 0.225, 0.250, 0.275, 0.277,
+0.300, 0.325}，用 TO36 dircol 管线（`to36_hybrid_dircol.py`，Drake/IPOPT，
+腿级周期解）生成**速度匹配的** τ 参考表（`tau_ref6` 相位表，格式对齐
+`to38_ref.npz`）。**v_c = v**——代表速度概念消解；十轮硬约束（不得由
+outcome/achieved-speed 反推）自动满足。产物 = 7 份材料 + 一份 manifest
+（每份 sha256 + 生成参数 + 审计记录）。
+
+### 5.2 mechanical acceptance（仅工程/数值判据；禁「机器人跑得好」）
+
+① IPOPT 收敛（solver status）；② TO36 物理审计全过（能量漂移/冲击残差/
+关节限位，逐项，沿用 TO36 验收制）；③ 周期闭合残差 ≤ 预注册阈值；④ 必填
+字段齐全（6 矢状关节 × 相位网格）；⑤ 维数/格式对齐 to38_ref.npz；⑥ 无
+NaN/Inf；⑦ 确定性复现（同参数重跑 LUT hash 一致）；⑧ 每份 sha256 入
+manifest。
+
+### 5.3 infeasibility 规则（预注册）
+
+慢速点（0.200/0.225/0.250）dircol 收敛风险真实存在（TO36 F 线最好
+0.318 m/s；低速 = 更长 T、更难收敛）。预注册：每速度 multi-start 预算
+【提案】≤ 8 进程并行 × 确定性 seed 列表；预算耗尽仍无过审计解 → 该 v 记
+**material-unavailable** → 对应 cells 按 §10.4 判 invalid（不插值/不跳过/
+不合并/**不换代表速度凑数**）。material-unavailable 清单入 D 报告。
+
+### 5.4 compute 授权申请（待批）
+
+估算【提案】：7 解 × 40–60 min × multi-start 均摊 ≤ 2 start/解 ≈ 服务器
+CPU 8 路并行下 **≤ 1 天墙钟**。授权边界：仅 material generation（**非**
+experimental compute）；产出过 §5.2 验收并冻结后，Rung 1 experimental
+compute 仍须 execution freeze 后另行启动。
+
+### 5.5 freeze 程序
+
+owner 批准本节（含 5.3 预算数值）→ material spec FROZEN → material
+compute 授权 → dircol 生成 → §5.2 验收 → manifest + 材料冻结（纯状态
+迁移）→ D1/D2/D3 dry-run（含 τ material identity / conformance 检查）→
+execution freeze → experiment。
+
+## 6. implementation audit 八问（每步自检）
 
 1 YAML 是否被原样消费？ 2 7 个 cmd 是否全部 launch？ 3 τ_ff ON/OFF 是否
 只改变预注册 treatment？ 4 decoder 是否保持 frozen？ 5 assignment 是否
 一致？ 6 outcome logging 是否完整？ 7 seed pairing 是否保持？ 8 failure
 是否按预注册规则处理？
 
-## 6. 产物清单
+## 7. 产物清单
 
-本章程 + 实现 commit sha + launch 配置（7 cmd × 臂）+ D1/D2/D3 报告
-（含 D3 逐点对照表）+ Run 行（开跑后入 `tracker/TO.md` TO41xx）。
+本章程 + 实现 commit sha + launch 配置（7 cmd × 臂）+ τ(v) manifest
+（7 份材料哈希 + 审计记录）+ D1/D2/D3 报告（含 D3 逐点对照表 + τ material
+conformance 对照）+ Run 行（开跑后入 `tracker/TO.md` TO41xx）。
