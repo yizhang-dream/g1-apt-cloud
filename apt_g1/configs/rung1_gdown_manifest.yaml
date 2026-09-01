@@ -26,7 +26,7 @@ schedule_rule:
   v_min: "{v} = target"                  # 末段同伦 v_min 直接取目标速度
   w_time: 0.0                            # 冻结管线默认值（三十一轮撤回推导公式）
   fixed_params:
-    mode: pointe
+    mode: foot                          # 与源一致（to37_v016 为 foot 结构；P↓-S 必须 mode 匹配，否则 SetInitialGuess 维度错位）
     sole_drop: 0.04
     pin_limit: 0.7
     h_min: 0.62
