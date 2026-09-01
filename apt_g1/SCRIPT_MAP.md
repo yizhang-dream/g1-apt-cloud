@@ -180,3 +180,9 @@
 | 脚本 | 角色 | 用途 | 对应实验 |
 |---|---|---|---|
 | `tree_check.py` | DEV | 实验记录扇出树完整性闸门（仿 mini Biosphere `doc_tree_check.mjs`）：挂树/实存/链接三项检查，任一失败 exit 1；树根与规则见 `refine-logs/README.md` | 文档基建（无实验号） |
+
+## 7. `apt_g1/` artifact 工具（2026-09-01 增补登记，非实验代码）
+
+| 脚本 | 角色 | 用途 | 对应实验 |
+|---|---|---|---|
+| `gen_tau_dec_mapping.py` | DEV | 生成 Rung 1 treatment mapping artifact（`configs/rung1_tau_dec_mapping.yaml`）：cfg 默认值从冻结 `apt_flat_env.py` 正则提取，bin 算子与冻结代码逐字同源（torch bucketize right=False），同输入重跑 byte-identical；产物 pre-run-only（无 observed/expected 字段），内建 gate A schema 自检；验收 gate A–D 见 `refine-logs/TO40C_PLAN.md` §10.8 | TO40C→Rung 1 |

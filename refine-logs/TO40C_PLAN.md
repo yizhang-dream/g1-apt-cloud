@@ -283,16 +283,22 @@ analysis is frozen. 主分析冻结后若需局部加密（如边界夹在 0.25�
 6. **身份块与双版本号（五轮）**：YAML 顶部含 `artifact_id / schema_version /
    mapping_rule_version / created_from / freeze_status`；**schema_version ≠
    mapping_rule_version**（schema 演进与规则变更的实验意义不同，不得混记）。
-7. **command_regime = cmd 的 operational definition（五轮，实物锚定）**：
+7. **command_regime = cmd 的 operational definition（五轮，实物锚定；六轮修正）**：
    `target_speed` = 每 episode **恒定**的指令前向速度（env `cmd_vx`；TO40C
    eval 实物即此口径——单值贯穿 60s 全程，无 episode 均值/初值/plateau 之辨）。
    decoder 条件选择**沿用冻结代码既有确定性函数**：
    `vb = bucketize(cmd_v, linspace(0, vx_max, n+1)[1:-1])`
    （`apt_flat_env.py`；n = latent_vae_n_bins = 3、vx_max = 0.8，生成时读
-   冻结 cfg、不硬编码）。按此函数本网格物化为两个条件：
-   {0.20, 0.225, 0.25} → **slow bin**、{0.277, 0.30, 0.325} → **mid bin**，
-   slow/mid 边界 0.2667 恰落在 TO40C 观察到的 0.25→0.277 行为分裂带内。
-   YAML = 该既有函数的**物化查表**，不引入新自由度。
+   冻结 cfg、不硬编码；bucketize right=False——恰在边界的值归上侧 bin，
+   本网格无点触界）。**结构 = 7 target-speed records（6 均匀点 + 0.277 锚点）
+   × 2 个 decoder conditions**：{0.20, 0.225, 0.25} → vb0（slow 带）、
+   {0.275, 0.277, 0.30, 0.325} → vb1（mid 带）；forward cmd（y=0）→ dir bin 4
+   （条件 id vb0_db4 / vb1_db4）。YAML = 该既有函数的**物化查表**，无人工挑选
+   自由度（deterministic ≠ 科学充分：只保证无挑选自由度，不证明两态
+   conditioning 足以控制 mismatch——后者正是 Rung 1 的识别问题）。
+   slow/mid 边界 0.2667 与 TO40C 的 0.25→0.277 行为分裂带对齐：**post hoc
+   consistency observation（诊断事实），不是网格设计依据，不得反向用作
+   grid validity 论证**。
 8. **source_commit 语义（五轮）**：指向**生成 mapping 的输入材料**（冻结
    cfg / ckpt / calibration artifact）所在 commit，不是「生成 YAML 时的
    HEAD」。
@@ -379,7 +385,10 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 > command_regime 必填完整；无任何结果字段）→
 > B Determinism check（同输入重新生成 byte-identical）→
 > C Operator test Q1/Q2 重跑 →
-> D Invariance dry-run（YAML 指定 decoder artifact 与冻结基线哈希一致）。
+> D Invariance dry-run（YAML 指定 decoder artifact 与冻结基线哈希一致 +
+> treatment assignment integrity：τ_ff ON/OFF 两臂同 target_speed 的 bin
+> assignment 完全相同——本设计 bin 仅依赖 cmd_vx、构造上正交；若违反，
+> DiD 解释等级下降）。
 > 评审同时确认：网格批准 = admissible + 有定位意义，**非**「已证各点为最优
 > 信息点」（admissible ≠ informative），不得追加 optimal-grid 类措辞。
 

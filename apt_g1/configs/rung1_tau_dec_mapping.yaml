@@ -1,0 +1,52 @@
+# Rung 1 pre-registered treatment mapping artifact
+# 身份 = treatment specification（pre-run-only，无任何结果字段）；冻结后改动 = Rung 1 身份失效
+artifact_id: rung1-tau-dec-mapping
+schema_version: 1
+mapping_rule_version: 1
+created_from:
+  binning_source: apt_g1/isaac/apt_flat_env.py@187f2fb
+  decoder_checkpoint: apt_g1/outputs/token_vae_e39/vae.pt@1a6bead
+  decoder_architecture: apt_g1/train_token_vae_e39.py@a8e20e4
+freeze_status: generated-not-frozen
+
+mapping_provenance:
+  source_commit: 187f2fb
+  generation_procedure: >-
+    gen_tau_dec_mapping.py v1：正则提取 apt_flat_env.py 冻结 cfg 默认值 (latent_vae_n_bins, latent_vae_n_dbins, vx_max) → edges = torch.linspace(0, vx_max, n+1)[1:-1] → vb = torch.bucketize(cmd_vx, edges) (right=False) → dir bin 镜像冻结公式；
+    算子与冻结代码逐字同源，不重新实现判定逻辑；同输入重跑 byte-identical。
+
+command_regime: target_speed = episode 恒定 cmd_vx（eval 实物口径，单值贯穿 60s）；forward cmd (y=0)
+
+decoder_conditions:
+  vb0_db4: {speed_bin: 0, dir_bin: 4, band: slow}
+  vb1_db4: {speed_bin: 1, dir_bin: 4, band: mid}
+mappings:
+  - {target_speed: 0.200, decoder_condition_id: vb0_db4}
+  - {target_speed: 0.225, decoder_condition_id: vb0_db4}
+  - {target_speed: 0.250, decoder_condition_id: vb0_db4}
+  - {target_speed: 0.275, decoder_condition_id: vb1_db4}
+  - {target_speed: 0.277, decoder_condition_id: vb1_db4}
+  - {target_speed: 0.300, decoder_condition_id: vb1_db4}
+  - {target_speed: 0.325, decoder_condition_id: vb1_db4}
+
+decoder_checkpoint_hash: f6adfc5048ea24eac144b0638a86222ce5c50c4d86b38249e3fe49afda119d75
+decoder_architecture_hash: b9edf1632e73b533c52fe54239411cc79f1f28cd57cb43a9e0a57cb019e52efe
+preprocessing_hash: ca39b76f9e99dff28f3c225cfff18f8c9c6e62b846ee80759ebad59ec7ff602d
+normalization_hash: ca39b76f9e99dff28f3c225cfff18f8c9c6e62b846ee80759ebad59ec7ff602d
+
+generation_notes:
+  boundary_semantics: >-
+    bucketize right=False：恰在边界的值归上侧 bin；edges = [0.2666667,
+    0.5333333]，本网格无点触界（0.2667 是机制边界，非网格点，不新增测试点）。
+  structure: 7 target-speed records × 2 unique decoder conditions（非逐速条件化）。
+  diagnostic_alignment: >-
+    slow/mid 边界 0.2667 与 TO40C 观察的 0.25→0.277 行为分裂带对齐——
+    post hoc consistency observation（诊断事实），不是网格设计依据，
+    不得反向用作 grid validity 论证。
+  assignment_integrity: >-
+    bin 选择仅依赖 cmd_vx，τ_ff ON/OFF 不进入计算——treatment assignment
+    构造上正交；D gate dry-run 复核两臂同 target_speed 的 bin assignment 一致。
+  deterministic_not_sufficient: >-
+    无人工挑选自由度 ≠ 两态 conditioning 足以控制 decoder mismatch；
+    后者正是 Rung 1 的识别问题。
+  environment: torch/2.12.0+cpu python/3.13.5（同环境重跑 byte-identical）
