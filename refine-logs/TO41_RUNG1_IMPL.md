@@ -379,6 +379,19 @@ Decision 2″ reopen → 评估 --v-target solver 扩展**。smoke 通过则 run
 追认为 campaign start k=0@0.277（配置与 ladder 完全一致），run B 为
 确定性见证（预声明：见证不占 56-start 预算）。
 
+**smoke 执行日志（实时追加）**：
+- **k=0（run A/B，十七轮）**：双双于 IPOPT stage 1/5
+  `EXIT: Error in step computation` **确定性失败**（同位置同状态 → 判据④
+  在失败语义下成立）。分类 = `solver_failed`（冷启动同伦第一阶段数值
+  失败，**先于** Decision 2″ 定位语义被测试——末段 v_min=0.277 尚未触及，
+  故 --v-target reopen 不触发：失败与定位机制无关，reopen 属范畴错误）。
+  处置 = 按冻结 ladder 续跑 k=1..7（§5.3 stop rule 脚本机械执行，首过
+  即停）。证据：服务器 `outputs/to41_smoke_smoke.log`（k=0）+
+  `outputs/to41_smoke_k1to7.log`（续跑）；脚本
+  `/home/cvgluser/to41_smoke.sh`、`/home/cvgluser/to41_smoke_k1to7.sh`
+  （md5 已核对）；执行 commit = 服务器 5b1f413（管线代码与本地一致）。
+- （k=1..7 结果在此追加）
+
 ## 6. implementation audit 八问（每步自检）
 
 1 YAML 是否被原样消费？ 2 7 个 cmd 是否全部 launch？ 3 τ_ff ON/OFF 是否
