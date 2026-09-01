@@ -377,11 +377,16 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 > Specification **FROZEN**（grid APPROVED、estimands/stopping/anti-selection
 > LOCKED、mapping GENERATED @468a1e7 = generated-not-frozen、invariance
 > requirements LOCKED）｜ Implementation **STARTED**（八轮授权：instantiate
-> the frozen specification, not reinterpret）｜ D1/D2/D3 **PENDING**
+> the frozen specification, not reinterpret；Unambiguous parts PROCEEDING =
+> 章程/harness 骨架，**Conditioning impl BLOCKED**——incompatibility #1
+> OPEN，九轮细化为 Decision 1–3，见 `TO41_RUNG1_IMPL.md` §3）｜
+> D1/D2/D3 **PENDING**
 > （最小样本 execution integrity test：7 speeds × τ_ff ON/OFF × 最小
 > episode/seed；**非小型实验、效应估计为零目的**；D3 逐点对照表入产物）｜
 > Execution freeze **PENDING**（owner decision）｜ **Compute BLOCKED**
-> （D + execution freeze 全过前不得开跑）。
+> （D + execution freeze 全过前不得开跑；**并覆盖 per-condition τ
+> material generation**——material-generation compute 事后单独授权，
+> 仍非 experimental compute）。
 >
 > **D 三层判定（七轮定稿；三层全 PASS 才算 D PASS，禁用「dry-run
 > successful」式模糊表述）**：
