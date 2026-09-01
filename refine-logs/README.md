@@ -80,6 +80,9 @@ refine-logs/README.md…………………………………………………�
 │   ├── TO41_RUNG1_IMPL.md………………………… 实施章程：Rung 1 运行时实现 + D1/D2/D3
 │   │   ……………………………………………………………integrity test + incompatibility 报告
 │   │   ……………………………………………………………（mapping 已产出未冻结；compute BLOCKED）。活跃
+│   ├── TO41_G_DOWN_SPEC.md……………………… sub-campaign：低速 downward-continuation
+│   │   ……………………………………………………………材料生成（独立实验身份；P↓ Decision 1
+│   │   ……………………………………………………………待裁，无 compute 授权）。草稿
 │   └── EXPERIMENT_PLAN.md………………………… 计划：早期英文实验计划（被阶段史收束）。归档
 └── 域外路由（上游/下游权威，不属本树强制范围，仅作导航）
     ├── ../HANDOFF/README.md……………………… 层位总图（§0）+ 结论口径（§3，跨域权威）
