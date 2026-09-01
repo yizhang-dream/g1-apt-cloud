@@ -252,7 +252,7 @@ Rung 1 的问题不是「τ_ff 能不能在更多速度上工作」，而是：
 
 | 项目 | 预注册内容（标注【提案】的值级待批，其余为硬约束） |
 |---|---|
-| 速度网格 | **已批准（四轮评审落盘）**：0.20–0.325 步长 0.025 共 7 点 + 0.5 门外控制点保留 + 0.277 锚点单列；primary = support/boundary 定位，曲线精拟合为非 primary。**边界依据 = 既有 robot/task operating envelope，非 TO40C 结果**：0.2–0.25 为已知解码器低速空洞带（TO38/39）、0.277 为 TO 参考解速度点（§4 门开带 gate=1.0 处）、≥0.3 为解码器健康带起点（TO40C ctrl 实测 vx 0.59），全部落在基座 cmd 支撑 U(0, 0.8)（E47 配方）之内；TO40C 观测只决定「在此区间做定位」这一决策。grid bounds are defined by the pre-existing robot/task operating envelope, while TO40C observations determine only the decision to investigate this interval. **定位网格声明**：Rung 1 speed grid is a pre-registered localization grid derived from the already-closed TO40C observation; it is not itself treated as confirmatory evidence for the existence of the effect. |
+| 速度网格 | **已批准（四轮评审落盘；七轮定名）**：canonical 定义 = **6-point regular grid（0.20–0.325 步长 0.025）+ 0.277 anchor = 7 target-speed records**——禁止写成「0.20–0.325 共 7 个均匀点」；0.5 门外控制点保留。primary = support/boundary 定位，曲线精拟合为非 primary。**边界依据 = 既有 robot/task operating envelope，非 TO40C 结果**：0.2–0.25 为已知解码器低速空洞带（TO38/39）、0.277 为 TO 参考解速度点（§4 门开带 gate=1.0 处）、≥0.3 为解码器健康带起点（TO40C ctrl 实测 vx 0.59），全部落在基座 cmd 支撑 U(0, 0.8)（E47 配方）之内；TO40C 观测只决定「在此区间做定位」这一决策。grid bounds are defined by the pre-existing robot/task operating envelope, while TO40C observations determine only the decision to investigate this interval. **定位网格声明**：Rung 1 speed grid is a pre-registered localization grid derived from the already-closed TO40C observation; it is not itself treated as confirmatory evidence for the existence of the effect. |
 | τ_dec 条件化 | 条件变量 = cmd 速度。**pre-registered treatment mapping artifact**——mapping 改变 = treatment condition 改变，故属**实验设计 / treatment specification**，不只是实现知识（实现 invariance 只管 checkpoint/arch/preprocess/normalization 哈希，见 §10.7）。开跑前入仓一个不可变映射表（【提案】`apt_g1/configs/rung1_tau_dec_mapping.yaml`），字段：`target_speed / decoder_condition_id / command_regime / decoder_checkpoint_hash / decoder_architecture_hash / preprocessing_hash / normalization_hash / mapping_rule_version / mapping_provenance`（provenance 非自由文本；五轮增补见下方补充纪律 4–8）。**不设判定性 expected-mismatch 字段**——先验预期（如有）只能作非判定性设计注释，不得参与 stopping / 筛选 / 解释门槛（防预写「0.25 mismatch low、0.3 mismatch high」污染后验解释的 confirmation bias）。冻结后任何改动须新 commit + tracker 留痕——杜绝「某点效果差 → 回头换 decoder condition 再跑」 |
 | 主指标 | primary = **逐 cmd 配对差分效应曲线 + 不确定度**（3 eval seed × 2 训练 seed）；合并均值只作 gate、不作效应量解释；衰减结构 −0.09→−0.009 本身是 Rung 1 要解释的对象。**禁筛选顺序**：−0.0402（TO40C gate）不得用作 Rung 1 逐点筛选条件；全部预注册速度点先全部取得 effect + uncertainty，**再**作 gate/boundary/disappearance 判定——不得先筛点再画曲线 |
 | 停止规则 | 见 §10.4 |
@@ -370,32 +370,49 @@ decoder 是冻结基座，本项目的科学问题是「decoder 冻结后 τ_ff 
 artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一致性 diff = 空）
 进 §7 产物清单。
 
-### 10.8 设计冻结审查清单（design-freeze review，四轮评审落盘）
+### 10.8 设计冻结审查清单（design-freeze review，七轮评审落盘）
 
-> 评审状态：**Rung 1 — Design Freeze Review / CONDITIONAL PASS**（五轮，
-> 9.8/10，封版确认），不进入计算执行；§10 封版维持，**审查对象自五轮起从
-> protocol design 切换为 artifact conformance**。五轮 artifact 硬约束已并入
-> §10.3 补充纪律 4–8（确定性可复现 / pre-run-only / 双版本号身份块 /
-> command_regime 实物锚定 / source_commit 语义）。**剩余 blocker 仅一项**：
-> treatment mapping artifact 产出并冻结。operator test 状态 =
-> **conditional pass**（10/12；Q1/Q2 待 YAML 生成后重跑，此前不得写
-> 「完全通过」）。**artifact 验收 gate（四项全 PASS 即 EXECUTION-READY，
-> 不再评审、闭嘴开跑）**：
-> A Schema check（每 target speed 恰一 condition；hash / provenance /
-> command_regime 必填完整；无任何结果字段）→
-> B Determinism check（同输入重新生成 byte-identical）→
-> C Operator test Q1/Q2 重跑 →
-> D Invariance dry-run（YAML 指定 decoder artifact 与冻结基线哈希一致 +
-> treatment assignment integrity：τ_ff ON/OFF 两臂同 target_speed 的 bin
-> assignment 完全相同——本设计 bin 仅依赖 cmd_vx、构造上正交；若违反，
-> DiD 解释等级下降）。
-> 评审同时确认：网格批准 = admissible + 有定位意义，**非**「已证各点为最优
-> 信息点」（admissible ≠ informative），不得追加 optimal-grid 类措辞。
+> **状态板（七轮评审，9.8/10）**：Protocol FROZEN ｜ Grid APPROVED ｜
+> Estimands LOCKED ｜ Stopping rules LOCKED ｜ Anti-selection LOCKED ｜
+> Decoder invariance = ENTRY GATE ｜ Treatment mapping **GENERATED**
+> （`apt_g1/configs/rung1_tau_dec_mapping.yaml` @468a1e7，
+> freeze_status = generated-not-frozen，**维持不冻结**）｜ A Schema
+> **PASS** ｜ B Determinism **PASS**（byte-identical 重跑）｜ C Operator
+> **CONDITIONAL PASS**（Q1/Q2 冻结后复核）｜ D Runtime conformance
+> **PENDING**（唯一剩余技术 gate）｜ **STATUS = CONDITIONAL PASS →
+> NEXT = D dry-run**。
+>
+> **D 三层判定（七轮定稿；三层全 PASS 才算 D PASS，禁用「dry-run
+> successful」式模糊表述）**：
+> **D1** decoder invariance——checkpoint / architecture / preprocessing /
+> normalization 四哈希与冻结基线一致；
+> **D2** assignment invariance——同 target_speed 下 τ_ff ON/OFF → 同
+> decoder condition（bin 仅依赖 cmd_vx、构造上正交；违反则 DiD 解释等级
+> 下降）；
+> **D3** artifact-runtime conformance——在运行环境中以冻结实现对同 7 个
+> cmd 求值，runtime assignment 与 YAML records **逐项相等**（比哈希更强的
+> 端到端证明，封堵 generator 与冻结实现两条执行路径的 divergence risk）。
+>
+> **冻结纪律（七轮）**：
+> ① freeze 动作 = **纯状态迁移**——freeze commit 只改 freeze_status，
+> 不得触碰任何内容字段；D 要求改 YAML → 回退 generated-not-frozen、
+> 修正、重走 A/B/C/D。
+> ② **D 先于 freeze**：D 全 PASS → freeze commit（同时记录 execution
+> environment commit，与 source rule commit = 187f2fb 分列）→ final
+> hash → EXECUTION-READY → 停止设计讨论、进入 compute。
+> ③ artifact 100% conformant 与科学结果「两态 conditioning 不足」可同时
+> 成立——后者不是 artifact 失败。
+> ④ freeze decision 由项目 owner 执行；评审方裁定的是
+> eligible-for-freeze。
+> ⑤ 网格批准 = admissible + 有定位意义，非「已证各点为最优信息点」
+> （admissible ≠ informative），不得追加 optimal-grid 类措辞。
+> operator test = conditional pass（Q1/Q2 冻结后复核）。五轮 artifact 硬
+> 约束见 §10.3 补充纪律 4–8。
 
 | # | 锁点 | 状态 |
 |---|---|---|
-| 1 | 0.20–0.325 / 0.025 网格正式批准 | **已批准（四轮落盘）**（边界依据 = 既有 operating envelope，见 §10.3；定位网格声明就位；primary = support/boundary 定位） |
-| 2 | τ_dec mapping artifact | 规则已锁（§10.3：treatment specification + schema + provenance 可追溯 + 变量身份 + 去 expected-mismatch）；**artifact 文件待产出并 commit** |
+| 1 | 网格正式批准 | **已批准**（canonical 定义 = 6-point regular grid + 0.277 anchor = 7 target-speed records；边界依据 = operating envelope，见 §10.3） |
+| 2 | τ_dec mapping artifact | **已产出**（468a1e7，generated-not-frozen）；A PASS / B PASS / C conditional / **D pending**；冻结 = 纯状态迁移 commit，D 全 PASS 后由 owner 执行 |
 | 3 | 三类效应的确切 statistical contrast | **已锁**（§10.3：Δ_ff / decoder-conditioning contrast / DiD interaction contrast，附可比性前提） |
 | 4 | practical-null /「消失」的数学定义 | **已锁**（§10.4：\|Δ\| ≤ 0.02 = 继承 §9.1 的 practical-equivalence decision boundary；未决窗补 seed；保守规则不 post-hoc 放宽） |
 | 5 | 「连续两点」相邻点规则 | **已锁**（§10.4：无效点打断序列 + no imputation） |
