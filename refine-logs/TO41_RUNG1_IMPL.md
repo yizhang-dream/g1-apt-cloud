@@ -420,41 +420,6 @@ AUTHORIZED ｜ cold k=0..3 CLOSED/AUDITED ｜ cold k=4..7 NOT EXECUTED ｜
 hot-start source + rule PENDING FREEZE ｜ material compute BLOCKED ｜
 D1/D2/D3 PENDING ｜ execution freeze PENDING ｜ Rung 1 experiment BLOCKED。
 
-### 5.9 downward-continuation sub-campaign（二十轮裁决；独立实验身份）
-
-**未选①/②理由（留痕）**：① 会把 Rung 1 缩成中高速 contrast，而主问题恰是
-**0.20–0.25 解码器空洞带 + τ_ff 正向效应**——不能让「无法生成 τ」伪装成
-「低速不重要」；② 向下续延（0.2768→0.20）是新 generation operator，
-当前无冻结、验证过的操作证据，动用即违反上一轮锁定的 continuation
-discipline。
-
-**③ 身份**：不是主 protocol 的补丁，而是对「低速材料可生成性」这一新问题的
-**独立 sub-campaign / 独立实验身份**，单独预注册 `G↓(v)`（source
-selection / continuation direction / solver settings / seed budget /
-acceptance / infeasibility / canonical material rule 全部独立冻结，不得从
-主 campaign 借临时规则）。
-
-**状态板**：Main registry FROZEN ｜ Upstream selection rule LOCKED ｜
-Low-speed material UNAVAILABLE（0.200/0.225/0.250/0.275）｜ Downward
-continuation = NEW SUB-CAMPAIGN ｜ Main Rung 1 compute BLOCKED ｜ Main
-campaign manifest NOT YET UPDATED。
-
-**Sub-campaign spec（下一份独立文档，起草中）**：targets {0.200, 0.225,
-0.250, 0.275}；continuation direction = downward；source registry 沿用
-R_valid（v_dump ≥ 0.2764 上游；downward 起点 = 经独立验证的向下投影）；
-acceptance/infeasibility/canonical 与主 campaign 同构但**独立编号**；
-预注册问题 =「是否存在机械有效、可复现的 downward continuation，使
-0.20–0.275 获得合法 τ(v)？」。**主链位置**：冻结主 spec → 低速 sub-campaign
-→ 最终 material availability map → Rung 1 执行——sub-campaign 若证
-0.20–0.275 仍 material-unavailable，structural missingness 即成为**先验
-确定的输入事实**，非执行意外缺口。
-
-**二十一轮 registry 结论**：monotone upstream 下 0.200/0.225/0.250/0.275
-= SOURCE-UNAVAILABLE（R_valid 最低 0.2764）。文件名速度标签系统性不可信
-（to37_v0.08/v0.12/v0.16/seed 实测均 ≈0.2764 同 sha 族）——已通过
-`rung1_source_registry.yaml`（v_avg 实测身份）隔离此污染；旧 F 线命名不作
-任何 continuation selection 依据。
-
 ### 5.8 Decision 2″ 裁决与 smoke 协议（十七轮；十八轮 smoke 执行日志附后）
 
 **裁定（owner，十七轮）：接受提案**——机制 = `--stages` 末段
@@ -524,6 +489,41 @@ Decision 2″ reopen → 评估 --v-target solver 扩展**。smoke 通过则 run
     reachability）。
   - 两案均不改变 §5 的机械验收与预算框架；裁定前 τ material / campaign
     launch 维持 BLOCKED。
+
+### 5.9 downward-continuation sub-campaign（二十轮裁决；独立实验身份）
+
+**未选①/②理由（留痕）**：① 会把 Rung 1 缩成中高速 contrast，而主问题恰是
+**0.20–0.25 解码器空洞带 + τ_ff 正向效应**——不能让「无法生成 τ」伪装成
+「低速不重要」；② 向下续延（0.2768→0.20）是新 generation operator，
+当前无冻结、验证过的操作证据，动用即违反上一轮锁定的 continuation
+discipline。
+
+**③ 身份**：不是主 protocol 的补丁，而是对「低速材料可生成性」这一新问题的
+**独立 sub-campaign / 独立实验身份**，单独预注册 `G↓(v)`（source
+selection / continuation direction / solver settings / seed budget /
+acceptance / infeasibility / canonical material rule 全部独立冻结，不得从
+主 campaign 借临时规则）。
+
+**状态板**：Main registry FROZEN ｜ Upstream selection rule LOCKED ｜
+Low-speed material UNAVAILABLE（0.200/0.225/0.250/0.275）｜ Downward
+continuation = NEW SUB-CAMPAIGN ｜ Main Rung 1 compute BLOCKED ｜ Main
+campaign manifest NOT YET UPDATED。
+
+**Sub-campaign spec（下一份独立文档，起草中）**：targets {0.200, 0.225,
+0.250, 0.275}；continuation direction = downward；source registry 沿用
+R_valid（v_dump ≥ 0.2764 上游；downward 起点 = 经独立验证的向下投影）；
+acceptance/infeasibility/canonical 与主 campaign 同构但**独立编号**；
+预注册问题 =「是否存在机械有效、可复现的 downward continuation，使
+0.20–0.275 获得合法 τ(v)？」。**主链位置**：冻结主 spec → 低速 sub-campaign
+→ 最终 material availability map → Rung 1 执行——sub-campaign 若证
+0.20–0.275 仍 material-unavailable，structural missingness 即成为**先验
+确定的输入事实**，非执行意外缺口。
+
+**二十一轮 registry 结论**：monotone upstream 下 0.200/0.225/0.250/0.275
+= SOURCE-UNAVAILABLE（R_valid 最低 0.2764）。文件名速度标签系统性不可信
+（to37_v0.08/v0.12/v0.16/seed 实测均 ≈0.2764 同 sha 族）——已通过
+`rung1_source_registry.yaml`（v_avg 实测身份）隔离此污染；旧 F 线命名不作
+任何 continuation selection 依据。
 
 ## 6. implementation audit 八问（每步自检）
 
