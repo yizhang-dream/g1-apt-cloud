@@ -37,12 +37,14 @@ v_target` 以及 `w-time` 等**所有** schedule 参数均由**冻结、确定�
 downward continuation path」）；失败 ≠ 「不存在低速解」（只说「该预注册
 downward procedure 未生成 material」）。
 
-## 1a. deterministic schedule rule【提案待批】
+## 1a. deterministic schedule rule（三十一轮批准 v_min；w-time 撤回）
 
-- `v_min(v) = v_target`（末段同伦 v_min 直接取目标速度）。
-- `w-time(v) = w_time0 · (v_source / v_target)`（从冻结基值 w_time0 =
-  0.0 派生——当前管线默认 w_time=0，且 F 线按 `--w-step` 拉速度而不靠
-  w-time；本规则保 P↓-S 状态不变，仅速度定位由 v_min 承担）。
+- `v_min(v) = v_target`（末段同伦 v_min 直接取目标速度）——**三十一轮
+  APPROVED**。
+- `w-time`：**保持冻结管线默认值 0**（三十一轮撤回 w_time0·(v_source/
+  v_target) 公式——其 w_time0=0 恒等于 0，不构成有效确定性 schedule，也
+  无法证明时间尺度变换；本阶段 w-time 维持管线默认，除另有既有确定性
+  规则可物化外不启用）。
 - knobs（knots / t_max / max_iter / retries）：沿用主 pipeline 的
   P↓-S-compatible 冷/热参面，**每个参数有 freeze 来源**（末段 v_min 由
   v_target 计算；节点/时长/迭代上限从 ↓-ladder 固定表读取，见 §3）。
