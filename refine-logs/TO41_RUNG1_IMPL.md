@@ -172,6 +172,49 @@ delta，随 v2 freeze 一并批准）｜ mapping **v2 GENERATED**（A PASS / B
 PASS / C 待冻结复核 / D pending）｜ τ material BLOCKED（待 v_c 规则
 批准）｜ Compute BLOCKED。
 
+### 3.2 十三轮：R1 暂不批准——新切割问题（τ ∈ C？）
+
+**批准维持**：YES/B、v2 全交叉 mapping、28-cell 设计、positivity gate、
+controlled decoder-condition contrast 命名、推翻条款。**暂不批准**：R1
+（0.20/0.325）、per-condition τ dircol、conditioning runtime 实现、D
+dry-run。
+
+**原因（比 incompatibility #1 更深的识别风险）**：v2 路径
+C → v_c → τ_c 把 **decoder condition 与 τ material 绑定**——改变 C 将
+同时改变两者，Δ_cond 便不再是 controlled decoder-condition contrast，而是
+**joint condition/material contrast**。R1 的「距边界最远」优化的是
+classification margin，不是 τ material 的科学代表性——工程 heuristic，
+非 treatment rule，故不批准。这不是 B 失败，而是检查 B 的 treatment
+是否被错误实现成另一个 treatment。
+
+**新切割问题（唯一待裁，owner）**：
+
+> **τ 是 C 的组成部分，还是在同一 target speed 上保持一致的控制量？**
+> 即 τ(v,C) = τ(v)（Mode A）还是 τ(v,C) = τ_C（Mode B）？
+
+- **Mode A（condition-only intervention）**：同一 target speed 的 C1/C2
+  使用**同一份** τ material → Δ_cond(v) = Δ_ff(v,C1) − Δ_ff(v,C2) 接近
+  **纯 condition contrast**。事实注记：Mode A 与原始目标「为每个速度生产
+  匹配的 τ」一致（τ = τ(v)，speed-matched），且**消解代表速度问题**
+  （v_c = v，R1/R2 不再需要）；成本 = 最多 7 个 dircol 解（每网格点一个）。
+- **Mode B（condition-specific material）**：合法，但 estimand 必须改名
+  **joint condition/material contrast**，不得再称纯 decoder-condition
+  contrast；成本 = 2 个 dircol 解（代表规则届时重新讨论）。
+
+**eval-time override 实现约束（十三轮加严）**：override 只得改变
+**condition selection**（plumbing），不得触及 decoder weights、input
+transform、normalization semantics、latent dimensionality、checkpoint；
+若 preprocessing/normalization 文件发生 plumbing 之外的内容变化 → D1
+须重新定义甚至重新审查——**预声明不把 invariance violation 变成
+invariance**。
+
+**状态板（十三轮）**：B decision APPROVED ｜ v2 mapping GENERATED /
+A-B PASS ｜ cell coverage SPECIFIED ｜ conditioning runtime BLOCKED ｜
+representative-speed DEFERRED（Mode A 下消解、Mode B 下重启）｜ τ
+material BLOCKED ｜ material-generation BLOCKED ｜ D1/D2/D3 BLOCKED ｜
+execution freeze BLOCKED ｜ compute BLOCKED ｜ **Decision 2′ OPEN
+（owner）**。
+
 ## 4. D dry-run 设计（execution integrity test，非小型实验）
 
 - 最小样本：7 target speeds × τ_ff ON/OFF × 最小 episode/seed；

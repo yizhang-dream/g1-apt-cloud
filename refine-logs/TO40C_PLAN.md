@@ -385,10 +385,17 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 > v1 退役为自然 assignment 参照；**A PASS / B PASS**，C 待冻结复核，
 > D pending）｜ Implementation **STARTED**（Unambiguous parts PROCEEDING，
 > Conditioning realization = eval-time 条件覆写，随 v2 spec）｜
-> **B 链位置**：① mapping reopen ✅ → ② 同速双-condition assignment
-> spec ✅ → ③ 代表速度规则【提案 R1 待批】→ ④ τ material generation
-> BLOCKED → ⑤ mechanical acceptance → ⑥ A/B/C/D 重走 → ⑦ execution
-> freeze → compute。**Δ_cond v2 恒等式 = Δ_ff(v,C1) − Δ_ff(v,C2)**
+> **B 链位置（十三轮更新）**：① mapping reopen ✅ → ② 同速双-condition
+> assignment spec ✅（v2 全交叉，A/B PASS）→ ③ **Decision 2′ 待裁
+> （owner）**：τ(v,C) = τ(v)（Mode A，condition-only，接近纯 condition
+> contrast，与「为每个速度生产匹配 τ」原始目标一致、消解代表速度问题，
+> ≈7 dircol 解）vs τ(v,C) = τ_C（Mode B，须改称 joint condition/material
+> contrast，≈2 dircol 解）→ ④ τ material generation BLOCKED → ⑤
+> mechanical acceptance → ⑥ A/B/C/D 重走 → ⑦ execution freeze →
+> compute。**Conditioning runtime BLOCKED**（override 仅限
+> condition-selection plumbing；plumbing 之外的内容变化 → D1 重定义——
+> 预声明 ≠ invariance）。R1 暂不批准（十三轮：classification margin ≠
+> τ material 科学代表性）。**Δ_cond v2 恒等式 = Δ_ff(v,C1) − Δ_ff(v,C2)**
 > （reopen delta，随 v2 freeze 批准）。
 > D1/D2/D3 **PENDING**
 > （最小样本 execution integrity test：7 speeds × τ_ff ON/OFF × 最小
