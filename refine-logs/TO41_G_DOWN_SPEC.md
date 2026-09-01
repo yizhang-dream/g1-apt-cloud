@@ -168,3 +168,17 @@ Decision 1 (P↓) owner 裁定 → P↓-S 则：
 本 spec + P↓ 裁定 commit + R_valid↓ 核对表 + G↓ manifest + ↓-smoke 报告
 + 4-target 独立生成 + 两层 acceptance 明细 + **material availability
 map**（主 Rung 1 的预注册输入）。
+
+## 8. ↓-smoke / campaign 执行日志（实时追加）
+
+- **0.275 ↓-smoke run A（k=0，P↓-S：to37_v016 guess / mode foot / knots 40
+  与源一致 / v_min=0.275 / w-time=0）——三十一轮收割，首个 G↓ material
+  candidate**：四段同伦全走完（stage 1 audit-admitted v_avg=0.200 →
+  stage 2 Solved v_avg=0.384（floor 上浮）→ stage 3 深收敛后发散磨至
+  max_iter，审计裁决放行 → **stage 4（v_min=0.275, eps=0.0）磨满 6000
+  iter 无证书、物理审计 PASS、v_avg=0.275000**）。driver 全门集 validate
+  = **PASS**（abs_err=8e-09；solver_terminal_status =
+  audit_admitted_no_certificate——证书 absent 如实记录不作门）。
+  **reachability PASS ＋ material validity = mechanically_valid**；run B
+  确定性见证已发射，hash 一致后 freeze 为 canonical τ(0.275) candidate。
+- （run B hash 对照与其余 target 结果在此追加）
