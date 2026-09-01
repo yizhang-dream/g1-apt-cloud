@@ -352,7 +352,50 @@ identity / conformance 检查）→ execution freeze → experiment。
    （planned sequence 已产出）；**Decision 2″ 未决（速度定位机制 + 容差带）
    前 manifest 不 freeze、campaign 不 launch**。
 
-### 5.7 Decision 2″ 裁决与 smoke 协议（十七轮）
+### 5.7 热启动 reopen（十九轮裁定落地；范围 = material-generation procedure，不涉科学协议）
+
+**裁定**：(i) 热启动输入 reopen **批准**；(ii) `--v-target` solver 扩展
+**不批准**；剩余 4 个 cold starts **不执行**（hard cap 是上限不是 spend
+target，未消耗预算不自动结转为 hot-start 预算）。**范围控制**：仅
+generation procedure reopen——B / Mode A / v2 mapping / 7 speeds /
+τ(v,C)=τ(v) / 容差 0.02 / 机械验收 全部不变。
+
+**accounting 修正（两字段制）**：`solver_terminal_status`（k=0..3 均为
+solver_failed）与 `material_status`（k=3 = mechanically_invalid，因回退解
+A门=FAIL + 容差门 FAIL）分离记录；k=3 的旧 "PASS" 事件标 superseded 保留
+（driver_buggy_classification → manual review → corrected 审计链，不覆盖）。
+
+**driver 全门集修复（campaign 恢复前置，已完成）**：
+`apt_g1/to41_material_driver.py`——PASS = G1 字段 ∧ G2 solver terminal
+success（log 末级 success=True）∧ G345 审计（gate_a∧gate_b、drift<2.0、
+ke_drop≥−1e-6，镜像管线 `_audit_pass`/AUDIT_THRESH）∧ G6 无 NaN/Inf ∧
+G7 速度容差 ∧ G8 配置身份；validate 子命令输出逐门 JSON。
+
+**热启动源要求（freeze 前置检查单）**：`source_artifact_id / source_commit /
+sha256 / contains(v_aux, lam, XM) / solver+config provenance / state
+dimensions / model compatibility`；**to38_ref.npz 仍禁止作 --guess-npz**
+（不因 reopen 放宽）。服务器候选已在：`to36_hybrid_gait_F9.npz`(0.318)、
+`F11b_flat`、`to37_v0.08/v0.16`、`to37_fast56_v0435`、`to37_fast48b_v0678`。
+
+**source-selection rule【提案待批】**：`source = argmin |v_dump − v_target|`
+（frozen verified dump registry 上取最近速度），tie-break 取较新
+source_commit；禁 outcome-based / 「最好看」挑选。G(v) 身份不变：热启动只
+改求解路径，材料 identity 仍是 τ(v)——不是 τ(v_realized) 也不是
+τ(v, guess source)。
+
+**执行序（最小）**：driver 全门集 ✅ → 冻结 hot-start source artifact +
+selection rule → 更新 campaign manifest（hot-start ladder）→ 一个 smoke
+continuation（判据 = 推过 stage-4 barrier 并抵达目标阶段）→ 机械 + 速度
+门 → canonical material。smoke 仍在 stage-4 附近失败 → 才升级讨论 TO36
+reachability boundary / solver 扩展。
+
+**状态板（十九轮）**：Decision 2″ REOPENED → HOT-START PATH ｜ B / Mode A /
+v2 mapping LOCKED ｜ τ(v) spec + acceptance FROZEN ｜ campaign budget
+AUTHORIZED ｜ cold k=0..3 CLOSED/AUDITED ｜ cold k=4..7 NOT EXECUTED ｜
+hot-start source + rule PENDING FREEZE ｜ material compute BLOCKED ｜
+D1/D2/D3 PENDING ｜ execution freeze PENDING ｜ Rung 1 experiment BLOCKED。
+
+### 5.8 Decision 2″ 裁决与 smoke 协议（十七轮；十八轮 smoke 执行日志附后）
 
 **裁定（owner，十七轮）：接受提案**——机制 = `--stages` 末段
 `v_min = requested_v`（现有旗标实例化，**暂不扩 solver**；`--v-target`
