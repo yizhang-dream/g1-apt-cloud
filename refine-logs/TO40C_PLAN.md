@@ -253,7 +253,7 @@ Rung 1 的问题不是「τ_ff 能不能在更多速度上工作」，而是：
 | 项目 | 预注册内容（标注【提案】的值级待批，其余为硬约束） |
 |---|---|
 | 速度网格 | **已批准（四轮评审落盘）**：0.20–0.325 步长 0.025 共 7 点 + 0.5 门外控制点保留 + 0.277 锚点单列；primary = support/boundary 定位，曲线精拟合为非 primary。**边界依据 = 既有 robot/task operating envelope，非 TO40C 结果**：0.2–0.25 为已知解码器低速空洞带（TO38/39）、0.277 为 TO 参考解速度点（§4 门开带 gate=1.0 处）、≥0.3 为解码器健康带起点（TO40C ctrl 实测 vx 0.59），全部落在基座 cmd 支撑 U(0, 0.8)（E47 配方）之内；TO40C 观测只决定「在此区间做定位」这一决策。grid bounds are defined by the pre-existing robot/task operating envelope, while TO40C observations determine only the decision to investigate this interval. **定位网格声明**：Rung 1 speed grid is a pre-registered localization grid derived from the already-closed TO40C observation; it is not itself treated as confirmatory evidence for the existence of the effect. |
-| τ_dec 条件化 | 条件变量 = cmd 速度。**pre-registered treatment mapping artifact**——mapping 改变 = treatment condition 改变，故属**实验设计 / treatment specification**，不只是实现知识（实现 invariance 只管 checkpoint/arch/preprocess/normalization 哈希，见 §10.7）。开跑前入仓一个不可变映射表（【提案】`apt_g1/configs/rung1_tau_dec_mapping.yaml`），字段：`target_speed / decoder_condition_id / decoder_checkpoint_hash / decoder_architecture_hash / preprocessing_hash / normalization_hash / mapping_rule_version / mapping_provenance`（provenance 非自由文本，见下方补充纪律）。**不设判定性 expected-mismatch 字段**——先验预期（如有）只能作非判定性设计注释，不得参与 stopping / 筛选 / 解释门槛（防预写「0.25 mismatch low、0.3 mismatch high」污染后验解释的 confirmation bias）。冻结后任何改动须新 commit + tracker 留痕——杜绝「某点效果差 → 回头换 decoder condition 再跑」 |
+| τ_dec 条件化 | 条件变量 = cmd 速度。**pre-registered treatment mapping artifact**——mapping 改变 = treatment condition 改变，故属**实验设计 / treatment specification**，不只是实现知识（实现 invariance 只管 checkpoint/arch/preprocess/normalization 哈希，见 §10.7）。开跑前入仓一个不可变映射表（【提案】`apt_g1/configs/rung1_tau_dec_mapping.yaml`），字段：`target_speed / decoder_condition_id / command_regime / decoder_checkpoint_hash / decoder_architecture_hash / preprocessing_hash / normalization_hash / mapping_rule_version / mapping_provenance`（provenance 非自由文本；五轮增补见下方补充纪律 4–8）。**不设判定性 expected-mismatch 字段**——先验预期（如有）只能作非判定性设计注释，不得参与 stopping / 筛选 / 解释门槛（防预写「0.25 mismatch low、0.3 mismatch high」污染后验解释的 confirmation bias）。冻结后任何改动须新 commit + tracker 留痕——杜绝「某点效果差 → 回头换 decoder condition 再跑」 |
 | 主指标 | primary = **逐 cmd 配对差分效应曲线 + 不确定度**（3 eval seed × 2 训练 seed）；合并均值只作 gate、不作效应量解释；衰减结构 −0.09→−0.009 本身是 Rung 1 要解释的对象。**禁筛选顺序**：−0.0402（TO40C gate）不得用作 Rung 1 逐点筛选条件；全部预注册速度点先全部取得 effect + uncertainty，**再**作 gate/boundary/disappearance 判定——不得先筛点再画曲线 |
 | 停止规则 | 见 §10.4 |
 
@@ -273,6 +273,29 @@ analysis is frozen. 主分析冻结后若需局部加密（如边界夹在 0.25�
    variable**——两者不得互换（防 treatment/outcome 混淆）。
 3. **冻结后改动 mapping = treatment specification 变更 = Rung 1 实验身份
    失效**：不得边跑边改，须重开预注册再 freeze。
+4. **pre-run-only（五轮）**：YAML 禁一切 observed / expected 结果字段
+   （observed_mismatch、expected_vx、posthoc_quality 连辅助性注释也不入）
+   ——文件身份 = treatment specification，不是 specification + results。
+5. **确定性可复现（五轮）**：同一 source artifact + 同一 mapping rule
+   version + 同一 input → **byte-identical** 输出；mapping 是 reproducible
+   transformation，非人工挑选表（杜绝「condition 是按当前经验选的」重开
+   post-hoc selection）。
+6. **身份块与双版本号（五轮）**：YAML 顶部含 `artifact_id / schema_version /
+   mapping_rule_version / created_from / freeze_status`；**schema_version ≠
+   mapping_rule_version**（schema 演进与规则变更的实验意义不同，不得混记）。
+7. **command_regime = cmd 的 operational definition（五轮，实物锚定）**：
+   `target_speed` = 每 episode **恒定**的指令前向速度（env `cmd_vx`；TO40C
+   eval 实物即此口径——单值贯穿 60s 全程，无 episode 均值/初值/plateau 之辨）。
+   decoder 条件选择**沿用冻结代码既有确定性函数**：
+   `vb = bucketize(cmd_v, linspace(0, vx_max, n+1)[1:-1])`
+   （`apt_flat_env.py`；n = latent_vae_n_bins = 3、vx_max = 0.8，生成时读
+   冻结 cfg、不硬编码）。按此函数本网格物化为两个条件：
+   {0.20, 0.225, 0.25} → **slow bin**、{0.277, 0.30, 0.325} → **mid bin**，
+   slow/mid 边界 0.2667 恰落在 TO40C 观察到的 0.25→0.277 行为分裂带内。
+   YAML = 该既有函数的**物化查表**，不引入新自由度。
+8. **source_commit 语义（五轮）**：指向**生成 mapping 的输入材料**（冻结
+   cfg / ckpt / calibration artifact）所在 commit，不是「生成 YAML 时的
+   HEAD」。
 
 **contrast family（每预注册速度点 v 上的可估计对比，替代笼统「三分解」）**：
 
@@ -343,16 +366,22 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 
 ### 10.8 设计冻结审查清单（design-freeze review，四轮评审落盘）
 
-> 评审状态：**Rung 1 — Design Freeze Review / CONDITIONAL PASS**（四轮，
-> 9.6/10），不进入计算执行；不改实验代码、不开服务器、不加新规则——
-> **§10 自此封版**，此后只修执行歧义、不再扩规则。四轮补入：网格批准
-> （envelope 依据）、DiD 统一命名 interaction contrast、provenance 可追溯
-> （source artifact/commit）、target/achieved 速度变量身份、冻结后 mapping
-> 改动 = 身份失效。**剩余 blocker 仅一项**：treatment mapping artifact
-> 产出并冻结。**operator test（12 问文档审计，四轮执行）**：现 §10 可唯一
-> 回答 10 问；Q1/Q2（0.25 → decoder condition、checkpoint 来源）待 artifact
-> 冻结后闭合。**EXECUTION-READY 转正条件**：artifact 冻结 + invariance gate
-> dry-run PASS → 转正并停止设计讨论、进入计算。
+> 评审状态：**Rung 1 — Design Freeze Review / CONDITIONAL PASS**（五轮，
+> 9.8/10，封版确认），不进入计算执行；§10 封版维持，**审查对象自五轮起从
+> protocol design 切换为 artifact conformance**。五轮 artifact 硬约束已并入
+> §10.3 补充纪律 4–8（确定性可复现 / pre-run-only / 双版本号身份块 /
+> command_regime 实物锚定 / source_commit 语义）。**剩余 blocker 仅一项**：
+> treatment mapping artifact 产出并冻结。operator test 状态 =
+> **conditional pass**（10/12；Q1/Q2 待 YAML 生成后重跑，此前不得写
+> 「完全通过」）。**artifact 验收 gate（四项全 PASS 即 EXECUTION-READY，
+> 不再评审、闭嘴开跑）**：
+> A Schema check（每 target speed 恰一 condition；hash / provenance /
+> command_regime 必填完整；无任何结果字段）→
+> B Determinism check（同输入重新生成 byte-identical）→
+> C Operator test Q1/Q2 重跑 →
+> D Invariance dry-run（YAML 指定 decoder artifact 与冻结基线哈希一致）。
+> 评审同时确认：网格批准 = admissible + 有定位意义，**非**「已证各点为最优
+> 信息点」（admissible ≠ informative），不得追加 optimal-grid 类措辞。
 
 | # | 锁点 | 状态 |
 |---|---|---|
