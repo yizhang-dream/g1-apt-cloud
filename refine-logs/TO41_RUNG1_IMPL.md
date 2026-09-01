@@ -7,7 +7,11 @@
 > per-condition τ material generation——Decision 3）。分支状态：
 > Unambiguous parts PROCEEDING（仅章程/harness 骨架）｜ Conditioning
 > impl **BLOCKED** ｜ **Incompatibility #1 OPEN**（十轮定稿为单一科学
-> 问题 + A/B 两条后果链，见 §3；裁定权在 owner）。
+> 问题 + A/B 两条后果链，见 §3；裁定权在 owner）｜ Estimands
+> **LOCKED\*** ｜ **Owner decision REQUIRED**。
+> **FROZEN\*/LOCKED\* 语义（十一轮）**：除 genuine incompatibility 外不得
+> 修改；发现 incompatibility 时由 owner 决定是否 reopen——protocol frozen
+> against implementation drift, but reopenable by owner decision。
 
 ## 0. 授权与两层 freeze
 
@@ -58,14 +62,21 @@
   保留为自然 assignment artifact。
 
 - **读法 B（interventional）**：设计变为**两个 treatment axes (v, z, C)**，
-  最小设计矩阵 = v × z × C。**关键判据（十轮锁死）：condition assignment
-  必须在同一 target speed 内存在可操作变化**（同一 v 下 C₁ vs C₂）——
-  否则 effect(C₁)/effect(C₂) 仍与 v 混杂、interaction contrast 无身份；
+  最小设计矩阵 = v × z × C。**关键判据（十轮锁死，十一轮维持为 hard
+  validity criterion、不降级为实现建议）：condition assignment 必须在同一
+  target speed 内存在可操作变化**（同一 v 下 C₁ vs C₂）——否则
+  effect(C₁)/effect(C₂) 仍与 v 混杂、interaction contrast 无身份；
   「runtime 只有 target_speed → condition」不构成 B。即 C = T(v, c)，
-  c 为预注册 condition assignment。后果链（YES）：① mapping reopen；
-  ② condition assignment 重新预注册；③ representative-speed rule 预注册；
-  ④ τ material generation；⑤ material acceptance；⑥ A/B/C/D 全部重走；
-  ⑦ execution freeze。
+  c 为预注册 condition assignment。**有效性链（十一轮）**：可操作 →
+  assignment invariant → decoder invariant → material valid → effect
+  identifiable——**能指定两个 condition ≠ conditioning 有效**（可操作性
+  ≠ 解释性）。**positivity / cell coverage gate（十一轮唯一新增统计护栏）**：
+  B 的每个被比较 cell (v, C₁) 与 (v, C₂) 必须**实际存在且可运行**——
+  implementation/D 阶段以 cell coverage gate 显式检查，而非仅验证
+  assignment function；否则 interaction contrast 只是形式存在。后果链
+  （YES）：① mapping reopen；② condition assignment 重新预注册；
+  ③ representative-speed rule 预注册；④ τ material generation；
+  ⑤ material acceptance；⑥ A/B/C/D 全部重走；⑦ execution freeze。
 
 **Decision 2 — τ material rule（仅当 B；九轮基础 + 十轮硬约束）**：τ
 reference 由**预注册、确定性的代表点规则**生成：`τ_c = G(v_c)`
