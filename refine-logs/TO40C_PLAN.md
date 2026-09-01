@@ -374,12 +374,15 @@ artifact（实验身份问题，非统计问题）。核查记录（哈希 + 一
 
 > **状态板（八轮评审，9.9/10；两层 freeze 语义——Specification FROZEN ≠
 > execution frozen，不得混写）**：
-> Specification **FROZEN**（grid APPROVED、estimands/stopping/anti-selection
+> Specification **FROZEN\***（\* = frozen pending incompatibility resolution;
+> no implementation may reinterpret it——protocol frozen against
+> implementation drift，仅 owner 可因 genuine incompatibility 决定 reopen；
+> grid APPROVED、estimands/stopping/anti-selection
 > LOCKED、mapping GENERATED @468a1e7 = generated-not-frozen、invariance
 > requirements LOCKED）｜ Implementation **STARTED**（八轮授权：instantiate
 > the frozen specification, not reinterpret；Unambiguous parts PROCEEDING =
 > 章程/harness 骨架，**Conditioning impl BLOCKED**——incompatibility #1
-> OPEN，九轮细化为 Decision 1–3，见 `TO41_RUNG1_IMPL.md` §3）｜
+> OPEN，十轮定稿为单一科学问题 + A/B 后果链，见 `TO41_RUNG1_IMPL.md` §3）｜
 > D1/D2/D3 **PENDING**
 > （最小样本 execution integrity test：7 speeds × τ_ff ON/OFF × 最小
 > episode/seed；**非小型实验、效应估计为零目的**；D3 逐点对照表入产物）｜

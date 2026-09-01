@@ -6,8 +6,8 @@
 > Compute BLOCKED**（D + execution freeze 全过前不得开跑，并覆盖
 > per-condition τ material generation——Decision 3）。分支状态：
 > Unambiguous parts PROCEEDING（仅章程/harness 骨架）｜ Conditioning
-> impl **BLOCKED** ｜ **Incompatibility #1 OPEN**（九轮细化为
-> Decision 1–3，见 §3；裁定权在 owner）。
+> impl **BLOCKED** ｜ **Incompatibility #1 OPEN**（十轮定稿为单一科学
+> 问题 + A/B 两条后果链，见 §3；裁定权在 owner）。
 
 ## 0. 授权与两层 freeze
 
@@ -44,49 +44,70 @@
   seed 0，故两臂均需重训）= 现有 CLI 配方纯配置组合，无新协议面。
 - **不可直接实例化部分**：条件化臂——见 §3。
 
-## 3. incompatibility report #1（OPEN；九轮细化——上游 fork 先于八轮的 (a)/(b)）
+## 3. incompatibility report #1（OPEN；十轮定稿——Decision 1 压缩为单一科学问题）
 
-冻结规格定义 Δ_cond = Y(τ OFF, 条件化) − Y(τ OFF, 非条件化(0.6 步态混合))，
-但其 runtime semantics 取决于一个更上游的语义 fork——**conditioning
-identity**。八轮的 (a)/(b) 是本 fork 的下游子问题，owner 决策压缩为三项：
+**estimand-family 提示（十轮）**：读法 A/B 不是对称的实现选项，而是两个
+不同的 estimand family。
 
-### Decision 1 — conditioning identity（一句话 fork）
+- **读法 A（自然 regime）**：C = C(v) 是 target-speed 的确定性函数，本身
+  纳入 treatment regime——估计的是 **Y(v, z, C(v))**，即「自然 decoder
+  regime 下的 τ_ff effect」。**A 不是「把 conditioning 去掉」**；不得事后
+  指控「Rung 1 没有控制 decoder condition」——A 的效应定义就是自然条件
+  效应。后果链（NO）：① 放弃 Δ_cond / conditioning DiD；② estimand
+  收缩；③ §10 reopen；④ runtime 实现自然 C(v)；⑤ 现行 mapping artifact
+  保留为自然 assignment artifact。
 
-> Rung 1 要识别的是「**自然 decoder condition 下** τ_ff 的 effect」，
-> 还是「**人为指定 decoder condition 后** τ_ff 的 effect」？
+- **读法 B（interventional）**：设计变为**两个 treatment axes (v, z, C)**，
+  最小设计矩阵 = v × z × C。**关键判据（十轮锁死）：condition assignment
+  必须在同一 target speed 内存在可操作变化**（同一 v 下 C₁ vs C₂）——
+  否则 effect(C₁)/effect(C₂) 仍与 v 混杂、interaction contrast 无身份；
+  「runtime 只有 target_speed → condition」不构成 B。即 C = T(v, c)，
+  c 为预注册 condition assignment。后果链（YES）：① mapping reopen；
+  ② condition assignment 重新预注册；③ representative-speed rule 预注册；
+  ④ τ material generation；⑤ material acceptance；⑥ A/B/C/D 全部重走；
+  ⑦ execution freeze。
 
-- **读法 A（observational / 分层变量）**：C = C(v) 由冻结 bucketize 确定，
-  估计 Y(v, τ_ff, C(v))。此时**不存在 conditioning intervention**——§10.3 的
-  Δ_cond / DiD 没有 treatment contrast，estimand 集收缩为 Δ_ff(v) 族。
-  这是**规格变更**：须 owner 确认后按 reopen 程序修订 §10.3，本文不得代改。
-- **读法 B（interventional treatment）**：C 可干预（force C = slow / mid）→
-  需要非恒等的 condition assignment → 现行 mapping artifact（自然函数的
-  恒等物化）不敷使用 → **mapping reopen**。八轮读法 (b)（钉扎）仅在此
-  读法下非退化。
-- 八轮读法 (a)（per-condition τ LUT）在两种读法下均可成为 τ_ff 的材料
-  形态，但它**不回答 Decision 1**。
+**Decision 2 — τ material rule（仅当 B；九轮基础 + 十轮硬约束）**：τ
+reference 由**预注册、确定性的代表点规则**生成：`τ_c = G(v_c)`
+（condition → representative speed → dircol → τ material），禁止人工挑
+「看起来合适」的 τ。两条身份链分离：**condition identity 来自冻结 binning
+函数；τ reference identity 来自单独冻结的 material-generation rule**——
+不得做 bin = gait、bin → τ 的隐含推论（slow bin ≠ slow gait 是未经检验的
+语义跃迁）。Δ_cond 措辞保持中性：其观测差异可能含 τ-reference construction
+difference，不得写回「decoder mismatch effect」。**Compute 边界
+（Decision 3，九轮）**：material generation 在 Decision 1/2 冻结前不授权
+（跑 dircol = 执行未批准的设计选择）；冻结后**单独授权**，且仍不是
+Rung 1 experimental compute。
 
-### Decision 2 — τ material rule（仅当 Decision 1 = B）
+**Decision 2 追加硬约束（十轮）**：v_c 必须由 treatment specification 本身
+确定——**不得由 TO40C outcome、Rung 1 dry-run outcome 或任何 achieved-speed
+measurement 反推**（防「0.25 的 τ 解得最好所以选 0.25」式 post-hoc
+treatment construction）。
 
-每个 decoder condition 的 τ reference 必须由**预注册、确定性的代表点规则**
-生成：`τ_c = G(v_c)`（condition → representative speed → dircol → τ
-material），禁止人工挑「看起来合适」的 τ。两条身份链分离：
-**condition identity 来自冻结 binning 函数；τ reference identity 来自单独
-冻结的 material-generation rule**——不得做 bin = gait、bin → τ 的隐含推论
-（slow bin ≠ slow gait 是未经检验的语义跃迁）。Δ_cond 措辞保持中性：
-其观测差异可能含 τ-reference construction difference，不得写回
-「decoder mismatch effect」。
+**material acceptance test（若 B 批准，先于一切实验使用）**：顺序 =
+material specification → freeze material-generation rule → dircol →
+**mechanical acceptance** → material frozen → experiment。acceptance 仅限
+工程/数值判据：solver convergence、constraint validity、required fields
+present、deterministic reproduction、hash、expected dimensionality、
+no NaN/Inf。**禁止**以「跑出来的机器人效果很好」作为 acceptance
+criterion——否则 material generation 本身变成实验优化。
 
-### Decision 3 — compute 授权边界
+**D3 解释上限（重申并加严）**：D3 PASS 只能说「implementation conforms to
+treatment specification」，**不能说「conditioning is valid」**，也不能说
+C₁/C₂ 是两个真实 gait regimes。
 
-**Compute BLOCKED 继续覆盖 per-condition τ material generation**：
-representative speed 未冻结前跑 dircol，不是「准备实验」，而是执行尚未
-批准的设计选择。Decision 1/2 冻结后，material-generation compute **单独
-授权**，且即使获授权也仍不是 Rung 1 experimental compute。
+**评审方有条件倾向（留痕）**：若项目核心问题确为「控制 decoder-condition
+mismatch 后识别 τ_ff 真实效应」，则读法 A 使其不可识别（C(v) 与 v 完全
+绑定），倾向 B；该倾向以 owner 确认科学问题为前提，**不得为让现有 §10
+能继续跑而选 B**。
 
-**纪律重申**：未决期间不写任何猜测性 conditioning code；实现仅限无歧义
-部分（章程/harness 骨架）。现有 0.277 单速 LUT **不得**硬套七点
-（τ(0.20)=τ(0.277)=τ(0.325) 再声称已 conditioning = 最危险的工程冲动）。
+**Decision 界面（单一科学问题，owner 裁定）**：
+
+> Rung 1 是否需要在**相同 target speed** 下人为改变 decoder condition，
+> 以识别 condition-dependent τ_ff effect？
+
+YES → B 链七步（上）；NO → A 链五步（上）。裁定前：Conditioning impl
+BLOCKED、τ material BLOCKED、Compute BLOCKED（含材料生成）。
 
 ## 4. D dry-run 设计（execution integrity test，非小型实验）
 
