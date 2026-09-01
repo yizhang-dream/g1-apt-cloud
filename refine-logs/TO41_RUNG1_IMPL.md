@@ -377,11 +377,29 @@ dimensions / model compatibility`；**to38_ref.npz 仍禁止作 --guess-npz**
 （不因 reopen 放宽）。服务器候选已在：`to36_hybrid_gait_F9.npz`(0.318)、
 `F11b_flat`、`to37_v0.08/v0.16`、`to37_fast56_v0435`、`to37_fast48b_v0678`。
 
-**source-selection rule【提案待批】**：`source = argmin |v_dump − v_target|`
-（frozen verified dump registry 上取最近速度），tie-break 取较新
-source_commit；禁 outcome-based / 「最好看」挑选。G(v) 身份不变：热启动只
-改求解路径，材料 identity 仍是 τ(v)——不是 τ(v_realized) 也不是
-τ(v, guess source)。
+**source-selection rule（二十轮定稿：monotone upstream；驳回 argmin 绝对
+距离 + commit 新旧 tie-break）**：
+
+> `s(v) = argmax{ s ∈ registry : v_dump(s) ≤ v }`——选**不超过 target 的
+> 最高已验证速度** source；continuation 只沿「已验证低速 → 目标」方向
+> 前进，**禁止用高于 target 的 source 反向求 target**（0.318 不作
+> 0.250/0.275/0.277 的初值；绝对距离规则会为 0.275 选 0.318，那改变了
+> 「从低速 basin 向上 continuation」的语义）。反向 continuation 仅在将来
+> 有冻结且验证过的操作证据时另立规则。无合格 source → source-unavailable
+> → material-unavailable 链，**禁止 fallback 到最近的上下游随便一个**。
+
+tie-break = 冻结 registry 的 **canonical source identity / 固定 artifact-ID
+排序**——不用 source_commit 新旧（与 continuation quality 无必然关系，且
+随仓库历史漂移）。registry 验证时 `v_dump` 一律取 artifact 内**实测
+realized speed**（v_avg 字段），文件名名义标签（v0435 等）不作 selection
+依据。G(v) 身份不变：热启动只改求解路径，材料 identity 仍是 τ(v)——不是
+τ(v_realized) 也不是 τ(v, guess source)。
+
+**按本规则的预期 assignment（registry 验证后生效；v_dump 以实测为准）**：
+0.200/0.225/0.250/0.275/0.277 → to37_v0.16（实测 v_avg 待验证）；0.300 →
+to37_v0.16（0.318 > 0.300 被排除——monotone 规则下 0.300 与 0.277 同源，
+这是规则的内插语义非缺陷）；0.325 → to36_hybrid_gait_F9（0.318 ≤ 0.325，
+唯一合格，clean continuation）。
 
 **执行序（最小）**：driver 全门集 ✅ → 冻结 hot-start source artifact +
 selection rule → 更新 campaign manifest（hot-start ladder）→ 一个 smoke
