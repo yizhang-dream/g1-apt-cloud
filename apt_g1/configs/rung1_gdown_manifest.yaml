@@ -1,0 +1,62 @@
+# G↓ sub-campaign manifest（预注册 planned search sequence；独立实验身份）
+# 规则（TO41_G_DOWN_SPEC.md）：P↓-S LOCKED（X_guess=X_source 状态原样）
+# v_min = v_target APPROVED；w-time = 0（冻结管线默认值）
+# R_valid↓ = to37_v016（v_dump = 0.2764 实测——不是文件名 v0.16）
+# 每 target 独立生成、禁 chain；首过即停；4 targets × 6 starts = 24 hard cap
+artifact_id: rung1-gdown-material-campaign
+schema_version: 1
+freeze_status: planned-not-frozen
+spec_ref: TO41_G_DOWN_SPEC.md（§1 P↓-S / §1a schedule rule）
+
+targets: [0.200, 0.225, 0.250, 0.275]
+source:
+  id: to37_v016
+  path: apt_g1/outputs/to37_v0.16.npz   # 服务器路径 /home/cvgluser/ros2_data/...（registry 冻结）
+  v_dump: 0.2764                         # 实测（非文件名 v0.16）
+  sha256_16: 50d95bafcc075498
+  mode: foot
+  knots: 40
+
+projection_operator:
+  P_down: P↓-S
+  definition: X_guess = X_source（状态原样；无轨迹/相位/时间缩放）
+  note: source state 原样保留；schedule 参数见下（全由冻结规则计算，禁人工调参）
+
+schedule_rule:
+  v_min: "{v} = target"                  # 末段同伦 v_min 直接取目标速度
+  w_time: 0.0                            # 冻结管线默认值（三十一轮撤回推导公式）
+  fixed_params:
+    mode: pointe
+    sole_drop: 0.04
+    pin_limit: 0.7
+    h_min: 0.62
+    v_cap: 6
+    w_tau: 1.0e-2
+    w_step: 3.0
+  guess: "--guess-npz apt_g1/outputs/to37_v0.16.npz（P↓-S：X_source 原样，仅 schedule 变）"
+
+# 每 target 独立的 ↓-ladder（k asc = 预注册 seed order；首过即停非 wall-clock）
+ladder:
+  per_target:
+    - {k: 0, knots: 14, t_max: 2.4, retries: 0, max_iter: 6000}
+    - {k: 1, knots: 18, t_max: 2.4, retries: 1, max_iter: 6000}
+    - {k: 2, knots: 24, t_max: 2.4, retries: 0, max_iter: 6000}
+    - {k: 3, knots: 24, t_max: 2.4, retries: 1, max_iter: 6000}
+    - {k: 4, knots: 32, t_max: 2.4, retries: 0, max_iter: 6000}
+    - {k: 5, knots: 32, t_max: 2.4, retries: 1, max_iter: 6000}
+  rationale: >-
+    向下向（0.2764 → target）预计与向上同构（P↓-S 同机制），递减 effort 阶梯
+    覆盖冷启动失败模式；每 target 6 starts 从已失败主 campaign（k=0..3 均在
+    低 knots → stage 4 前崩）留出的教训——t_max 取 2.4（避免更长 T 拖慢对
+    reachability 无益）。
+
+concurrency:
+  global: "≤ 8-way（C_global ≤ 8，同主 campaign）"
+  within_target: 严格串行（seed order 保持，canonical = 预注册 order 首过即停）
+
+acceptance:
+  classify: 见 smoke/driver——reachability（stage event 链条，脚本机械读取）
+    ⊥ material validity（机械/速度/字段/复现全门集）；禁止用 dump v_avg 代替
+    "target stage reached"（三十一轮执行要求）
+
+open_item: none（schedule rule 已批，无科学设计开放项）
