@@ -323,6 +323,35 @@ dircol 生成（按 5.3 stop rule 顺序尝试、首过即停）→ §5.2 机械
 manifest + 材料冻结（纯状态迁移）→ D1/D2/D3 dry-run（含 τ material
 identity / conformance 检查）→ execution freeze → experiment。
 
+### 5.6 campaign 执行不变量（十六轮；launch 前逐条确认）
+
+1. campaign manifest = **只读预注册 planned search sequence**：planned
+   start order / actual_start / accepted_start 三账分离——manifest 只含
+   planned；actual 入 campaign log（runtime），accepted 入 material
+   manifest（最终）。每速度 8 starts 是**允许的确定性搜索序列，不是必须
+   执行的 workload**（N_actual(v) ≤ 8）。
+2. manifest freeze → launch 后不得改 seed order；基础设施失败记
+   `status = infrastructure_failure`，不删除、不前移。
+3. **campaign accounting 三态 + 例外**：`solver_failed` /
+   `solver_converged_but_mechanical_invalid` / `mechanically_valid`（+
+   `infrastructure_failure`）——solver convergence ≠ material validity，
+   事后读者必须能区分「8 次全败」败在哪一层。
+4. **首过即停由脚本机械执行**（验收结果自动推进 freeze/stop），禁止
+   人工看日志判断「这个解不错」再手动停。
+5. **两个 manifest 身份分离**：campaign manifest（允许尝试什么）vs
+   material manifest（最终采用了什么：v → accepted_start#k → tau_sha256）。
+   审计链 = planned → attempted → accepted → frozen。
+6. **campaign 期间禁止查看机器人 experiment outcome 来选择/淘汰 τ**——
+   验收仅依据 §5.2 机械判据；此边界写进 launch 脚本输出/operator 说明。
+7. 低速材料缺席 = **structural missingness due to unavailable material**，
+   最终统计输入单独归类，不得混入普通 missing observation。
+8. **并发语义**：`C_global ≤ 8`（全局），非 per-speed ≤ 8；**同一速度内
+   seed 严格顺序执行**（wave 调度：wave w = 各未收速度的第 w 个 start），
+   canonical = 预注册顺序中首个通过者（顺序模式）。
+9. campaign manifest 文件 = `apt_g1/configs/rung1_tau_campaign_manifest.yaml`
+   （planned sequence 已产出）；**Decision 2″ 未决（速度定位机制 + 容差带）
+   前 manifest 不 freeze、campaign 不 launch**。
+
 ## 6. implementation audit 八问（每步自检）
 
 1 YAML 是否被原样消费？ 2 7 个 cmd 是否全部 launch？ 3 τ_ff ON/OFF 是否

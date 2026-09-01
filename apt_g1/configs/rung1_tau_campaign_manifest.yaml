@@ -1,0 +1,61 @@
+# Rung 1 τ(v) material campaign manifest
+# 身份 = 只读预注册 planned search sequence（十六轮）——不是实际执行清单：
+# actual 入 campaign log（runtime JSONL），accepted 入 material manifest（最终文件）。
+# 每速度 8 starts 是允许的确定性搜索序列，不是必须执行的 workload（N_actual(v) ≤ 8）。
+artifact_id: rung1-tau-material-campaign
+schema_version: 1
+material_spec: TO41_RUNG1_IMPL.md §5（FROZEN，十五轮）
+freeze_status: planned（Decision 2″ 裁定 + 本文件 freeze 于 launch 时执行）
+
+target_speeds: [0.200, 0.225, 0.250, 0.275, 0.277, 0.300, 0.325]
+
+pipeline:
+  entry: apt_g1/to36_hybrid_dircol.py solve
+  mode: pointe
+  固定参数: {sole-drop: 0.04, pin-limit: 0.7, h-min: 0.62, v-cap: 6, w-step: 3.0, w-tau: 1.0e-2}
+  说明: >-
+    v-cap=6 为 foot/抗混叠建议口径（solve help）；速度定位机制见 open_item
+    Decision 2″——候选 = --stages 末段 v_min 阶梯（现有旗标）或 solver
+    --v-target 扩展（新代码），裁定后 start_ladder 补记每 start 的定位参数。
+
+# start ladder：每速度相同的 8 个确定性 starts；k 升序 = 预注册 seed order
+start_ladder:
+  - {k: 0, knots: 14, t_max: 1.2, retries: 0, guess: cold, max_iter: 4000}
+  - {k: 1, knots: 14, t_max: 1.2, retries: 1, guess: cold, max_iter: 4000}
+  - {k: 2, knots: 18, t_max: 1.5, retries: 0, guess: cold, max_iter: 4000}
+  - {k: 3, knots: 18, t_max: 1.5, retries: 1, guess: cold, max_iter: 4000}
+  - {k: 4, knots: 24, t_max: 2.0, retries: 0, guess: cold, max_iter: 4000}
+  - {k: 5, knots: 24, t_max: 2.0, retries: 1, guess: cold, max_iter: 4000}
+  - {k: 6, knots: 14, t_max: 2.4, retries: 0, guess: cold, max_iter: 6000}
+  - {k: 7, knots: 24, t_max: 2.4, retries: 1, guess: cold, max_iter: 6000}
+ladder_rationale: >-
+  冷启动 + 确定性 knobs 阶梯（knots/t_max/max_iter/retries 递增 effort）；
+  guess 源全部 cold——--guess-npz 需要含 v_aux/lam/XM 的原始解 dump，
+  to38_ref.npz 是导出 LUT 不是合法 guess 源；跨速度热启动留作
+  material-unavailable 时的独立reopen 议题，不在本 campaign。
+
+expansion: >-
+  每 target speed 按 k=0..7 展开为 planned starts（7 × 8 = 56）；同一速度内
+  k 升序严格串行（wave w = 各未收速度的第 w 个 start）。
+
+scheduling:
+  concurrency: C_global ≤ 8（全局；非 per-speed）
+  within_speed: 严格串行（seed order 保持）
+  canonical_rule: 预注册顺序中首个完整通过 §5.2 机械验收者；首过即停（脚本机械执行）
+
+accounting_states: [solver_failed, solver_converged_but_mechanical_invalid, mechanically_valid, infrastructure_failure]
+outcomes_log: campaign log（runtime JSONL，独立文件，含每 start 上述状态）
+material_manifest: 最终 accepted/frozen 单独文件（v → accepted_start#k → tau_sha256 → to38_export 产物哈希）
+
+boundary: >-
+  campaign 期间禁止查看机器人 experiment outcome 来选择/淘汰 τ——验收仅依据
+  §5.2 机械判据；此边界写进 launch 脚本输出与 operator 说明。
+
+open_item:
+  id: Decision 2″
+  question: G(v) 的速度定位机制与容差带
+  proposal: >-
+    机制 = --stages 末段 v_min = v（现有旗标，launch 前 smoke start 验证语义）；
+    验收 = §5.2 追加机械判据⑨ |v_realized − v| ≤ 0.02 m/s（容差带，
+    十六轮提案待批）。
+  gate: 裁定前 manifest 不 freeze、campaign 不 launch
