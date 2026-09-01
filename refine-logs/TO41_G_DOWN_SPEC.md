@@ -29,6 +29,18 @@
 信息增益最高：把问题干净定义为「冻结 source state 不变，通过预注册
 downward continuation schedule 检验已有解支能否向目标速度延拓」。
 
+**P↓-S source identity invariant（三十一轮扩展）**：
+
+```
+(X_guess, M_solve) = (X_source, M_source)
+```
+
+即 **state identity 与 model identity 共同保持**，须匹配：mode / state
+dimension / variable layout / auxiliary dimension / knot interpretation /
+checkpoint-schema identity——**速度匹配不是充分条件**（三十一轮 smoke v1
+已实测验证：mode 错配 → SetInitialGuess 维度错位，失败属
+implementation conformance、非 continuation failure）。
+
 **严格化（三十轮）**：**「仅改 schedule」必须不含人工自由度**——`v_min =
 v_target` 以及 `w-time` 等**所有** schedule 参数均由**冻结、确定性规则
 从 v_source 与 v_target 计算**；smoke 中禁止任何人工调 schedule（发现
@@ -50,6 +62,21 @@ downward procedure 未生成 material」）。
   v_target 计算；节点/时长/迭代上限从 ↓-ladder 固定表读取，见 §3）。
 - **禁 smoke 调参**：↓-smoke 只验证 schedule 被接受与抵达 target stage，
   不得据 smoke 结果修改任意 schedule 参数（违者 reopen，不当"工程便利"）。
+
+### launch audit incident（三十一轮，保留不删）
+
+```
+incident_type: implementation_conformance_error
+cause: manifest-source identity mismatch（manifest fixed_params.mode=pointe vs 源 mode=foot）
+impact: smoke v1 invalid before reachability inference（SetInitialGuess rows mismatch）
+resolution: mode corrected to source artifact identity（smoke v2 --mode foot）
+```
+
+**保留价值**：v1 不是失败的 continuation attempt，而是 **invalid execution
+attempt**——后续任何「同 source 有时能跑有时不能跑」的解读都必须先排除
+此 incident 造成的歧义。**结论**：source artifact identity 不只是速度，
+还包括 model/config/mode/schema；P↓-S 要求 (X_guess, M_solve) =
+(X_source, M_source) 共同保持。
 
 ## 2. source selection（R_valid↓；三十轮：静态定义，非 smoke 产物）
 
