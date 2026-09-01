@@ -78,6 +78,21 @@ attempt**——后续任何「同 source 有时能跑有时不能跑」的解读
 还包括 model/config/mode/schema；P↓-S 要求 (X_guess, M_solve) =
 (X_source, M_source) 共同保持。
 
+**当前 G↓ 状态（三十一轮，准确分层）**：
+- P↓-S identity invariant：**PASS**（mode/state/aux/knots/schema 匹配）。
+- P↓-S first-step downward projection（0.2764 → 0.20）：**reachability PASS**
+  ——stage-1 由下游材料审计采纳（IPOPT 未签证书，`audit PASS ≠ solver
+  terminal success`）。
+- target reachability（stage 4, v_min=0.275）：**UNKNOWN**。
+- terminal success：**PENDING**。material validity：**PENDING**。
+- **措辞**：P↓-S 已通过首个大跨度 downward projection 的实现性检查；
+  整体 reachability 尚待 target stage 0.275 验证——不得写成「P↓-S 的
+  有效性不是 blocker」（仅最早一个 downstream projection 无阻）。
+- stage accounting（stage-level continuation admission，非 final solver
+  success）：`stage_status = accepted_for_continuation` /
+  `solver_certificate = absent` / `audit_status = PASS`——避免「solver_failed
+  为何还能继续」的歧义（k=3 exit 0 假阳性重演风险）.
+
 ## 2. source selection（R_valid↓；三十轮：静态定义，非 smoke 产物）
 
 - `s↓(v) = argmin{ s ∈ R_valid↓ : v_dump(s) ≥ v } v_dump(s)`，tie-break =
