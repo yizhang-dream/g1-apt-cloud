@@ -377,29 +377,36 @@ dimensions / model compatibility`；**to38_ref.npz 仍禁止作 --guess-npz**
 （不因 reopen 放宽）。服务器候选已在：`to36_hybrid_gait_F9.npz`(0.318)、
 `F11b_flat`、`to37_v0.08/v0.16`、`to37_fast56_v0435`、`to37_fast48b_v0678`。
 
-**source-selection rule（二十轮定稿：monotone upstream；驳回 argmin 绝对
-距离 + commit 新旧 tie-break）**：
+**source-selection rule（二十轮定稿；二十一轮形式化 + APPROVED）**：
 
-> `s(v) = argmax{ s ∈ registry : v_dump(s) ≤ v }`——选**不超过 target 的
-> 最高已验证速度** source；continuation 只沿「已验证低速 → 目标」方向
-> 前进，**禁止用高于 target 的 source 反向求 target**（0.318 不作
-> 0.250/0.275/0.277 的初值；绝对距离规则会为 0.275 选 0.318，那改变了
-> 「从低速 basin 向上 continuation」的语义）。反向 continuation 仅在将来
-> 有冻结且验证过的操作证据时另立规则。无合格 source → source-unavailable
-> → material-unavailable 链，**禁止 fallback 到最近的上下游随便一个**。
+> `s(v) = argmax{ s ∈ R_valid : v_dump(s) ≤ v }`，其中 **R_valid = { s：
+> provenance / schema / hash / compatibility / material-validity 全通过的
+> 冻结 canonical sources }**——机械审计失败的 dump 即使 v_dump 落在区间内
+> 也不进 R_valid。选**不超过 target 的最高已验证速度** source；continuation
+> 只沿「已验证低速 → 目标」方向前进，**禁止用高于 target 的 source 反向
+> 求 target**。反向 continuation 仅在有冻结且验证过的操作证据时另立规则。
+> 无合格 source → source-unavailable → material-unavailable 链，禁止
+> fallback。
 
 tie-break = 冻结 registry 的 **canonical source identity / 固定 artifact-ID
-排序**——不用 source_commit 新旧（与 continuation quality 无必然关系，且
-随仓库历史漂移）。registry 验证时 `v_dump` 一律取 artifact 内**实测
-realized speed**（v_avg 字段），文件名名义标签（v0435 等）不作 selection
-依据。G(v) 身份不变：热启动只改求解路径，材料 identity 仍是 τ(v)——不是
-τ(v_realized) 也不是 τ(v, guess source)。
+排序**——不用 source_commit 新旧。`v_dump` 一律取 artifact 内**实测
+realized speed**（v_avg 字段），文件名名义标签不作依据。G(v) 身份不变：
+热启动只改求解路径，材料 identity 仍是 τ(v)。
 
-**按本规则的预期 assignment（registry 验证后生效；v_dump 以实测为准）**：
-0.200/0.225/0.250/0.275/0.277 → to37_v0.16（实测 v_avg 待验证）；0.300 →
-to37_v0.16（0.318 > 0.300 被排除——monotone 规则下 0.300 与 0.277 同源，
-这是规则的内插语义非缺陷）；0.325 → to36_hybrid_gait_F9（0.318 ≤ 0.325，
-唯一合格，clean continuation）。
+**registry 纪律（二十一轮）**：① 预期 assignment 在 registry freeze 前一律
+标注 **expected / pending verification**，文件名速度不是事实；② freeze 后
+registry **immutable**——campaign/smoke 中发现的新 dump 不得动态加入（新
+source = 新 registry version + 新 generation decision）；③ registry freeze
+后生成 **source-selection audit table**（target | eligible | selected |
+reason 逐行机械生成，0.300 行须显示 F9 因 v_dump>target 被排除）。
+
+**按规则的 expected assignment（PENDING registry verification——非事实）**：
+0.200–0.300 → to37_v0.16（expected）；0.325 → F9（expected）。smoke 证据
+分层（二十一轮）：historical feasibility（F 线先验，仅工程依据）→ 本次
+smoke reachability → 本次 material validity——**三层不互相替代**；smoke
+判定拆分报告：`reachability PASS/FAIL` 与 `material validity PASS/FAIL`
+分开（stage 5 抵达但审计 FAIL = reachability PASS + material validity
+FAIL，不记 smoke FAIL）。
 
 **执行序（最小）**：driver 全门集 ✅ → 冻结 hot-start source artifact +
 selection rule → 更新 campaign manifest（hot-start ladder）→ 一个 smoke
@@ -412,6 +419,41 @@ v2 mapping LOCKED ｜ τ(v) spec + acceptance FROZEN ｜ campaign budget
 AUTHORIZED ｜ cold k=0..3 CLOSED/AUDITED ｜ cold k=4..7 NOT EXECUTED ｜
 hot-start source + rule PENDING FREEZE ｜ material compute BLOCKED ｜
 D1/D2/D3 PENDING ｜ execution freeze PENDING ｜ Rung 1 experiment BLOCKED。
+
+### 5.9 downward-continuation sub-campaign（二十轮裁决；独立实验身份）
+
+**未选①/②理由（留痕）**：① 会把 Rung 1 缩成中高速 contrast，而主问题恰是
+**0.20–0.25 解码器空洞带 + τ_ff 正向效应**——不能让「无法生成 τ」伪装成
+「低速不重要」；② 向下续延（0.2768→0.20）是新 generation operator，
+当前无冻结、验证过的操作证据，动用即违反上一轮锁定的 continuation
+discipline。
+
+**③ 身份**：不是主 protocol 的补丁，而是对「低速材料可生成性」这一新问题的
+**独立 sub-campaign / 独立实验身份**，单独预注册 `G↓(v)`（source
+selection / continuation direction / solver settings / seed budget /
+acceptance / infeasibility / canonical material rule 全部独立冻结，不得从
+主 campaign 借临时规则）。
+
+**状态板**：Main registry FROZEN ｜ Upstream selection rule LOCKED ｜
+Low-speed material UNAVAILABLE（0.200/0.225/0.250/0.275）｜ Downward
+continuation = NEW SUB-CAMPAIGN ｜ Main Rung 1 compute BLOCKED ｜ Main
+campaign manifest NOT YET UPDATED。
+
+**Sub-campaign spec（下一份独立文档，起草中）**：targets {0.200, 0.225,
+0.250, 0.275}；continuation direction = downward；source registry 沿用
+R_valid（v_dump ≥ 0.2764 上游；downward 起点 = 经独立验证的向下投影）；
+acceptance/infeasibility/canonical 与主 campaign 同构但**独立编号**；
+预注册问题 =「是否存在机械有效、可复现的 downward continuation，使
+0.20–0.275 获得合法 τ(v)？」。**主链位置**：冻结主 spec → 低速 sub-campaign
+→ 最终 material availability map → Rung 1 执行——sub-campaign 若证
+0.20–0.275 仍 material-unavailable，structural missingness 即成为**先验
+确定的输入事实**，非执行意外缺口。
+
+**二十一轮 registry 结论**：monotone upstream 下 0.200/0.225/0.250/0.275
+= SOURCE-UNAVAILABLE（R_valid 最低 0.2764）。文件名速度标签系统性不可信
+（to37_v0.08/v0.12/v0.16/seed 实测均 ≈0.2764 同 sha 族）——已通过
+`rung1_source_registry.yaml`（v_avg 实测身份）隔离此污染；旧 F 线命名不作
+任何 continuation selection 依据。
 
 ### 5.8 Decision 2″ 裁决与 smoke 协议（十七轮；十八轮 smoke 执行日志附后）
 
