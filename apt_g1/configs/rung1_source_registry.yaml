@@ -1,0 +1,58 @@
+# Rung 1 hot-start source registry（monotone upstream rule 的 R_valid 冻结文件）
+# 规则：s(v) = argmax{ s ∈ R_valid : v_dump(s) ≤ v }；v_dump = 实测 v_avg（非文件名标签）
+# 验证日期：2026-09-01（服务器 apt_g1/outputs/ 实测）；freeze_status 见文末
+artifact_id: rung1-source-registry
+schema_version: 1
+rule_ref: TO41_RUNG1_IMPL.md §5.7（二十/二十一轮定稿）
+freeze_status: data-verified（coverage 决策待 owner，见 open_item）
+
+sources:
+  - {id: F11b_flat, path: to36_hybrid_gait_F11b_flat.npz, v_dump: 0.2768, mode: foot,
+     knots: 40, drift: [1.252, 1.317], sha256_16: 3f239cbf991b382b, r_valid: true}
+  - {id: F11_slope2, path: to36_hybrid_gait_F11_slope2.npz, v_dump: 0.2925, mode: foot,
+     knots: 40, drift: [1.152, 1.240], sha256_16: da6cb3a6d72c33b5, r_valid: true}
+  - {id: F9, path: to36_hybrid_gait_F9.npz, v_dump: 0.3179, mode: foot,
+     knots: 40, drift: [1.067, 1.702], sha256_16: e7b4cdf455ab0864, r_valid: true}
+  - {id: to37_v016, path: to37_v0.16.npz, v_dump: 0.2764, mode: foot, knots: 40,
+     drift: [1.303, 1.333], sha256_16: 50d95bafcc075498, r_valid: true,
+     note: to37_v0.12 / to37_seed 与本文件 sha 相同——同一材料的重复命名，canonical = to37_v016}
+  - {id: to37_mid035, path: to37_mid035.npz, v_dump: 0.2764, mode: foot, knots: 56,
+     drift: [1.106, 1.041], sha256_16: 6e20a38d793e3eaa, r_valid: true,
+     note: to37_mid035b 为同 sha 重复，canonical = to37_mid035}
+  - {id: fast56, path: to37_fast56_v0435.npz, v_dump: 0.4349, mode: foot, knots: 56,
+     drift: [0.766, 1.320], sha256_16: 2361a0af304a6108, r_valid: true}
+  - {id: fast48b, path: to37_fast48b_v0678.npz, v_dump: 0.6776, mode: foot, knots: 48,
+     drift: [1.033, 1.041], sha256_16: 51d6f40a71e7c779, r_valid: true}
+  - {id: v1_softlanding, path: to36_hybrid_gait_v1_softlanding.npz, v_dump: 0.1518,
+     mode: pointe, knots: 14, sha256_16: 4edc4c1c222e7399, r_valid: false,
+     exclude_reason: 老格式缺 guess schema（无 v_aux/lam/XM，不能作 --guess-npz）+
+       审计字段缺失无法验证 material validity——唯一低速候选被排除}
+  - {id: world_knots, path: to36_world_knots.npz, v_dump: 0.2768, mode: foot, knots: 40,
+     sha256_16: c32f0ee3cbe3cfc3, r_valid: false,
+     exclude_reason: guess_schema=False（数据与 F11b_flat 同源副本）}
+
+provenance_note: >-
+  F 线/TO37 产物生成于 repo sync 之前，生成 commit 不可恢复；来源兼容性以
+  schema/字段/维数/mode/哈希冻结锚定。to38_ref.npz 仍禁止作 --guess-npz。
+
+selection_table: |
+  | target | eligible (v_dump ≤ target)       | selected         | reason                    |
+  |-------:|----------------------------------|------------------|---------------------------|
+  | 0.200  | none（R_valid 最低 = 0.2764）     | SOURCE-UNAVAILABLE | 无合格上游               |
+  | 0.225  | none                              | SOURCE-UNAVAILABLE | 同上                     |
+  | 0.250  | none                              | SOURCE-UNAVAILABLE | 同上                     |
+  | 0.275  | none（0.2764 > 0.275）            | SOURCE-UNAVAILABLE | 同上                     |
+  | 0.277  | F11b_flat(0.2768), to37_v016(0.2764) | F11b_flat      | argmax validated upstream |
+  | 0.300  | F11_slope2(0.2925), F11b_flat, to37_v016 | F11_slope2 | argmax validated upstream |
+  | 0.325  | F9(0.3179), F11_slope2, ...       | F9               | argmax validated upstream |
+
+open_item:
+  id: coverage-decision
+  question: >-
+    0.200/0.225/0.250/0.275 四个 target 在当前 R_valid 下 source-unavailable
+    （唯一低速 dump v1_softlanding 为老格式、无 guess schema、无法验证审计）。
+    owner 三选：① 接受缩减网格 {0.277, 0.300, 0.325}（12 cells）+
+    structural missingness 声明；② 另立 downward-continuation 规则
+    （0.2768 材料向下降速生成 0.20–0.275——需冻结验证，现无证据）；
+    ③ 低速生成 sub-campaign 另立。
+  gate: 裁定前 campaign manifest 不更新为 hot-start ladder

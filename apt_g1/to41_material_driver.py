@@ -54,13 +54,15 @@ def gate_v(d, requested_v):
 
 
 def gate_audit(d):
-    ga, gb = bool(d["gate_a"]), bool(d["gate_b"])
+    """镜像管线 _audit_pass 的 npz 可校验子集：drift < 2.0、ke_drop ≥ −1e-6、
+    无 NaN。hs/impact/interface 残差由管线内部审计在生成时把关（solve log/
+    check 输出为准）——gate_a/gate_b 不是 _audit_pass 判据，不作门（ dumped
+    合法解中 gate_b 可为 False）。"""
     el, er = float(d["energy_drift_left"]), float(d["energy_drift_right"])
     kl, kr = float(d["ke_drop_lr"]), float(d["ke_drop_rl"])
-    ok = ga and gb and el < DRIFT_MAX and er < DRIFT_MAX \
-        and kl >= KE_DROP_MIN and kr >= KE_DROP_MIN
-    return ok, (f"gate_a={ga} gate_b={gb} drift=({el:.3f},{er:.3f}) "
-                f"ke_drop=({kl:.4f},{kr:.4f})")
+    ok = el < DRIFT_MAX and er < DRIFT_MAX and kl >= KE_DROP_MIN and kr >= KE_DROP_MIN
+    return ok, (f"drift=({el:.3f},{er:.3f}) ke_drop=({kl:.4f},{kr:.4f}) "
+                f"[hs/impact/interface 由管线生成时审计把关]")
 
 
 def gate_solver(log_path, n_stages=5):
