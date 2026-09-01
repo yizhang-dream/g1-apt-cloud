@@ -390,7 +390,37 @@ Decision 2″ reopen → 评估 --v-target solver 扩展**。smoke 通过则 run
   `outputs/to41_smoke_k1to7.log`（续跑）；脚本
   `/home/cvgluser/to41_smoke.sh`、`/home/cvgluser/to41_smoke_k1to7.sh`
   （md5 已核对）；执行 commit = 服务器 5b1f413（管线代码与本地一致）。
-- （k=1..7 结果在此追加）
+- **k=1..3 与 ladder 暂停（十八轮追加，含勘误）**：
+  - k=1（retries=1）/ k=2（knots=18）：`solver_failed`（快速失败）。
+  - k=3（knots=24/t_max=2.0）：同伦爬升 **stage 4（v_min=0.16）`EXIT: Error
+    in step computation` 崩溃**；管线 dump stage-3 水平回退解，dump 行自记
+    `步速=0.140m/s A门=FAIL`。v_avg=0.140 → 容差门⑨
+    |0.140−0.277|=0.137 ≫ 0.02 **FAIL** → 改分类
+    `solver_converged_but_mechanical_invalid`（续跑脚本只 grep 能量审计
+    "OK"，PASS 判定不完整——**campaign driver 必须实现全门集**：A 门 +
+    速度容差 + 机械验收，此为 execution 修正非 spec 变更）。
+  - **ladder 于 k=3 暂停，k=4..7 未运行**（预算消耗 **4/8**；勘误：k=1..7
+    为 7 个 start，累计 ≤8，无 k=8——十七轮汇报笔误已 corrected）。暂停
+    理由：k=4..7 的 t_max ≥ 2.4（更长 T → 更慢解）对「到达 0.277」这一
+    目的被 k=3 的失败支配，先解决定位机制再议；owner 可改判预算耗尽优先。
+  - **Decision 2″ REOPENED（按十七轮预定触发生效）**：证据 = 末段
+    v_min=0.277 **从未被到达**（stage 4 即崩）+ 回退解 v_avg=0.140 远离
+    目标——v_min 阶梯**无法把 realized speed 定位到目标**。smoke 五条中
+    ②③ FAIL。十八轮措辞锁定：**「预注册 k=0/k=3 配置分别在 stage 1/4
+    确定性失败，尚未测试到目标速度阶段」，不写「0.277 不可达」**；k=0
+    失败仅确立该 solver 配置失败；确定性复现的正式验收仍在成功 candidate
+    上做（k=0 的重现只是工程诊断事实）。
+- **reopen 后的两个候选路径（owner 裁定）**：
+  - **(i) 热启动输入 reopen**：manifest 的 `guess: cold` 改为允许
+    `--guess-npz` 挂接 F 线既有解 dump（含 v_aux/lam/XM，服务器定位 +
+    sha256 冻结为 material-generation 输入）。F 线历史结论「平地冷/热启动
+    均进不了 v_td 盆」提示冷启动路线先天受限，而 F9/F11 本身就是热启动
+    continuation 产物——**推荐**，且零 solver 代码变更。
+  - **(ii) `--v-target` solver 扩展**：给 solve 加显式速度约束（十七轮
+    预案）。变更面更大，且同样要面对 stage-4 攀爬失败（约束不解决
+    reachability）。
+  - 两案均不改变 §5 的机械验收与预算框架；裁定前 τ material / campaign
+    launch 维持 BLOCKED。
 
 ## 6. implementation audit 八问（每步自检）
 
