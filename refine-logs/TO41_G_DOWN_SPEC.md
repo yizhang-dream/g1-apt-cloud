@@ -2,8 +2,9 @@
 
 > 【层位：L3 实施层·独立实验身份】↑ `refine-logs/README.md`（扇出树根地图）｜
 > 上游：`TO41_RUNG1_IMPL.md` §5.9（二十轮裁定 ③，本 spec 是其落点）｜
-> 状态：**DRAFT — 待 owner 裁定 Decision 1（P↓）；未获裁前无任何
-> material-generation compute 授权，Main Rung 1 compute BLOCKED 不变**。
+> 状态：**P↓-S APPROVED（三十轮）；R_valid↓ / schedule rule / manifest 待
+> 冻结；无任何 material-generation compute 授权，Main Rung 1 compute
+> BLOCKED 不变**。
 
 ## 0. 身份与边界
 
@@ -21,37 +22,51 @@
     成为主 Rung 1 的先验输入事实，**不是失败实验**。
 - 材料 identity = τ(v)（requested v）；P↓ 只改求解路径，不改变 identity。
 
-## 1. Decision 1 —— P↓ 的数学身份（唯一待裁上游对象）
+## 1. Decision 1 —— P↓（三十轮裁定：P↓-S 严格版）
 
-`X_guess = P↓(X_source)`，三种 operator 语义（**互斥三选一；禁止
-"先试试哪个投影最好"的分叉 pilot**——失败即 reopen，不 pilot）：
+**裁定**：`X_guess = X_source`（**source state 原样保留**——不做轨迹/
+相位/时间缩放，无人为重构低速轨迹）；P↓-T / P↓-R 均不选。理由 =
+信息增益最高：把问题干净定义为「冻结 source state 不变，通过预注册
+downward continuation schedule 检验已有解支能否向目标速度延拓」。
 
-| 选项 | 定义 | 论证 | 风险 |
-|---|---|---|---|
-| **P↓-S（推荐）** State-preserving parameter shift | `X_guess = X_source`（完整解 dump 原样），仅改 continuation schedule：`--stages` 末段 `v_min = v_target`（+ w-time 按目标速度调整）。solver 在同伦中把解从 v_source 拉向 v_target | 与主 campaign 已验证可行的 hot-start **完全同构**（仅方向相反：F9/F11 本身就是同机制产物）；**零新近似自由度**；失败归因最干净（同伦不可逆性 → support boundary 证据，或 schedule 问题） | 依赖同伦链路可逆（未验证；正是本 spec 要测的） |
-| P↓-T | 轨迹时间/空间缩放：相位按 T_target/T_source 缩放、step 按 v_target/v_source 缩放 | 直观 | 破坏物理约束（限位/足端高度/冲击残差）；引入近似回调自由度，验收框变脏 |
-| P↓-R | 丢弃轨迹、仅用源解结构参数（周期数/支持拓扑）重建低速初猜再交 solver | 结构先验 | 与已失败的冷启动近邻问题高度重叠；信息增益低 |
+**严格化（三十轮）**：**「仅改 schedule」必须不含人工自由度**——`v_min =
+v_target` 以及 `w-time` 等**所有** schedule 参数均由**冻结、确定性规则
+从 v_source 与 v_target 计算**；smoke 中禁止任何人工调 schedule（发现
+"时间尺度不好"→ 不允许微调，属 reopen）。**解释边界**：P↓-S 成功 ≠
+同伦动力学数学可逆（只说「给定 source/solver/schedule 存在一条成功的
+downward continuation path」）；失败 ≠ 「不存在低速解」（只说「该预注册
+downward procedure 未生成 material」）。
 
-**理由**：选 P↓-S 的理由不取决于"它大概能行"，而取决于它是唯一不引入
-新近似自由度的 operator；同伦可逆性这一前提本身正是 sub-campaign 要
-检验的问题。owner 裁定 P↓ 后，本 spec 其余部分按所选 operator 细化
-（P↓-T/-R 的 schedule/acceptance 含义届时重写 Decision 2+，属 reopen）。
+## 1a. deterministic schedule rule【提案待批】
 
-## 2. source selection（指向 R_valid↓，不复制主 rule）
+- `v_min(v) = v_target`（末段同伦 v_min 直接取目标速度）。
+- `w-time(v) = w_time0 · (v_source / v_target)`（从冻结基值 w_time0 =
+  0.0 派生——当前管线默认 w_time=0，且 F 线按 `--w-step` 拉速度而不靠
+  w-time；本规则保 P↓-S 状态不变，仅速度定位由 v_min 承担）。
+- knobs（knots / t_max / max_iter / retries）：沿用主 pipeline 的
+  P↓-S-compatible 冷/热参面，**每个参数有 freeze 来源**（末段 v_min 由
+  v_target 计算；节点/时长/迭代上限从 ↓-ladder 固定表读取，见 §3）。
+- **禁 smoke 调参**：↓-smoke 只验证 schedule 被接受与抵达 target stage，
+  不得据 smoke 结果修改任意 schedule 参数（违者 reopen，不当"工程便利"）。
+
+## 2. source selection（R_valid↓；三十轮：静态定义，非 smoke 产物）
 
 - `s↓(v) = argmin{ s ∈ R_valid↓ : v_dump(s) ≥ v } v_dump(s)`，tie-break =
   冻结 registry 的 **canonical artifact-ID 序**（不用 commit 新旧）。
-- **R_valid↓ = { s : 主 registry 已验证 v_dump 实测 ∧ 具备
-  downward-projection compatibility }**——compatibility 在 P↓ 裁定后单独
-  核对（至少：guess schema 齐全 = v_aux/lam/XM、mode=knots 面与 solve
-  的 `--stages` 参数面兼容、无 NaN）；数值上合格但无法稳定向下
-  continuation 的材料 **不进 R_valid↓**。
-- 按当前主 registry 实测（0.2764 最低已验证源），预期 four targets 的
-  s↓ 均为 **to37_v016 (v_dump=0.2764)**（argmin_{≥v}；0.2768 F11b_flat
-  次选）——**预期值标注 pending compatibility 核对**，非事实。
+- **R_valid↓（冻结数据，三十轮实测）**：to37_v016（v_dump=0.2764，
+  mode=foot/knots=40，guess schema 齐全 v_aux 6/lam 4/XM 40×12 两组、
+  无 NaN、drift (1.303,1.333) < 2.0、ke_drop OK、sha16 50d95baf）——
+  **静态定义**（schema/model/provenance/material-valid/source-generation
+  identity 全过），**非 smoke 产物**（不得"先试 downward 成功才宣布
+  valid↓"）；F11b_flat（0.2768，同族）为次选。
+- 按当前 registry：four targets s↓ 均为 **to37_v016 (0.2764)**（argmin_{≥v}；
+  F11b_flat 0.2768 次选）——**预期值基于冻结实测，非人工挑**。
 - 每个 target **独立**从该 canonical source 生成（`G↓(v) =
   Solve(P↓(X_s), v)`），**禁止 chain**（0.225 不得喂 0.250 的结果——
-  τ(0.225) 依赖 τ(0.250) 会造成材料链式依赖、失败污染后续、provenance 混乱）。
+  材料链式依赖、失败污染后续、provenance 混乱）。**parent/source 身份固定
+  = source artifact hash**（"这次给 0.275 用的 source 副本"不改变身份）；
+  生成的 child material 有独立 material identity（lineage = parent →
+  projection → solver → child）。
 
 ## 3. continuation schedule 与预算（独立规定，不继承 7×8）
 
