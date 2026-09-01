@@ -242,26 +242,42 @@ Rung 1 的问题不是「τ_ff 能不能在更多速度上工作」，而是：
 > **在控制 τ_dec mismatch 后，τ_ff 的真实效应曲线是什么，其速度支持区间
 > 和边界在哪里？**
 
-观测效应按三分解对待：`observed effect = τ_ff 效应 + decoder mismatch +
-interaction`。TO40C 在 0.277 上走解码器 0.6 步态 = 三者耦合未拆；Rung 1 的
-交付物是**拆开后的三条量**，不是单点 pass/fail。
+观测效应的 `observed effect = τ_ff 效应 + decoder mismatch + interaction`
+只是**概念框架**，不是三个仅凭实验即可唯一识别的因果量。Rung 1 的交付物是
+一组**预注册 contrast family**（用于区分 τ_ff 主效应、decoder mismatch 贡献
+与二者 interaction 的可估计对比，定义见 §10.3），不是单点 pass/fail，
+也不承诺唯一因果分解。
 
-### 10.3 开跑前锁死四项
+### 10.3 开跑前锁死四项 + contrast family
 
 | 项目 | 预注册内容（标注【提案】的值级待批，其余为硬约束） |
 |---|---|
-| 速度网格 | 【提案】0.20–0.325 步长 0.025 共 7 点 + 0.5 门外控制点保留 + 0.277 锚点单列；理由：覆盖 −0.09（0.2/0.25）→ −0.009（0.277）的衰减边界两侧 |
-| τ_dec 条件化 | 条件变量 = cmd 速度；τ_dec 网格映射表**必须在评测前冻结**（先冻结后评测，禁止看完结果再选条件化口径——防 post-hoc） |
-| 主指标 | primary = **逐 cmd 配对差分效应曲线 + 不确定度**（3 eval seed × 2 训练 seed）；合并均值只作 gate、不作效应量解释（−0.0402 是预注册硬界，不是效应大小的科学解释；衰减结构 −0.09→−0.009 本身是 Rung 1 要解释的对象）；interaction（条件化前后效应差的非可加性）必报但列次级 |
+| 速度网格 | 【提案】0.20–0.325 步长 0.025 共 7 点 + 0.5 门外控制点保留 + 0.277 锚点单列；理由：覆盖 −0.09（0.2/0.25）→ −0.009（0.277）的衰减边界两侧。**定位网格声明**：Rung 1 speed grid is a pre-registered localization grid derived from the already-closed TO40C observation; it is not itself treated as confirmatory evidence for the existence of the effect.（TO40C 只提供网格设计信息 = exploratory localization；Rung 1 提供独立的定位证据，不作效应存在性的 confirmatory 证据） |
+| τ_dec 条件化 | 条件变量 = cmd 速度。**mapping 是版本化 design artifact，不是脚本内动态决定**：开跑前入仓一个不可变映射表（字段：target speed → decoder condition → decoder gait/latent condition → expected mismatch；【提案】`apt_g1/configs/rung1_tau_dec_mapping.yaml`），冻结后任何改动须新 commit + tracker 留痕——杜绝「某点效果差 → 回头换 decoder condition 再跑」 |
+| 主指标 | primary = **逐 cmd 配对差分效应曲线 + 不确定度**（3 eval seed × 2 训练 seed）；合并均值只作 gate、不作效应量解释；衰减结构 −0.09→−0.009 本身是 Rung 1 要解释的对象。**禁筛选顺序**：−0.0402（TO40C gate）不得用作 Rung 1 逐点筛选条件；全部预注册速度点先全部取得 effect + uncertainty，**再**作 gate/boundary/disappearance 判定——不得先筛点再画曲线 |
 | 停止规则 | 见 §10.4 |
+
+**contrast family（每预注册速度点 v 上的可估计对比，替代笼统「三分解」）**：
+
+- **τ_ff 主效应**：`Δ_ff(v) = Y(τ ON, v) − Y(τ OFF, v)`（同一 τ_dec 状态内配对）；
+- **mismatch 贡献**：`Δ_dec(v) = Y(τ OFF, 条件化, v) − Y(τ OFF, 非条件化(0.6 步态混合), v)`；
+- **interaction**：DiD `= Δ_ff(v)|条件化 − Δ_ff(v)|非条件化`。
+
+诚实声明：这是 contrast family（该对比基下可估计的量），主效应/错配贡献的
+数值依赖对比基选择，interaction 为其中最稳的量；不宣称三者的唯一因果分解。
 
 ### 10.4 停止规则（两条早停，触发即收束、不烧算力）
 
-1. **消失规则**：低带效应在 τ_dec 条件化后消失（conditioned effect ≈ 0，
-   落入未决窗下界内）→ 收束为「TO40C 低带效应由 decoder mismatch 主导，
-   τ_ff 无独立速度生产贡献」——**停止加密网格**，不逐 0.01 找显著点。
+1. **消失规则**：低带效应在 τ_dec 条件化后消失 → 收束为「TO40C 低带效应由
+   decoder mismatch 主导，τ_ff 无独立速度生产贡献」——**停止加密网格**，
+   不逐 0.01 找显著点。**「消失」的数学定义（不显著 ≠ 归零）**：条件化后
+   逐 cmd 效应的 seed 配对分布**全部落入 practical-null 区间 |Δ| ≤ 0.02 m/s**
+   （复用 §9.1 分层判定的等效层界；落入 (0.02, 0.04] 未决窗则补第二训练
+   seed，既不宣布消失也不宣布存在）；不得以 p > 0.05 或「看起来接近 0」替代。
 2. **边界规则**：连续两个网格点差分 > +0.04 或 floor 失败 → 停止向该方向
-   外推，该速度记为机制边界。
+   外推，该速度记为机制边界。**「连续两点」= 预注册网格上的相邻点；无效点
+   （run failure / decoder condition failure / 质量门失败）打断序列而非被
+   跳过**——`0.25 PASS → 0.275 无效 → 0.30 PASS` 不构成「连续两点」。
 
 仅当效应在条件化后保留且随速度连续衰减时，才允许外扩网格预算
 （扩边 = 机制识别成功后的覆盖扩展，不是搜索显著点）。
@@ -277,3 +293,29 @@ interaction`。TO40C 在 0.277 上走解码器 0.6 步态 = 三者耦合未拆�
 TO40C 完成的是 **falsification**（排除「E48 式基座破坏」这一竞争解释——
 2×2 交叉 + 全电池 + 门外 eq 三处证据）；它**不自动推出**「τ_ff → 目标行为」
 的因果。Rung 1 做的是 **identification**（机制定位）。两阶段结论不得合并表述。
+
+### 10.7 implementation-invariance gate（冻结身份核查，dry-run 项）
+
+decoder 是冻结基座，故开跑前（dry-run 阶段）核查：Rung 1 全部速度条件下所用
+decoder 的**权重 / 架构 / 预处理 / normalization / checkpoint 与冻结基线逐项
+一致**（同一 ckpt 哈希），唯一变化来自预注册的 τ_ff / conditioning 操作。
+否则「0.20 有效、0.325 无效」无法排除 decoder artifact——这是实验身份问题，
+不是统计问题。核查记录（ckpt 哈希 + 一致性 diff = 空）进 §7 产物清单。
+
+### 10.8 设计冻结审查清单（design-freeze review，二轮评审裁定落盘）
+
+> 二轮评审裁定：Rung 1 可进入**设计冻结前审查**，不进入计算执行；现阶段
+> 不改实验代码、不开服务器。以下 6 锁点补齐即正式放行。
+
+| # | 锁点 | 状态 |
+|---|---|---|
+| 1 | 0.20–0.325 / 0.025 网格正式批准 | **待批**（§10.3【提案】+ 定位网格声明已就位） |
+| 2 | τ_dec mapping artifact | 程序已锁（§10.3 版本化冻结规则）；**artifact 文件待产出并 commit** |
+| 3 | 三类效应的确切 statistical contrast | **已锁**（§10.3 contrast family：主效应 / 错配贡献 / interaction DiD） |
+| 4 | practical-null /「消失」的数学定义 | **已锁**（§10.4：\|Δ\| ≤ 0.02，复用 §9.1 等效层界；未决窗补 seed） |
+| 5 | 「连续两点」相邻点规则 | **已锁**（§10.4：无效点打断序列，不得跳过） |
+| 6 | frozen decoder implementation-invariance gate | **已锁为核查项**（§10.7，执行于 dry-run） |
+
+执行顺序（评审确认）：scientific specification → pre-registration freeze →
+implementation → dry-run / integrity checks（含 §10.7）→ compute。
+**compute availability ≠ experimental readiness**。
