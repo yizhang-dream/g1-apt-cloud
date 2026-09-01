@@ -38,17 +38,17 @@ schedule_rule:
 # 每 target 独立的 ↓-ladder（k asc = 预注册 seed order；首过即停非 wall-clock）
 ladder:
   per_target:
-    - {k: 0, knots: 14, t_max: 2.4, retries: 0, max_iter: 6000}
-    - {k: 1, knots: 18, t_max: 2.4, retries: 1, max_iter: 6000}
-    - {k: 2, knots: 24, t_max: 2.4, retries: 0, max_iter: 6000}
-    - {k: 3, knots: 24, t_max: 2.4, retries: 1, max_iter: 6000}
-    - {k: 4, knots: 32, t_max: 2.4, retries: 0, max_iter: 6000}
-    - {k: 5, knots: 32, t_max: 2.4, retries: 1, max_iter: 6000}
+    - {k: 0, knots: 40, t_max: 2.4, retries: 0, max_iter: 6000, note: "P↓-S 用与源一致的 knots=40 避免重采样插值"}
+    - {k: 1, knots: 40, t_max: 2.4, retries: 1, max_iter: 6000}
+    - {k: 2, knots: 40, t_max: 2.4, retries: 0, max_iter: 6000}
+    - {k: 3, knots: 40, t_max: 2.4, retries: 1, max_iter: 6000}
+    - {k: 4, knots: 40, t_max: 2.4, retries: 0, max_iter: 6000}
+    - {k: 5, knots: 40, t_max: 2.4, retries: 1, max_iter: 6000}
   rationale: >-
-    向下向（0.2764 → target）预计与向上同构（P↓-S 同机制），递减 effort 阶梯
-    覆盖冷启动失败模式；每 target 6 starts 从已失败主 campaign（k=0..3 均在
-    低 knots → stage 4 前崩）留出的教训——t_max 取 2.4（避免更长 T 拖慢对
-    reachability 无益）。
+    为真正 P↓-S（X_source 原样），每级 knots=40 与源镜像（to37_v016
+    knots=40），避免 --guess-npz 的 knots 重采样插值引入状态扰动；k 由
+    retries/max_iter 递增 effort（预注册顺序）；t_max=2.4 避免更长 T
+    对 reachability 无益；首过即停。
 
 concurrency:
   global: "≤ 8-way（C_global ≤ 8，同主 campaign）"
