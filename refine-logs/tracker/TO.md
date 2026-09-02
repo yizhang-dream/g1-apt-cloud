@@ -1200,3 +1200,12 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   - **待执行**：lab-ts 同步 → ctrl-s0 实测 ckpt driver 冒烟（隔离 smoke
     目录，非正式 artifact）→ 训练完成后四臂 select_checkpoint → 56 receipt
     正式 eval → eval_checker 审计 → contrast 分析（下游，与审计分离）。
+  - **冒烟结果（09-03，lab-ts@1548cfe）**：服务器 selftest 9/9 复绿（本机 +
+    lab-ts 双绿，沿 D/L 负例惯例）；driver 端到端 rc=0——cell 17
+    （v0277_C1_off，与 ctrl-s0 实测 ckpt policy_it_200 匹配）× 3 eval seeds ×
+    300 步：preflight 冻结锚全过（vae f6adfc50 + 7/7 material + 7/7 LUT）；
+    receipt 字段逐项正确（干预格 override 900/900 call 生效 natural
+    vb1→applied vb0；OFF 臂 n_tau_calls=0 无泄漏；decode per_call 900/900
+    完整；buffer==LUT；3 episodes 无倒地 reset 簿记自洽；outcome 仅 record）；
+    单 cell 墙钟 48s（Isaac 启动含内）→ 56 cell 正式 eval 估算 ~1h 级。
+    **冒烟 = implementation 验证，非科学结果、不进 coverage**。
