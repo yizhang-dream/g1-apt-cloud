@@ -85,7 +85,7 @@ def load_lut_manifest(path: Path = LUT_MANIFEST) -> dict:
 
 # cfg 快照闭集（receipt cfg_snapshot 的全部键；两臂 diff 判定 L3 的证据面）
 CFG_SNAPSHOT_FIELDS = [
-    "scene.num_envs", "terrain_seed", "sim.dt", "decimation",
+    "scene.num_envs", "sim.dt", "decimation",
     "episode_length_s", "action_space", "observation_space", "disturbance_prob",
     "latent_mode", "latent_speed_bins", "latent_dir_bins", "latent_residual",
     "latent_vae_n_bins", "latent_vae_n_dbins", "latent_cmd_phase_rate",
