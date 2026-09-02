@@ -201,3 +201,22 @@ D 阶段执行协议（`refine-logs/TO41_D_DRYRUN_PROTOCOL.md`，FROZEN）的可
 | `rung1/mode_a_runtime.py` | 入口（**state-changing**） | Mode A 契约 `τ(v,C)=τ(v)` / `C=T_mapping(v,C)` 的执行器：mapping lookup（(v,arm)→condition_id）与 material lookup（v→τ material）**两个独立函数**，先落 immutable execution record 再 decode；CLI `--mode static`（28-cell 配置层覆盖核对，本机可跑）/`--mode execute`（decode-only dry-run receipt×28，**仅 lab-ts**，`--env-tag` 强制口径）。receipt 只含 record 字段，无任何 verdict/PASS/ok 字段（协议 §9） | TO41 D（Rung 1） |
 | `rung1/d_checker.py` | 审计（**read-only**） | D independent checker：自带独立解析器读冻结 mapping v2 YAML / source registry / G_DOWN_SPEC §9 availability map，重算哈希（材料文件独立 sha256）、重算 D1（七字段+mode/layout/shapes）/D2（same-τ fingerprint+lineage）/D3A/D3B verdict；receipt schema 封闭 + 全域封禁自报 verdict 字段；禁收 performance 字段（协议 §4）；本机运行恒标 `--env-tag local`，lab-ts D 报告必须 `--materials-root` | TO41 D（Rung 1） |
 | `rung1/rung1_selftest.py` | 工具（自测） | checker 逻辑自测（synthetic receipt，永不作为 D artifact）：T0 双解析器交叉一致 / T1 lookup 单元（Mode A 恒等式）/ T2 静态覆盖 28/28 / T3 正例控制 / **Negative A–E**（τ 换 hash→D2+D3B FAIL；condition 错 arm→D3A FAIL；decoder 超参/shape 篡改→D1 FAIL；自报 PASS+实际不一致→仍 FAIL；lineage 缺失→schema FAIL）。dry-run 前必须全绿 | TO41 D（Rung 1） |
+
+## 8b. `apt_g1/rung1/` —— launch sanity（真实 env 接线验证，2026-09-02 三十七轮登记）
+
+L1–L4 纯执行 gate（判据唯一事实源 = `refine-logs/TO41_LAUNCH_SANITY.md`；
+D protocol FROZEN 不变）的可执行化：把冻结 Mode A runtime 接入**未改动的**
+真实 `apt_flat_env.py` τ 注入/控制路径，28 cell 只测接线、不测性能。
+**接线纪律**：零 env 文件改动（env sha256 = mapping `preprocessing_hash`
+冻结锚，checker 机械校验）——condition 轴 = 实例级 shadowing `env._vae.decode`
+（冻结 bucketize 每步照跑，wrapper 记 natural/applied 双记录）；τ 轴 =
+`cfg.to_ref_npz` 既有通道 + 实例级探针 `_to_ref_lookup`（:768 唯一消费点）。
+l_checker 不 import launch_sanity/env_wiring（audit 独立性同 D §9）。
+产物目录 `apt_g1/outputs/sync/to41_sanity/`。
+
+| 脚本 | 角色 | 用途 | 对应实验 |
+|---|---|---|---|
+| `rung1/env_wiring.py` | 模块（**state-changing**） | Mode A→env 接线 shim：`ConditionOverrideHandle`（decode 调用点拦截，per-call natural/overridden 双记录）/`TauConsumptionProbe`（τ 消费点拦截，per-call digest+buffer 快照）/`canonical_array_sha256`（冻结数组身份规范化，checker 侧独立实现交叉验证）。只产 record，无 verdict 字段；Rung 1 compute 的 eval 侧接线届时复用同一实现（conformance 随之继承） | TO41 L（Rung 1） |
+| `rung1/launch_sanity.py` | 入口（**state-changing**） | 28-cell 真实 env 接线驱动：`--mode static`（配置层覆盖核对，本机）/`--mode execute`（**仅 lab-ts**：每 cell 新建真实 AptFlatG1Env（TO40C ctrl/t10 配方 × τ(v) 材料 × e39 vae，两臂唯一 cfg 差={to_tau}），jitter_and_reset + 恒定 cmd_vx 每步重申 + 中段强制 episode boundary + 零动作驱动真实 step 循环，env.close() 后落 receipt）。冻结锚 preflight（env/vae/arch 三源哈希 + 7 材料可达，Isaac 启动前 fail-fast） | TO41 L（Rung 1） |
+| `rung1/l_checker.py` | 审计（**read-only**） | L1–L4 independent checker：L1 τ material consumption（buffer 哈希 = checker 独立 np.load 重算 + 4 cell/v Mode A fingerprint + ON 消费/OFF 零注入）/ L2 override persistence（逐 call natural vs applied + checker 重算自然 bucketize + boundary 后 persistence）/ L3 ON/OFF isolation（两臂 cfg diff == {to_tau}）/ L4 28-cell receipt（冻结枚举 + 冻结 env 源哈希锚 + decoder 签名表）。schema 封闭 + 封禁自报 verdict 字段 + 禁收 performance 字段；本机恒 `--env-tag local`（报告文件名显式 not_L_artifact） | TO41 L（Rung 1） |
+| `rung1/l_selftest.py` | 工具（自测） | sanity 自测（synthetic receipt + mock env，永不作为 L artifact）：T-L0 双解析器交叉一致 / T-L1 wiring handle mock 单测（override 逐调用/契约 fail-fast/digest 确定性）/ T-L2b canonical hash 双实现交叉 / T-L3 合成正例全 PASS / **Negative A–E**（τ buffer 换 hash→L1+L3 FAIL；boundary 后 applied 回退→L2 FAIL；两臂混入额外 cfg 差→L3 FAIL；receipt 缺件→全级联 FAIL；自报 verdict→schema FAIL）。execute 前必须全绿 | TO41 L（Rung 1） |

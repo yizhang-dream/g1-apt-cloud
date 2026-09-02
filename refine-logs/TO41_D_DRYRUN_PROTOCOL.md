@@ -11,7 +11,11 @@
 > checker 落码、negative tests 9/9（本机+lab-ts）、**28-cell D dry-run
 > 执行完毕，D1/D2/D3 全 PASS**（report = `apt_g1/outputs/sync/to41_d/
 > D_report`，lab-ts frozen env，checker 独立审计 failures 0）——
-> execution freeze 待 owner 纯状态迁移；Rung 1 compute BLOCKED 不变）。
+> execution freeze 待 owner 纯状态迁移；Rung 1 compute BLOCKED 不变；
+> **09-02 三十七轮 owner 改判：暂不 freeze**——D decode-only PASS ≠ 完整
+> 训练环境 plumbing，先过真实 `apt_flat_env.py` 的 L1–L4 launch sanity
+> （= `TO41_LAUNCH_SANITY.md`，纯执行 gate，本文判据不动））。
+> （执行 freeze 状态以此为准；上方三十六轮语义保留作历史。）
 
 ## 0. 对象、边界与当前状态板
 
@@ -33,7 +37,10 @@ D1/D2/D3               PASS（09-02 三十六轮 lab-ts 28-cell dry-run；
                        schema/D1/D2/D3A/D3B 全绿，failures 0）
 D protocol             FROZEN（三十五轮 9.9/10 定稿；此后唯一允许变更
                        = 把 frozen specification 变成可执行代码）
-Execution freeze       PENDING owner 纯状态迁移（D 全 PASS 前置已满足）
+Env launch sanity      NEXT（09-02 三十七轮 owner 裁定：D decode-only
+                       PASS ≠ 完整训练环境 plumbing——先过 L1–L4 真实
+                       env 接线验证 = TO41_LAUNCH_SANITY.md，再 freeze）
+Execution freeze       BLOCKED pending launch sanity（三十七轮改判）
 Main Rung 1 compute    BLOCKED
 ```
 
