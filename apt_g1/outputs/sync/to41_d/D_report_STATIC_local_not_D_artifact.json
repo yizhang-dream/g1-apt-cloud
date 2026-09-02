@@ -1,0 +1,211 @@
+{
+  "artifact": "rung1-d-audit/v1",
+  "selftest": false,
+  "generated_utc": "2026-09-02T13:47:53Z",
+  "environment_tag": "local",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "inputs": {
+    "mapping_yaml": "C:\\Users\\zyz\\Documents\\gr00t\\apt_g1\\configs\\rung1_tau_dec_mapping.yaml",
+    "mapping_yaml_sha256": "026ceb57df712a8268ab59af21ada87946cbc42cdfc5353d39d8eba4ebbdaa3d",
+    "registry_yaml": "C:\\Users\\zyz\\Documents\\gr00t\\apt_g1\\configs\\rung1_source_registry.yaml",
+    "registry_yaml_sha256": "29030952a167cdb9b992e52d6ffe26567dfe5de227afa2e9751dae4a8de34fe8",
+    "gdown_spec": "C:\\Users\\zyz\\Documents\\gr00t\\refine-logs\\TO41_G_DOWN_SPEC.md",
+    "gdown_spec_sha256": "33cd146dc1e6c0615459bd6bb6ca520493c6795c76ee0d58f35ba309567ca81a",
+    "receipts_dir": null,
+    "receipt_count": 0,
+    "receipt_sha256": {},
+    "materials_root": null
+  },
+  "static_coverage": {
+    "expected": 28,
+    "resolved": 28
+  },
+  "material_baseline": [
+    {
+      "target": 0.2,
+      "artifact": "gdown_v0200_k0.npz",
+      "v_realized": 0.2,
+      "abs_err": 6.7e-09,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": null,
+      "note": ""
+    },
+    {
+      "target": 0.225,
+      "artifact": "gdown_v0225_k0.npz",
+      "v_realized": 0.225,
+      "abs_err": 1.7e-06,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": null,
+      "note": ""
+    },
+    {
+      "target": 0.25,
+      "artifact": "gdown_v0250_k0.npz",
+      "v_realized": 0.25,
+      "abs_err": 7e-09,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": null,
+      "note": ""
+    },
+    {
+      "target": 0.275,
+      "artifact": "gdown_smoke_v275_k0.npz",
+      "v_realized": 0.275,
+      "abs_err": 8e-09,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅（run A/B）",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": null,
+      "note": ""
+    },
+    {
+      "target": 0.277,
+      "artifact": "to36_hybrid_gait_F11b_flat.npz",
+      "v_realized": 0.2768,
+      "abs_err": 0.0002,
+      "source": "registry 既有（F 线审计验收）",
+      "determinism": "registry 冻结",
+      "registry_id": "F11b_flat",
+      "registry_sha256_16": "3f239cbf991b382b",
+      "tau_hash_runtime": null,
+      "note": ""
+    },
+    {
+      "target": 0.3,
+      "artifact": "to36_hybrid_gait_F11_slope2.npz",
+      "v_realized": 0.2925,
+      "abs_err": 0.0075,
+      "source": "registry 既有",
+      "determinism": "registry 冻结",
+      "registry_id": "F11_slope2",
+      "registry_sha256_16": "da6cb3a6d72c33b5",
+      "tau_hash_runtime": null,
+      "note": "<< accepted under the pre-registered ±0.02 m/s realization tolerance（禁触发重解，协议 §4）"
+    },
+    {
+      "target": 0.325,
+      "artifact": "to36_hybrid_gait_F9.npz",
+      "v_realized": 0.3179,
+      "abs_err": 0.0071,
+      "source": "registry 既有",
+      "determinism": "registry 冻结",
+      "registry_id": "F9",
+      "registry_sha256_16": "e7b4cdf455ab0864",
+      "tau_hash_runtime": null,
+      "note": "<< accepted under the pre-registered ±0.02 m/s realization tolerance（禁触发重解，协议 §4）"
+    }
+  ],
+  "observations": [
+    "mapping YAML freeze_status = 'generated-not-frozen'（generated-not-frozen 字样；owner 冻结动作记录于 tracker/TO.md 三十三轮——implementation 不改冻结工件，仅如实记录）",
+    "eval 侧 decoder 类源文件 apt_g1/isaac/token_window_vae.py 在 mapping artifact 中无冻结 hash；D1 架构身份以 state_dict 签名 + 调用点（apt_flat_env.py，preprocessing_hash 冻结）+ 训练源（decoder_architecture_hash 冻结）覆盖，类源 sha 记录于各 receipt 供追溯",
+    "decode-only dry-run：τ 注入 env 的 exercise 属 Rung 1 launch sanity（IMPL §6），不在 D 范围"
+  ],
+  "scope_notes": [
+    "D 只回答 plumbing 是否忠实执行 specification（协议 §4）；PASS 解释上限 = implementation conforms to treatment specification",
+    "本 report 不含任何 performance / locomotion 字段（协议 §4 禁收）"
+  ],
+  "execution_coverage": {
+    "expected_cells": [
+      "v0200_C1_off",
+      "v0200_C1_on",
+      "v0200_C2_off",
+      "v0200_C2_on",
+      "v0225_C1_off",
+      "v0225_C1_on",
+      "v0225_C2_off",
+      "v0225_C2_on",
+      "v0250_C1_off",
+      "v0250_C1_on",
+      "v0250_C2_off",
+      "v0250_C2_on",
+      "v0275_C1_off",
+      "v0275_C1_on",
+      "v0275_C2_off",
+      "v0275_C2_on",
+      "v0277_C1_off",
+      "v0277_C1_on",
+      "v0277_C2_off",
+      "v0277_C2_on",
+      "v0300_C1_off",
+      "v0300_C1_on",
+      "v0300_C2_off",
+      "v0300_C2_on",
+      "v0325_C1_off",
+      "v0325_C1_on",
+      "v0325_C2_off",
+      "v0325_C2_on"
+    ],
+    "missing": [
+      "v0200_C1_off",
+      "v0200_C1_on",
+      "v0200_C2_off",
+      "v0200_C2_on",
+      "v0225_C1_off",
+      "v0225_C1_on",
+      "v0225_C2_off",
+      "v0225_C2_on",
+      "v0250_C1_off",
+      "v0250_C1_on",
+      "v0250_C2_off",
+      "v0250_C2_on",
+      "v0275_C1_off",
+      "v0275_C1_on",
+      "v0275_C2_off",
+      "v0275_C2_on",
+      "v0277_C1_off",
+      "v0277_C1_on",
+      "v0277_C2_off",
+      "v0277_C2_on",
+      "v0300_C1_off",
+      "v0300_C1_on",
+      "v0300_C2_off",
+      "v0300_C2_on",
+      "v0325_C1_off",
+      "v0325_C1_on",
+      "v0325_C2_off",
+      "v0325_C2_on"
+    ],
+    "extra": []
+  },
+  "schema_check": {
+    "verdict": "NOT_RUN",
+    "failures": []
+  },
+  "D1": {
+    "verdict": "NOT_RUN",
+    "failures": [],
+    "per_cell": []
+  },
+  "D2": {
+    "verdict": "NOT_RUN",
+    "failures": [],
+    "table": []
+  },
+  "D3A": {
+    "verdict": "NOT_RUN",
+    "failures": [],
+    "table": []
+  },
+  "D3B": {
+    "verdict": "NOT_RUN",
+    "failures": [],
+    "table": [],
+    "independent_hash_recompute": {}
+  },
+  "D3": {
+    "verdict": "NOT_RUN"
+  },
+  "overall": "NOT_RUN"
+}

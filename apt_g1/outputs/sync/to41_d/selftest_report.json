@@ -1,0 +1,57 @@
+{
+  "artifact": "rung1-selftest-report/v1",
+  "selftest": true,
+  "note": "checker 逻辑自测（synthetic receipt）；永不作为 D artifact（协议 §10.1）",
+  "generated_utc": "2026-09-02T13:47:07Z",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "results": [
+    {
+      "test": "T0 cross-parser agreement",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "test": "T1 lookup unit (Mode A identity + hard-fail)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "test": "T2 static coverage 28/28 + cross-impl identical",
+      "pass": true,
+      "detail": "n=28"
+    },
+    {
+      "test": "T3 positive control (all PASS)",
+      "pass": true,
+      "detail": "overall=PASS"
+    },
+    {
+      "test": "Negative A: tau swap -> D2+D3B FAIL",
+      "pass": true,
+      "detail": "overall=FAIL D1=PASS D2=FAIL D3B=FAIL"
+    },
+    {
+      "test": "Negative B: wrong condition -> D3A FAIL",
+      "pass": true,
+      "detail": "overall=FAIL D3A=FAIL"
+    },
+    {
+      "test": "Negative C: decoder arch/shape tamper -> D1 FAIL",
+      "pass": true,
+      "detail": "C1 n_vbins→4: D1=FAIL; C2 shape: D1=FAIL"
+    },
+    {
+      "test": "Negative D: self-reported PASS ignored -> still FAIL",
+      "pass": true,
+      "detail": "schema=FAIL D3A=FAIL"
+    },
+    {
+      "test": "Negative E: lineage 字段缺失 -> schema FAIL（D2 亦不 PASS）",
+      "pass": true,
+      "detail": "schema=FAIL D2=FAIL"
+    }
+  ],
+  "n_pass": 9,
+  "n_total": 9,
+  "all_pass": true
+}

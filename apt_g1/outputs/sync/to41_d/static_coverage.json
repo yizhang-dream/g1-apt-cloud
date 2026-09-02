@@ -1,0 +1,233 @@
+{
+  "artifact": "rung1-d-static-coverage/v1",
+  "environment_tag": "local",
+  "generated_utc": "2026-09-02T13:47:25Z",
+  "expected_cells": 28,
+  "resolved_cells": 28,
+  "rows": [
+    {
+      "cell_id": "v0200_C1_on",
+      "target_speed": 0.2,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_v0200_k0.npz"
+    },
+    {
+      "cell_id": "v0200_C1_off",
+      "target_speed": 0.2,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_v0200_k0.npz"
+    },
+    {
+      "cell_id": "v0200_C2_on",
+      "target_speed": 0.2,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_v0200_k0.npz"
+    },
+    {
+      "cell_id": "v0200_C2_off",
+      "target_speed": 0.2,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_v0200_k0.npz"
+    },
+    {
+      "cell_id": "v0225_C1_on",
+      "target_speed": 0.225,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_v0225_k0.npz"
+    },
+    {
+      "cell_id": "v0225_C1_off",
+      "target_speed": 0.225,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_v0225_k0.npz"
+    },
+    {
+      "cell_id": "v0225_C2_on",
+      "target_speed": 0.225,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_v0225_k0.npz"
+    },
+    {
+      "cell_id": "v0225_C2_off",
+      "target_speed": 0.225,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_v0225_k0.npz"
+    },
+    {
+      "cell_id": "v0250_C1_on",
+      "target_speed": 0.25,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_v0250_k0.npz"
+    },
+    {
+      "cell_id": "v0250_C1_off",
+      "target_speed": 0.25,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_v0250_k0.npz"
+    },
+    {
+      "cell_id": "v0250_C2_on",
+      "target_speed": 0.25,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_v0250_k0.npz"
+    },
+    {
+      "cell_id": "v0250_C2_off",
+      "target_speed": 0.25,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_v0250_k0.npz"
+    },
+    {
+      "cell_id": "v0275_C1_on",
+      "target_speed": 0.275,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_smoke_v275_k0.npz"
+    },
+    {
+      "cell_id": "v0275_C1_off",
+      "target_speed": 0.275,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "gdown_smoke_v275_k0.npz"
+    },
+    {
+      "cell_id": "v0275_C2_on",
+      "target_speed": 0.275,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_smoke_v275_k0.npz"
+    },
+    {
+      "cell_id": "v0275_C2_off",
+      "target_speed": 0.275,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "gdown_smoke_v275_k0.npz"
+    },
+    {
+      "cell_id": "v0277_C1_on",
+      "target_speed": 0.277,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "to36_hybrid_gait_F11b_flat.npz"
+    },
+    {
+      "cell_id": "v0277_C1_off",
+      "target_speed": 0.277,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "to36_hybrid_gait_F11b_flat.npz"
+    },
+    {
+      "cell_id": "v0277_C2_on",
+      "target_speed": 0.277,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "to36_hybrid_gait_F11b_flat.npz"
+    },
+    {
+      "cell_id": "v0277_C2_off",
+      "target_speed": 0.277,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "to36_hybrid_gait_F11b_flat.npz"
+    },
+    {
+      "cell_id": "v0300_C1_on",
+      "target_speed": 0.3,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "to36_hybrid_gait_F11_slope2.npz"
+    },
+    {
+      "cell_id": "v0300_C1_off",
+      "target_speed": 0.3,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "to36_hybrid_gait_F11_slope2.npz"
+    },
+    {
+      "cell_id": "v0300_C2_on",
+      "target_speed": 0.3,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "to36_hybrid_gait_F11_slope2.npz"
+    },
+    {
+      "cell_id": "v0300_C2_off",
+      "target_speed": 0.3,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "to36_hybrid_gait_F11_slope2.npz"
+    },
+    {
+      "cell_id": "v0325_C1_on",
+      "target_speed": 0.325,
+      "condition_arm": "C1",
+      "tau_ff": "on",
+      "expected_condition": "vb0_db4",
+      "expected_material": "to36_hybrid_gait_F9.npz"
+    },
+    {
+      "cell_id": "v0325_C1_off",
+      "target_speed": 0.325,
+      "condition_arm": "C1",
+      "tau_ff": "off",
+      "expected_condition": "vb0_db4",
+      "expected_material": "to36_hybrid_gait_F9.npz"
+    },
+    {
+      "cell_id": "v0325_C2_on",
+      "target_speed": 0.325,
+      "condition_arm": "C2",
+      "tau_ff": "on",
+      "expected_condition": "vb1_db4",
+      "expected_material": "to36_hybrid_gait_F9.npz"
+    },
+    {
+      "cell_id": "v0325_C2_off",
+      "target_speed": 0.325,
+      "condition_arm": "C2",
+      "tau_ff": "off",
+      "expected_condition": "vb1_db4",
+      "expected_material": "to36_hybrid_gait_F9.npz"
+    }
+  ]
+}
