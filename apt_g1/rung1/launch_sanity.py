@@ -14,11 +14,15 @@ performance / locomotion 字段；verdict 只出自 l_checker）。
 
 cell 执行结构（镜像 Rung 1 compute 的 per-cell 进程语义）：
 
-    每 cell 新建真实 AptFlatG1Env（cfg = TO40C ctrl/t10 配方 × 冻结 τ(v)
-    材料 × latent-dir-bins + e39 vae），jitter_and_reset（eval 同款）+
-    恒定 cmd_vx 每 step 重申（reset 重采样 U(vx_min,vx_max) 的确定性压制），
-    中段强制 episode boundary，零策略动作（z=0）驱动真实 step 循环；
-    decode/τ 消费经由 env_wiring 的实例级探针全量记录。完成后 env.close()。
+    每 cell 一个独立进程（--cell-index 0..27，服务器侧 bash 循环驱动 28 次；
+    AppLauncher 逐 cell 启动，receipt 落盘后 os._exit 硬退出——同时规避
+    DirectRLEnv.close() 的 sim.clear_instance、同进程重复建 env 的 prim
+    冲突与 Isaac 退出挂死三个风险）：新建真实 AptFlatG1Env（cfg = TO40C
+    ctrl/t10 配方 × 冻结 τ(v) 材料 × latent-dir-bins + e39 vae），
+    jitter_and_reset（eval 同款）+ 恒定 cmd_vx 每 step 重申（reset 重采样
+    U(vx_min,vx_max) 的确定性压制），中段强制 episode boundary，零策略动作
+    （z=0）驱动真实 step 循环；decode/τ 消费经由 env_wiring 的实例级探针
+    全量记录。
 
 判据唯一事实源 = refine-logs/TO41_LAUNCH_SANITY.md；本文件只把 gate 变成
 可执行代码。
@@ -300,6 +304,8 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
             "action_space": int(cfg.action_space),
             "observation_space": int(cfg.observation_space),
             "env_instance_fresh_per_cell": True,
+            "process_model": "one-fresh-process-per-cell (AppLauncher per cell; "
+                             "receipt 落盘后 os._exit)",
         },
         "cfg_snapshot": _cfg_snapshot(cfg),
         "tau_material": {
@@ -361,7 +367,9 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
             "wall_seconds": round(time.monotonic() - wall0, 1),
         },
     }
-    env.close()
+    # 不调 env.close()（其会 sim.clear_instance + 可能挂死）；receipt 已含全部
+    # env 侧快照，调用方落盘后随即 os._exit 终止进程
+    del env
     return receipt
 
 
@@ -378,6 +386,11 @@ def main() -> int:
                     help="material npz 搜索根（可多个，按序首中；canonical 唯一性由 checker 独立重算保证）")
     ap.add_argument("--env-tag", choices=["lab-ts", "local"], required=True,
                     help="lab-ts = frozen execution environment；本机必须标 local")
+    ap.add_argument("--cell-index", type=int, default=None,
+                    help="execute 模式必填：0..27 冻结枚举序号——每 cell 一个独立进程"
+                         "（AppLauncher 逐 cell 启动；receipt 落盘后 os._exit 硬退出，"
+                         "规避 sim clear_instance / 退出挂死 gotcha；由服务器侧 bash "
+                         "循环驱动 28 次，与 Rung 1 compute 的 per-cell 进程语义同构）")
     ap.add_argument("--steps", type=int, default=300,
                     help="每 cell 控制步数（50 Hz，默认 300 ≈ 6 s）")
     ap.add_argument("--boundary-step", type=int, default=150,
@@ -395,35 +408,54 @@ def main() -> int:
         print(f"OK static coverage -> {out}")
         return 0
 
+    import os
+
     mapping = load_mapping()
+    if args.cell_index is None:
+        raise SystemExit("FAIL: execute 模式必须 --cell-index 0..27（per-cell 进程模型，"
+                         "服务器侧 bash 循环驱动 28 次）")
+    cells = enumerate_cells(mapping)
+    if not (0 <= args.cell_index < len(cells)):
+        raise SystemExit(f"FAIL: --cell-index {args.cell_index} 越界（0..{len(cells) - 1}）")
+    cell = cells[args.cell_index]
+
     _preflight(mapping, list(args.materials_root), args.vae_path)
     availability = load_availability()
     registry = load_registry()
 
     receipts_dir = args.out / "receipts"
-    if receipts_dir.exists() and any(receipts_dir.iterdir()) and not args.force:
-        raise SystemExit(f"FAIL: {receipts_dir} 非空（--force 覆盖）")
     receipts_dir.mkdir(parents=True, exist_ok=True)
+    receipt_path = receipts_dir / f"receipt_{cell['cell_id']}.json"
+    if receipt_path.exists() and not args.force:
+        raise SystemExit(f"FAIL: {receipt_path} 已存在（--force 覆盖该 cell）")
 
-    print(f"[launch-sanity] execute：28 cell × {args.steps} steps "
-          f"(boundary@{args.boundary_step})，zero-action 驱动，仅记录不判定")
-    for i, cell in enumerate(enumerate_cells(mapping)):
-        receipt = execute_cell(cell, i, mapping, availability, registry,
-                               args.vae_path, list(args.materials_root),
-                               args.steps, args.boundary_step)
-        rp = receipts_dir / f"receipt_{cell['cell_id']}.json"
-        rp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
-                      encoding="utf-8")
-        print(f"[{i + 1:02d}/28] {cell['cell_id']} "
-              f"cond={receipt['assignment']['decoder_condition_id']} "
-              f"calls={receipt['condition_override']['n_decode_calls']} "
-              f"tau_calls={receipt['tau_consumption']['n_tau_calls']} "
-              f"auto_resets={receipt['execution']['n_auto_resets']} "
-              f"wall={receipt['execution']['wall_seconds']}s", flush=True)
+    # Isaac app（仅 execute；preflight fail-fast 之后才启动）
+    from isaaclab.app import AppLauncher
 
-    print(f"OK: 28 receipts -> {receipts_dir}")
-    print("next: python -m apt_g1.rung1.l_checker --receipts-dir ... （independent verdict）")
-    return 0
+    launcher_parser = argparse.ArgumentParser()
+    AppLauncher.add_app_launcher_args(launcher_parser)
+    launcher_args, _ = launcher_parser.parse_known_args()
+    launcher_args.num_envs = 1
+    launcher_args.headless = True
+    launcher_args.output_dir = str(args.out)
+    AppLauncher(launcher_args)
+
+    print(f"[launch-sanity] cell {args.cell_index}: {cell['cell_id']} × {args.steps} steps "
+          f"(boundary@{args.boundary_step})，zero-action 驱动，仅记录不判定", flush=True)
+    receipt = execute_cell(cell, args.cell_index, mapping, availability, registry,
+                           args.vae_path, list(args.materials_root),
+                           args.steps, args.boundary_step)
+    receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+    print(f"[done] {cell['cell_id']} "
+          f"cond={receipt['assignment']['decoder_condition_id']} "
+          f"calls={receipt['condition_override']['n_decode_calls']} "
+          f"tau_calls={receipt['tau_consumption']['n_tau_calls']} "
+          f"auto_resets={receipt['execution']['n_auto_resets']} "
+          f"wall={receipt['execution']['wall_seconds']}s "
+          f"-> {receipt_path.name}", flush=True)
+    # Isaac 退出挂死 gotcha（服务器画像）：receipt 已落盘，硬退出防挂死
+    os._exit(0)
 
 
 if __name__ == "__main__":

@@ -136,10 +136,14 @@ achieved speed / h_min 一律不入 receipt 与 verdict——本 gate 只测接�
 3. **canonical array hash 规范**（双实现同一 spec，selftest 交叉验证）：
    `sha256("shape={shape};dtype={dtype.str};data=" + float32 C-contiguous
    小端字节)`——float32 化对齐 env 冻结加载路径 `torch.from_numpy(...).float()`。
-4. **cell 执行结构**（镜像 compute 的 per-cell 进程语义）：每 cell 新建
-   真实 `AptFlatG1Env`（TO40C ctrl/t10 配方 × 该 v 冻结 τ(v) 材料 ×
-   latent-dir-bins + e39 vae；`action_space=16` 零 z 动作驱动），
-   `jitter_and_reset`（eval 同款）起止，执行完 `env.close()`。
+4. **cell 执行结构**（镜像 compute 的 per-cell 进程语义）：**每 cell 一个
+   独立 python 进程**（`--cell-index 0..27`，服务器 bash 循环 28 次；
+   AppLauncher 逐 cell 启动，receipt 落盘后 `os._exit` 硬退出——规避
+   `DirectRLEnv.close()` 的 `sim.clear_instance()`、同进程重复建 env 的
+   prim 冲突与 Isaac 退出挂死三个风险）。cell 内：新建真实 `AptFlatG1Env`
+   （TO40C ctrl/t10 配方 × 该 v 冻结 τ(v) 材料 × latent-dir-bins + e39
+   vae；`action_space=16` 零 z 动作驱动），`jitter_and_reset`（eval 同款）
+   起止，preflight 三源哈希每 cell 进程都跑。
 5. **执行环境**：仅 lab-ts frozen env（`.venv_isaac`，D §10.1 同款
    env-tag 机械闸）；本机只允许 static 配置层核对 / selftest / 登记。
 
