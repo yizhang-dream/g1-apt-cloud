@@ -2,7 +2,7 @@
   "artifact": "rung1-selftest-report/v1",
   "selftest": true,
   "note": "checker 逻辑自测（synthetic receipt）；永不作为 D artifact（协议 §10.1）",
-  "generated_utc": "2026-09-02T13:47:07Z",
+  "generated_utc": "2026-09-02T13:58:42Z",
   "platform": "Windows-11-10.0.26200-SP0",
   "results": [
     {

@@ -1,7 +1,7 @@
 {
   "artifact": "rung1-d-static-coverage/v1",
   "environment_tag": "local",
-  "generated_utc": "2026-09-02T13:47:25Z",
+  "generated_utc": "2026-09-02T13:58:42Z",
   "expected_cells": 28,
   "resolved_cells": 28,
   "rows": [

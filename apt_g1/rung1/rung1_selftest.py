@@ -162,7 +162,7 @@ def write_receipts(receipts: dict[str, dict], d: Path) -> Path:
 
 
 def run_checker(receipts_dir: Path, mat_dir: Path, reg_syn: Path) -> dict:
-    return d_checker.build_report(receipts_dir, mat_dir, "local", selftest=True,
+    return d_checker.build_report(receipts_dir, [mat_dir], "local", selftest=True,
                                   registry_path=reg_syn)
 
 

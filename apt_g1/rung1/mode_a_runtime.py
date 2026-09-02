@@ -274,8 +274,18 @@ def tensor_sha256(t) -> str:
     return h.hexdigest()
 
 
+def find_material(artifact: str, materials_roots: list[Path]) -> tuple[Path, Path] | None:
+    """按序搜索 materials_roots，返回 (material 文件, 命中根)；canonical 唯一性
+    由 checker 的独立 sha256 重算保证（多根仅是搜索路径，不引入选择自由度）。"""
+    for root in materials_roots:
+        p = root / artifact
+        if p.exists():
+            return p, root
+    return None
+
+
 def execute_cell(cell: dict, mapping: dict, availability: dict, registry: dict,
-                 decoder: dict, vae_path: Path, materials_root: Path,
+                 decoder: dict, vae_path: Path, materials_roots: list[Path],
                  device: str = "cpu") -> dict:
     """执行一个 cell：先固定 immutable execution record，再执行 decode probe。
 
@@ -310,9 +320,11 @@ def execute_cell(cell: dict, mapping: dict, availability: dict, registry: dict,
     # material 轴 record（与 condition 轴独立；OFF cell 同样记录身份，
     # D2 的 Mode A fingerprint 覆盖全部 4 cell）
     mat = assignment["tau_material"]
-    mat_path = materials_root / mat["artifact"]
-    if not mat_path.exists():
-        raise FileNotFoundError(f"material npz 不存在: {mat_path}")
+    found = find_material(mat["artifact"], materials_roots)
+    if found is None:
+        raise FileNotFoundError(
+            f"material npz 在所有 roots 均不存在: {mat['artifact']} in {[str(r) for r in materials_roots]}")
+    mat_path, mat_root = found
     mat_sha = sha256_file(mat_path)
     reg_id = next((k for k, s in registry["sources"].items()
                    if s["path"] == mat["artifact"]), None)
@@ -328,6 +340,7 @@ def execute_cell(cell: dict, mapping: dict, availability: dict, registry: dict,
         "abs_err": mat["abs_err"],
         "registry_id": reg_id,
         "registry_sha256_16": reg_entry["sha256_16"] if reg_entry else None,
+        "materials_root_used": str(mat_root),
         "mode": reg_entry["mode"] if reg_entry else "foot(gdown-manifest-fixed-params)",
         "knots": reg_entry["knots"] if reg_entry else None,
         "npz_keys_shapes": npz_keys,
@@ -416,8 +429,9 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "apt_g1/outputs/sync/to41_d")
     ap.add_argument("--vae-path", type=Path,
                     default=REPO_ROOT / "apt_g1/outputs/token_vae_e39/vae.pt")
-    ap.add_argument("--materials-root", type=Path,
-                    default=REPO_ROOT / "apt_g1/outputs")
+    ap.add_argument("--materials-root", type=Path, nargs="+",
+                    default=[REPO_ROOT / "apt_g1/outputs"],
+                    help="material npz 搜索根（可多个，按序首中为准；canonical 唯一性由 checker 独立重算保证）")
     ap.add_argument("--env-tag", choices=["lab-ts", "local"], required=True,
                     help="lab-ts = frozen execution environment（协议 §10.1）；本机必须标 local")
     ap.add_argument("--force", action="store_true", help="允许覆盖已存在的 receipts 目录")
@@ -469,7 +483,7 @@ def main() -> int:
     n_ok = 0
     for cell in enumerate_cells(mapping):
         receipt = execute_cell(cell, mapping, availability, registry, decoder,
-                               args.vae_path, args.materials_root)
+                               args.vae_path, list(args.materials_root))
         rp = receipts_dir / f"receipt_{cell['cell_id']}.json"
         rp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")

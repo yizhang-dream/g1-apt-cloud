@@ -390,8 +390,11 @@ def check_d3a(receipts: dict[str, dict], mapping: dict) -> tuple[str, list[str],
 
 
 def check_d3b(receipts: dict[str, dict], mapping: dict, availability: dict,
-              registry: dict, materials_root: Path | None) -> tuple[str, list[str], list[dict], dict]:
-    """material conformance：τ_runtime(v) = τ_frozen(v)；含独立 hash 重算。"""
+              registry: dict, materials_roots: list[Path] | None) -> tuple[str, list[str], list[dict], dict]:
+    """material conformance：τ_runtime(v) = τ_frozen(v)；含独立 hash 重算。
+
+    materials_roots 为搜索根列表（按序首中）；lab-ts D 报告必须提供。
+    """
     failures: list[str] = []
     table: list[dict] = []
     recompute: dict[str, str] = {}
@@ -420,15 +423,20 @@ def check_d3b(receipts: dict[str, dict], mapping: dict, availability: dict,
                 bad.append(f"material sha256 前缀 != registry 冻结 {reg['sha256_16']}")
             if tm.get("mode") != reg["mode"]:
                 bad.append(f"mode {tm.get('mode')} != registry {reg['mode']}")
-        if materials_root is not None:
-            mp = materials_root / spec["artifact"]
-            if not mp.exists():
-                bad.append(f"独立重算失败：{mp} 不存在")
+        if materials_roots:
+            hit = None
+            for root in materials_roots:
+                mp = root / spec["artifact"]
+                if mp.exists():
+                    hit = mp
+                    break
+            if hit is None:
+                bad.append(f"独立重算失败：{spec['artifact']} 在所有 roots 均不存在")
                 recompute[spec["artifact"]] = "missing"
             else:
-                live = sha256_file(mp)
+                live = sha256_file(hit)
                 recompute[spec["artifact"]] = live
-                if live != tm["sha256"]:
+                if live != tm.get("sha256"):
                     bad.append(f"独立重算 sha256 != receipt 记录（{spec['artifact']}）")
         for b in bad:
             failures.append(f"{cid}: {b}")
@@ -498,7 +506,7 @@ def _observations(mapping: dict, availability: dict, registry: dict) -> list[str
     return obs
 
 
-def build_report(receipts_dir: Path | None, materials_root: Path | None,
+def build_report(receipts_dir: Path | None, materials_roots: list[Path] | None,
                  env_tag: str, selftest: bool = False,
                  mapping_path: Path = MAPPING_YAML,
                  registry_path: Path = REGISTRY_YAML,
@@ -538,7 +546,7 @@ def build_report(receipts_dir: Path | None, materials_root: Path | None,
             "receipts_dir": str(receipts_dir) if receipts_dir else None,
             "receipt_count": len(receipts),
             "receipt_sha256": receipt_hashes,
-            "materials_root": str(materials_root) if materials_root else None,
+            "materials_roots": [str(r) for r in materials_roots] if materials_roots else None,
         },
         "static_coverage": {
             "expected": 28, "resolved": len(static_coverage(mapping, availability)),
@@ -566,7 +574,7 @@ def build_report(receipts_dir: Path | None, materials_root: Path | None,
         d2v, d2f, d2t = check_d2(receipts, mapping)
         d3av, d3af, d3at = check_d3a(receipts, mapping)
         d3bv, d3bf, d3bt, recompute = check_d3b(receipts, mapping, availability,
-                                                registry, materials_root)
+                                                registry, materials_roots)
         schema_v = "FAIL" if schema_failures else "PASS"
         d3v = "PASS" if (d3av == "PASS" and d3bv == "PASS") else "FAIL"
         overall = "PASS" if all(
@@ -670,7 +678,7 @@ def report_markdown(rep: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="TO41 D independent checker（read-only audit）")
     ap.add_argument("--receipts-dir", type=Path, default=None)
-    ap.add_argument("--materials-root", type=Path, default=None,
+    ap.add_argument("--materials-root", type=Path, nargs="+", default=None,
                     help="提供后对每个 material 独立重算 sha256（lab-ts 执行必带）")
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "apt_g1/outputs/sync/to41_d")
     ap.add_argument("--env-tag", choices=["lab-ts", "local"], required=True)
@@ -682,10 +690,10 @@ def main() -> int:
 
     if args.env_tag == "lab-ts" and platform.system().lower().startswith("windows"):
         raise SystemExit("FAIL: 本机禁止以 lab-ts 身份出 D 报告（协议 §10.1）")
-    if args.env_tag == "lab-ts" and args.materials_root is None:
+    if args.env_tag == "lab-ts" and not args.materials_root:
         raise SystemExit("FAIL: lab-ts D 报告必须提供 --materials-root（独立 hash 重算，协议 §9）")
 
-    rep = build_report(args.receipts_dir, args.materials_root, args.env_tag,
+    rep = build_report(args.receipts_dir, list(args.materials_root), args.env_tag,
                        selftest=args.selftest, mapping_path=args.mapping)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / f"{args.report_stem}.json").write_text(
