@@ -193,4 +193,28 @@ map**（主 Rung 1 的预注册输入）。
   | 0.250 | 0.2500 | 7.0e-09 | **present** | mechanically_valid |
   剩余流程：三材料确定性复现（§5.2 ⑦，已发射）→ 全 7 target availability
   map → 主 Rung 1 执行 freeze 审查。
-- （确定性复现结果在此追加）
+- **确定性复现（全部 PASS，三十二轮）**：v0250 `626b3407…`、v0225
+  `eb87ad84…`、v0200 `0038afb8…`——original vs rerun sha256 逐位一致；
+  加上 0.275 run A/B（`09c2915c…`），**四个 ↓ 材料 determinism 全验证**。
+
+## 9. material availability map（G↓ + registry 合并终稿，待 owner freeze）
+
+| target | material artifact | v_realized | abs_err | 来源 | determinism |
+|-------:|---|---|---|---|---|
+| 0.200 | gdown_v0200_k0.npz | 0.2000 | 6.7e-09 | G↓ ↓-k0 | ✅ |
+| 0.225 | gdown_v0225_k0.npz | 0.2250 | 1.7e-06 | G↓ ↓-k0 | ✅ |
+| 0.250 | gdown_v0250_k0.npz | 0.2500 | 7.0e-09 | G↓ ↓-k0 | ✅ |
+| 0.275 | gdown_smoke_v275_k0.npz | 0.2750 | 8.0e-09 | G↓ ↓-k0 | ✅（run A/B） |
+| 0.277 | to36_hybrid_gait_F11b_flat.npz | 0.2768 | 2e-04 | registry 既有（F 线审计验收） | registry 冻结 |
+| 0.300 | to36_hybrid_gait_F11_slope2.npz | 0.2925 | 7.5e-03 | registry 既有 | registry 冻结 |
+| 0.325 | to36_hybrid_gait_F9.npz | 0.3179 | 7.1e-03 | registry 既有 | registry 冻结 |
+
+**7/7 target 全覆盖，零额外求解需求**：0.277/0.300/0.325 的 registry 既有
+dump 实测速度本就落在容差门⑨内（A 门 PASS 的 F 线审计验收材料），直接
+指定为该 target 的 canonical material——这是容差门的既定语义；owner
+freeze 时若要求"严格按 target 重解"则需 3 次 dircol（备选，非默认）。
+全部材料确定性复现一致（G↓ 四件）或 registry 哈希冻结（三件）。
+
+**主 Rung 1 输入就绪**：τ(v,C)=τ(v)（Mode A）+ v2 mapping（14 rows 全
+交叉）+ 本 availability map（7 材料 × hash × lineage）→ owner 执行 freeze
+审查 → D1/D2/D3 → execution freeze → Rung 1 compute。
