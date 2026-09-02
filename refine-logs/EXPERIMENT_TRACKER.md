@@ -16,9 +16,9 @@
 | D | [tracker/D.md](../refine-logs/tracker/D.md) | 蒸馏 Distillation 线（Distillation Experiment/Phase2/Phase3 + Stress Test） | 25（另有 D021–D028 共 4 行混排在 E.md『地形/数据泛化/感知』节，该节以 E 线为主未拆） |
 | E | [tracker/E.md](../refine-logs/tracker/E.md) | Isaac APT 主线 E01–E48（含 FB/I21/T1-T2 等辅助行与上述混合节） | 87 |
 | MQ | [tracker/MQ.md](../refine-logs/tracker/MQ.md) | 官方规划器复刻 MQ07–MQ12 + Gate 0 论文形状地形评测（G0a/G0b） | 22 |
-| TO | [tracker/TO.md](../refine-logs/tracker/TO.md) | TO 数据管线 + TO18–TO35 力矩/WBC 线 + TO36 腿级 TO（A 门膝可行/B 门双验证/C 门负结果收束）+ TO37 解族三点与跨速度泛化 FAIL + TO38 RL 叠加 TO 参考（收束：分支一可消化，低速带 50×）+ TO39 低速消融 + TO40a 条件化解码器插值 FAIL + TO40C 力矩前馈通道门控（Rung 0：分支①通道可用+低速带正向，非 E48 破坏） | 74 |
+| TO | [tracker/TO.md](../refine-logs/tracker/TO.md) | TO 数据管线 + TO18–TO35 力矩/WBC 线 + TO36 腿级 TO（A 门膝可行/B 门双验证/C 门负结果收束）+ TO37 解族三点与跨速度泛化 FAIL + TO38 RL 叠加 TO 参考（收束：分支一可消化，低速带 50×）+ TO39 低速消融 + TO40a 条件化解码器插值 FAIL + TO40C 力矩前馈通道门控（Rung 0：分支①通道可用+低速带正向，非 E48 破坏）+ TO41 G↓ 低速 downward-continuation 材料 sub-campaign（4/4 k=0 首过 + 7/7 availability map，owner 裁定 CLOSED/PASS；D1/D2/D3 授权） | 78 |
 
-表行合计 227（其中 R/D/E/MQ/TO 主线编号行 161，其余为蒸馏 gait 行、FB/I/T/P/G
+表行合计 231（其中 R/D/E/MQ/TO 主线编号行 165，其余为蒸馏 gait 行、FB/I/T/P/G
 辅助行等，均随原节归属）。拆分为整节逐字搬运，原表可由系列文件按
 R(7–30) / D(31–65,91–100) / E(66–90,101–257,346–368,645–693) /
 MQ(258–345,611–644) / TO(369–610,694–830) 行区间逐字还原。

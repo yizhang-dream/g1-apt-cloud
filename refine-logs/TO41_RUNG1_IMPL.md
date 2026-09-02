@@ -6,9 +6,11 @@
 > Compute BLOCKED**（D + execution freeze 全过前不得开跑，并覆盖
 > per-condition τ material generation——Decision 3）。分支状态：
 > Unambiguous parts PROCEEDING（仅章程/harness 骨架）｜ Conditioning
-> impl **BLOCKED** ｜ **Incompatibility #1 OPEN**（十轮定稿为单一科学
-> 问题 + A/B 两条后果链，见 §3；裁定权在 owner）｜ Estimands
-> **LOCKED\*** ｜ **Owner decision REQUIRED**。
+> impl **BLOCKED** ｜ Incompatibility #1 已裁定为 Mode A（§3.3，十四轮）｜
+> Estimands **LOCKED\*** ｜ **owner freeze review 完成（三十三轮，
+> 2026-09-02，§8）：G↓ CLOSED/PASS + material 7/7 + 批准进入 D1/D2/D3 +
+> 不为 0.277/0.300/0.325 重解；Main Rung 1 experimental compute 仍不
+> 批准，待 D1/D2/D3 全 PASS + execution freeze**。
 > **FROZEN\*/LOCKED\* 语义（十一轮）**：除 genuine incompatibility 外不得
 > 修改；发现 incompatibility 时由 owner 决定是否 reopen——protocol frozen
 > against implementation drift, but reopenable by owner decision。
@@ -253,6 +255,14 @@ C1/C2 是人为 assignment，不自动等同两个自然 gait/ecological regimes
   Mode A 下按 v 逐点），不得并入 D3 解释。
 - D 全 PASS → owner freeze（纯状态迁移 commit，只改 freeze_status）→
   EXECUTION-READY → compute。
+- **三十三轮增补（owner freeze review，§8 详；execution sanity，非新
+  protocol rule）**：最终 D artifact 须机械生成 **28-cell table**
+  （7 v × {C1,C2} × {τ ON,τ OFF}，per-cell τ material hash）——逐格验证
+  「same v → same τ identity」且 7 个 target speed 在最终 runtime 真正
+  被 launch（非仅存在于 mapping.yaml），机械对应 §6 审计问 2；telemetry
+  **预保存诊断量**：`target_speed` / `material_realized_speed` /
+  `abs_error` / `material_hash` / `source_lineage` / `decoder_condition`
+  / `tau_ff`（诊断用途，不改 estimand、不加 stopping rule）。
 
 ## 5. τ(v) material specification（Mode A；十五轮 spec FROZEN）
 
@@ -537,3 +547,66 @@ acceptance/infeasibility/canonical 与主 campaign 同构但**独立编号**；
 本章程 + 实现 commit sha + launch 配置（7 cmd × 臂）+ τ(v) manifest
 （7 份材料哈希 + 审计记录）+ D1/D2/D3 报告（含 D3 逐点对照表 + τ material
 conformance 对照）+ Run 行（开跑后入 `tracker/TO.md` TO41xx）。
+
+## 8. owner freeze review（三十三轮，2026-09-02）：G↓ 结案 + D 阶段授权 + 解释纪律
+
+**裁定**（记录全文 = `TO41_G_DOWN_SPEC.md` §10）：G↓ = CLOSED / PASS；
+material availability **7/7 COMPLETE**；determinism **PASS**；**不为
+0.277/0.300/0.325 重新求解**；**批准进入 D1/D2/D3**；**主 Rung 1
+experimental compute 仍不批准**——待 D1/D2/D3 全 PASS + execution
+freeze。设计审查到此收益已低：D 三层全 PASS 后即做 execution freeze，
+然后真正开跑 Rung 1。
+
+**解释纪律（freeze 前落盘，D/Rung 1 全阶段有效）**：
+
+> **target_speed defines treatment identity; v_realized records material
+> realization quality. Passing the pre-registered realization tolerance
+> does not convert the realized speed into a new treatment level.**
+
+操作化三条：
+
+1. 主分析 treatment identity = `target_speed`（冻结 grid
+   {0.200, 0.225, 0.250, 0.275, 0.277, 0.300, 0.325} 不动）；
+   `v_realized`（0.2000 / 0.2250 / 0.2500 / 0.2750 / 0.2768 / 0.2925 /
+   0.3179）= material realization diagnostic / covariate。
+2. **禁止**把 target 改标 realized（如 0.300 → 0.2925，破坏已冻结
+   treatment grid）；**禁止**分析阶段把 `v_realized` 当连续 treatment
+   重跑主分析——那会把 treatment assignment 从 **pre-registered
+   target** 换成 **post-generation realized variable**，重新引入
+   endogenous treatment（可做诊断，不可替代 primary treatment
+   definition）。
+3. 容差门⑨使材料合法，但不使 τ(v_material) 与 τ(v_target) 数学同一：
+   实际观测严格是 Y(v_target, C, τ(v_material))，不自动等于
+   Y(v_target, C, τ(v_target))，主结果解释时保持区分。
+
+**预保存诊断量（telemetry/log 必须可机械取出；诊断用途，不改 estimand、
+不加 stopping rule）**：`target_speed` / `material_realized_speed` /
+`abs_error` / `material_hash` / `source_lineage` / `decoder_condition` /
+`tau_ff`——事后检查 effect 是否随 material realization error 系统变化。
+已知 realization error 非均匀（低速 1e-08 量级 vs 0.300/0.325 的
+7.5e-03/7.1e-03），若主效应与该梯度共变，解释时必须引用本诊断。
+
+**28-cell runtime launch table**：见 §4 三十三轮增补——7 v × {C1,C2} ×
+{τ ON,τ OFF}，per-cell `τ_hash`，验证 7 个 target speed 真正 launch 且
+same v → same τ identity。
+
+**0.2667 分裂带降级**：仅作 post-hoc consistency observation（历史诊断
+信息）；不进入 target definition / source selection / material
+generation / cell assignment / stopping rule（详见 G_DOWN_SPEC §10）。
+
+**D 三层工作对象（本轮点名）**：
+
+- **D1 decoder invariance**：C1/C2 只改 condition selection；VAE
+  weights / checkpoint / input transform / normalization semantics /
+  latent dimension 全不变。
+- **D2 treatment consistency**：∀v ∈ 7-grid，C1 + same τ(v) 与 C2 +
+  same τ(v) 同时成立——**逐 cell 验证 C1/C2 的 τ material hash 完全
+  相同**（Mode A 最关键的新检查）。
+- **D3 artifact/runtime conformance**：同时证明 T_runtime(v,C) =
+  T_mapping(v,C) **且** τ_runtime(v) = τ_frozen(v)——否则 mapping 虽
+  正确，material plumbing 仍可能把 Mode A 偷换回 Mode B。
+
+**项目语义迁移（本轮定性）**：问题已从「我们能不能生成 τ(v)?」（G↓ 回答：
+能，CLOSED）转为 **「冻结 decoder 后，在严格控制 τ(v) material identity
+的情况下，C1/C2 是否改变 τ_ff effect?」**——这才是 B / Mode A 真正要回答
+的问题。

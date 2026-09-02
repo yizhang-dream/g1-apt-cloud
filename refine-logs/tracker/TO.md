@@ -900,3 +900,52 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
    机制」；Rung 1 科学目标改写为「控制 τ_dec mismatch 后的 τ_ff 效应曲线识别
    （τ_ff / mismatch / interaction 三分解）」，开跑前锁死速度网格 / 条件化冻结 /
    逐 cmd 效应曲线主指标 / 双停止规则，预注册全文 = `TO40C_PLAN.md` §10。
+
+## TO41：Rung 1 τ(v) 材料生成 + G↓ 低速 downward-continuation sub-campaign（2026-09-02 owner 裁定收束）
+
+> Rung 1 = 速度网格加密 + 条件化 τ_dec（Mode A：τ(v,C)=τ(v)）。主链：§5
+> material spec FROZEN（TO41_RUNG1_IMPL.md）→ 主 campaign + **G↓ 低速
+> sub-campaign**（独立实验身份，spec = **TO41_G_DOWN_SPEC.md**：P↓-S 严格
+> 版、source identity invariant、独立 ↓-ladder 预算、首过即停）→ 7/7
+> material availability map → owner freeze review → D1/D2/D3 → execution
+> freeze → Rung 1 compute。本段记录 G↓ 求解 run 与 owner 裁定；设计/裁定
+> 叙事见 TO41_RUNG1_IMPL.md §3–§5、§8。
+
+| Run ID | Purpose | Variant | Metric | Status | Result |
+|--------|---------|---------|--------|--------|--------|
+| TO41-GD-smoke | G↓ 0.275 ↓-smoke（P↓-S 首个大跨度 downward projection 0.2764→0.20 + target stage 抵达） | to37_v016 guess（v_dump 0.2764，mode foot / knots 40 与源一致）/ v_min=0.275 / w-time=0；run A + run B 确定性见证 | 四段同伦 stage 抵达 + driver 全门集 validate | DONE | **k=0 首过即停**：stage 1 audit-admitted v_avg=0.200 → stage 2 Solved 0.384 → stage 3 深收敛后发散磨 max_iter 审计放行 → stage 4 v_avg=0.275000（abs_err 8e-09，audit PASS、IPOPT 证书 absent 不作门）；**reachability PASS + mechanically_valid**；run A/B npz sha256 逐位一致（09c2915c…）→ τ(0.275) freeze canonical |
+| TO41-GD-0200 | G↓ 低速 target 0.200（独立 ladder，无 chain） | to37_v016 guess / v_min=0.200，↓-k0 | §5.2 全门集（⑨↓ 容差 + 确定性复现） | DONE | **k=0 首过即停**：v_realized 0.2000（abs_err 6.7e-09）、IPOPT 证书 **present**、mechanically_valid；确定性复现 sha256 逐位一致（0038afb8…） |
+| TO41-GD-0225 | G↓ 低速 target 0.225 | to37_v016 guess / v_min=0.225，↓-k0 | 同上 | DONE | **k=0 首过即停**：v_realized 0.2250（abs_err 1.7e-06）、audit-admitted（证书 absent 如实记录不作门）、mechanically_valid；确定性复现逐位一致（eb87ad84…） |
+| TO41-GD-0250 | G↓ 低速 target 0.250 | to37_v016 guess / v_min=0.250，↓-k0 | 同上 | DONE | **k=0 首过即停**：v_realized 0.2500（abs_err 7.0e-09）、IPOPT 证书 **present**、mechanically_valid；确定性复现逐位一致（626b3407…） |
+
+**G↓ 收束 + owner freeze review 裁定（三十三轮，2026-09-02）**
+
+1. **G↓ = CLOSED / PASS**：4/4 低速 target 成功、全部 k=0 首过即停、四材料
+   determinism 全 PASS、realized speed 基本精确命中、P↓-S hot-start
+   continuation 获真实服务器成功证据、零追加冷启动预算、未为成功修改
+   schedule。不再扩展。
+2. **material availability 7/7 COMPLETE**：G↓ 四件（0.200/0.225/0.250/
+   0.275）+ registry 既有三件（0.277→F11b_flat 实测 0.2768 / 0.300→
+   F11_slope2 实测 0.2925 / 0.325→F9 实测 0.3179，落预注册 ±0.02 m/s
+   容差门⑨）。**裁定不为 0.277/0.300/0.325 重新求解**——预注册容差已
+   赋予合法 material 身份；重解 = 把 validity gate 事后变成零误差追求 =
+   重新引入 execution drift，边际科学收益低。
+3. **material-target identity 解释纪律（落盘原文）**：*target_speed
+   defines treatment identity; v_realized records material realization
+   quality. Passing the pre-registered realization tolerance does not
+   convert the realized speed into a new treatment level.* 主分析
+   treatment identity = target_speed（冻结 7 点 grid 不动），v_realized
+   仅作 diagnostic/covariate；禁止 0.300→0.2925 改标、禁止把 v_realized
+   升格为连续 treatment（endogenous treatment）；material identity 正确
+   措辞 = "requested at 0.277/0.300/0.325, accepted under the
+   pre-registered ±0.02 tolerance, with realized speeds
+   0.2768/0.2925/0.3179"。
+4. **批准进入 D1/D2/D3**（D1 decoder invariance / D2 逐 cell C1/C2 τ
+   material hash 全同 / D3 T_runtime=T_mapping 且 τ_runtime=τ_frozen；
+   外加 28-cell runtime launch table + 预保存诊断量 target_speed /
+   material_realized_speed / abs_error / material_hash / source_lineage /
+   decoder_condition / tau_ff）；**主 Rung 1 experimental compute 仍不
+   批准**，待 D 全 PASS + execution freeze。
+5. **0.2667 分裂带降级**为 post-hoc consistency observation（历史诊断
+   信息），退出 target definition / source selection / material
+   generation / cell assignment / stopping rule 一切设计功能。

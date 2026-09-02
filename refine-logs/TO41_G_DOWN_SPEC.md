@@ -2,9 +2,11 @@
 
 > 【层位：L3 实施层·独立实验身份】↑ `refine-logs/README.md`（扇出树根地图）｜
 > 上游：`TO41_RUNG1_IMPL.md` §5.9（二十轮裁定 ③，本 spec 是其落点）｜
-> 状态：**P↓-S APPROVED（三十轮）；R_valid↓ / schedule rule / manifest 待
-> 冻结；无任何 material-generation compute 授权，Main Rung 1 compute
-> BLOCKED 不变**。
+> 状态：**CLOSED / PASS（三十三轮 owner freeze review 裁定，2026-09-02，
+> §10）——4/4 低速 target k=0 首过即停 + 四材料 determinism 全 PASS +
+> 7/7 material availability map；裁定不为 0.277/0.300/0.325 重新求解；
+> 批准进入 D1/D2/D3；Main Rung 1 compute 仍 BLOCKED（待 D 全 PASS +
+> execution freeze，operationalized in `TO41_RUNG1_IMPL.md` §8）**。
 
 ## 0. 身份与边界
 
@@ -196,6 +198,9 @@ map**（主 Rung 1 的预注册输入）。
 - **确定性复现（全部 PASS，三十二轮）**：v0250 `626b3407…`、v0225
   `eb87ad84…`、v0200 `0038afb8…`——original vs rerun sha256 逐位一致；
   加上 0.275 run A/B（`09c2915c…`），**四个 ↓ 材料 determinism 全验证**。
+- **owner freeze review 裁定（三十三轮，2026-09-02）：G↓ = CLOSED /
+  PASS**，裁定全文见 §10；D 阶段授权与解释纪律 operationalized in
+  `TO41_RUNG1_IMPL.md` §8。
 
 ## 9. material availability map（G↓ + registry 合并终稿，待 owner freeze）
 
@@ -215,6 +220,60 @@ dump 实测速度本就落在容差门⑨内（A 门 PASS 的 F 线审计验收�
 freeze 时若要求"严格按 target 重解"则需 3 次 dircol（备选，非默认）。
 全部材料确定性复现一致（G↓ 四件）或 registry 哈希冻结（三件）。
 
+**owner 裁定（三十三轮）：不重解**。registry 既有三件（0.277/0.300/
+0.325）维持 canonical——预注册容差门⑨已赋予其合法 material 身份；为
+追求零误差重新求解 = 把预注册 validity gate 事后变成 zero-error 追求，
+重新引入 execution drift，且在 7/7 有料、上游全部来自已审计 registry/
+campaign 的现状下边际科学收益为零、protocol drift 风险为正。
+**material identity 措辞纪律**：不得写「三份材料分别是 0.277/0.300/
+0.325 的精确 τ(v)」；正确表述 = **canonical materials requested at
+0.277/0.300/0.325, accepted under the pre-registered ±0.02 m/s
+realization tolerance, with realized speeds 0.2768/0.2925/0.3179**——
+两个表述的科学强度不同（0.300→0.2925、0.325→0.3179 已非数值噪声级）。
+
 **主 Rung 1 输入就绪**：τ(v,C)=τ(v)（Mode A）+ v2 mapping（14 rows 全
-交叉）+ 本 availability map（7 材料 × hash × lineage）→ owner 执行 freeze
-审查 → D1/D2/D3 → execution freeze → Rung 1 compute。
+交叉）+ 本 availability map（7 材料 × hash × lineage）→ owner 执行
+freeze 审查（**三十三轮完成**：G↓ CLOSED/PASS、不重解、**批准进入
+D1/D2/D3**；主 Rung 1 compute 仍不批准）→ D1/D2/D3 → execution freeze
+→ Rung 1 compute。
+
+## 10. owner freeze review 裁定（三十三轮，2026-09-02）
+
+**裁定四项**：
+
+1. **G↓ = CLOSED / PASS，不再扩展**——4/4 低速 target 成功；全部 k=0
+   首过即停；四材料 determinism 全 PASS；0.200/0.225/0.250/0.275
+   realized speed 基本精确命中；P↓-S hot-start continuation 获真实
+   服务器成功证据；零追加冷启动预算；未为成功修改 schedule。
+2. **material availability 7/7 COMPLETE；determinism PASS**。
+3. **不为 0.277/0.300/0.325 重新求解**（理由见 §9 owner 裁定段；预注册
+   tolerance 已赋予这些材料合法身份，重解不是必要的科学动作）。
+4. **批准进入 D1/D2/D3**；**主 Rung 1 experimental compute 仍不批准**
+   （待 D1/D2/D3 全 PASS + execution freeze）。
+
+**material-target identity 解释纪律（本轮核心，freeze 前落盘原文）**：
+
+> **target_speed defines treatment identity; v_realized records material
+> realization quality. Passing the pre-registered realization tolerance
+> does not convert the realized speed into a new treatment level.**
+
+- 主分析以 `target_speed` 为 treatment identity；`v_realized` 仅作
+  material-generation diagnostic / covariate，不改变 treatment label。
+- **禁止**把 0.300 target 改标 0.2925（破坏已冻结 treatment grid）；
+  **禁止**分析阶段把 `v_realized` 当连续 treatment 重做主分析——那会把
+  treatment assignment 从 pre-registered target 换成 post-generation
+  realized variable，重新引入 endogenous treatment（可做诊断，不可替代
+  primary treatment definition）。
+- 容差门允许 target/realized 差异作为 material validity，**不等于二者
+  数学相同**：实际观测是 Y(v_target, C, τ(v_material))，不自动等于
+  Y(v_target, C, τ(v_target))，解释时保持该区分。
+
+**0.2667 分裂带降级**：自本轮起仅为 **post-hoc consistency observation**
+（历史诊断信息），不得再进入 target definition / source selection /
+material generation / cell assignment / stopping rule——G↓ 已证明低速
+材料可生成，该 boundary 只承担解释功能，不再承担设计功能。
+
+**D 阶段工作对象与执行纪律**（D1 decoder invariance / D2 逐 cell C1/C2
+τ material hash 全同 / D3 artifact-runtime conformance + 28-cell runtime
+launch table + 预保存诊断量清单）operationalized in
+`TO41_RUNG1_IMPL.md` §4/§8。
