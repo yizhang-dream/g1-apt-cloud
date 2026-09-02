@@ -917,6 +917,10 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
 | TO41-GD-0200 | G↓ 低速 target 0.200（独立 ladder，无 chain） | to37_v016 guess / v_min=0.200，↓-k0 | §5.2 全门集（⑨↓ 容差 + 确定性复现） | DONE | **k=0 首过即停**：v_realized 0.2000（abs_err 6.7e-09）、IPOPT 证书 **present**、mechanically_valid；确定性复现 sha256 逐位一致（0038afb8…） |
 | TO41-GD-0225 | G↓ 低速 target 0.225 | to37_v016 guess / v_min=0.225，↓-k0 | 同上 | DONE | **k=0 首过即停**：v_realized 0.2250（abs_err 1.7e-06）、audit-admitted（证书 absent 如实记录不作门）、mechanically_valid；确定性复现逐位一致（eb87ad84…） |
 | TO41-GD-0250 | G↓ 低速 target 0.250 | to37_v016 guess / v_min=0.250，↓-k0 | 同上 | DONE | **k=0 首过即停**：v_realized 0.2500（abs_err 7.0e-09）、IPOPT 证书 **present**、mechanically_valid；确定性复现逐位一致（626b3407…） |
+| TO41-R1-CTRL-S0 | Rung 1 训练臂 ctrl seed 0（freeze HEAD 新训） | E47 精确配方 + ctrl 臂旗标（TO40C_PLAN §3 逐字：`--latent-mode --latent-vae-path token_vae_e39/vae.pt --latent-speed-bins --latent-dir-bins --latent-kl-prior zero --progress-scale 1.0 --heading-scale 0.4 --to-ref --to-ref-npz to38_ref.npz --to-ref-obs-zero --to-ref-w 0`），128envs×2000it | train_log 落盘 + rew 无 NaN + fall 记录；ckpt 用途 = Rung 1 28-cell eval（ckpt 规则 = 50-iter 窗口最优，对称非手挑） | RUNNING（09-03 launch） | 执行身份：sync clone@8f6ba1e（freeze HEAD）+ .venv_isaac，vae sha f6adfc50… preflight 核对；driver `/home/cvgluser/to41r1_train.sh`，log `apt_g1/outputs/to41r1_train.log` |
+| TO41-R1-T10-S0 | Rung 1 训练臂 t10 seed 0（freeze HEAD 新训） | ctrl + `--to-tau --to-tau-w 1.0`（TO40C 主臂配方），128envs×2000it | 同上 | RUNNING | 同上（串行队列第 2） |
+| TO41-R1-CTRL-S1 | Rung 1 训练臂 ctrl seed 1（第二训练 seed） | 同 CTRL-S0，`--seed 1` | 同上 | RUNNING | 同上（串行队列第 3） |
+| TO41-R1-T10-S1 | Rung 1 训练臂 t10 seed 1（第二训练 seed） | 同 T10-S0，`--seed 1` | 同上 | RUNNING | 同上（串行队列第 4） |
 
 **G↓ 收束 + owner freeze review 裁定（三十三轮，2026-09-02）**
 
@@ -1132,3 +1136,26 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
     分析；**不做 freeze→本地实验→再搬云端**。
   - 语义边界不变：本轮 = 状态迁移 + 记录，**Scientific result 仍 = NONE**
     （沿 D §8 tracker 语义分离；Run 行待 Rung 1 开跑后追加 TO41xx）。
+  - **Rung 1 训练 wave launch（09-03 同日，freeze 落地后立即执行）**：
+    - 执行身份：sync clone@`8f6ba1e`（freeze HEAD，push/pull 双向对齐）+
+      `.venv_isaac`；preflight 全绿 = e39 vae sha `f6adfc50…`（与 D receipt
+      锚一致）+ canonical `to38_ref.npz` 原物 + GPU 空闲（337 MiB）；
+      代码面自 sanity commit `d477562` 以来零变化（diff 仅 refine-logs）。
+    - **执行配置裁定（owner 执行侧保守取交集，评审方可改判）**：训练集 =
+      {ctrl, t10} × {seed 0, seed 1} **4 runs 全部在 freeze HEAD 新训**
+      （TO41-R1-\*）——同时满足 IMPL §2「TO40C 仅 seed 0，故两臂均需重训」
+      （旧 commit ckpt 不复用，TO40C_PLAN §3 同 commit 配对先例）与「2 训练
+      seed」要求；若后续裁定复用 TO40C seed-0，多训 2 run 降级为跨轮一致性
+      旁证（TO38b 先例）不进主分析（单臂实测 ~30 min，总 ~2h GPU，代价可
+      忽略）。配方 = TO40C_PLAN §3 逐字（E47 base + ctrl 旗标；t10 +
+      `--to-tau --to-tau-w 1.0`）；训练臂 τ 材料 = canonical `to38_ref.npz`
+      （F11b 0.277 导出；与 derived LUT 组 F11b 件逐位一致——两层身份照旧：
+      训练按冻结配方消费 canonical，eval cells 按逐 cell τ(v) 消费 derived
+      LUT）。
+    - 顺序 ctrl-s0 → t10-s0 → ctrl-s1 → t10-s1（串行 solo GPU）；ckpt 规则
+      = train_log 50-iter 窗口最优（对称非手挑）。launch 确认：ctrl-s0
+      it110 rew≈2.35 fall=0，GPU 2.9G/60%。
+    - **待建（下一执行面）**：Rung 1 28-cell eval driver——策略驱动 60s
+      rollout × 7 v × {C1,C2} × 3 eval seed，Mode A condition override 复用
+      env_wiring；训练窗口内落码 + 负例测试，训练完成后先 dry-run 再正式
+      eval。**28 cells ≠ 28 训练 job**（4 训练 run 供全部 eval cells 取用）。
