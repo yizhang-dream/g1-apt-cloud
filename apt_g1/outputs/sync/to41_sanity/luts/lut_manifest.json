@@ -1,0 +1,167 @@
+{
+  "artifact_id": "rung1-material-lut-manifest",
+  "schema_version": 1,
+  "created_utc": "2026-09-02T16:10:02Z",
+  "pipeline": "frozen material npz (to36 hybrid dump) -> to36_leg_to_drake.py world (Drake FK, 81 samples/phase, deterministic) -> to38_export_ref.py (numpy phase resample + PHASE_PERM/sign map, m_per_phase=60, deterministic)",
+  "purpose": "TO41 launch sanity L0：env to_ref_npz 通道需要 TO38 LUT 格式；7 份冻结材料（to36 hybrid dump）按既有 TO38 生产链的确定性导出。材料身份不变（canonical = source npz）；LUT = derived artifact",
+  "identity_discipline": "npz 文件字节级 sha 因 zip mtime 不可作复现锚；身份锚 = lut_array_sha256（数组级规范哈希）。checker 独立重算对照",
+  "determinism_evidence": {
+    "v": 0.2,
+    "result": "PASS——同输入两次导出全数组逐位一致（meta.world_src 路径除外）"
+  },
+  "cross_validation": {
+    "target": 0.277,
+    "detail": "F11b_flat 经新链重导 vs canonical to38_ref.npz（TO38/TO40 实际消费过的同一 LUT）：q_ref6/tau_ref6/pitch/z/heel_rel 逐位一致 max|diff|=0.0；T/v_avg 一致",
+    "canonical_to38_ref_sha256": "128329e18d9a0b93f19f52383cc985528e533c4b064aec8e72535276733d8100",
+    "canonical_world_knots_sha256": "c32f0ee3cbe3cfc32a0ac0b28d88744d20eff4248d53959144850a0399dfe92d"
+  },
+  "entries": [
+    {
+      "target_speed": 0.2,
+      "source_artifact": "gdown_v0200_k0.npz",
+      "source_path": "/home/cvgluser/ros2_data/outputs/gdown_targets/gdown_v0200_k0.npz",
+      "source_sha256": "0038afb8a22cee2609a4802238711188e27a93672ba1d83aafece21493b14231",
+      "world_intermediate_sha256": "376825dbd75dc7a3f0727909009038450ef136a0a0f0adfd916ebbe47ce8bef1",
+      "lut_file": "to41_lut_0200.npz",
+      "lut_file_sha256": "8c2eebd013a94b6ad75ec842077b02c5dceb058c487b8201a494c7917986be55",
+      "lut_array_sha256": {
+        "q_ref6": "e5cc934a44928cf7aee9231f61bfa53366a18f533d78b74c8d95ba9efd2a8601",
+        "tau_ref6": "3f3e3fed5c8800f7dcf39ad8fe565add3ed6ff7f484b8c508f465db829b9de44",
+        "pitch": "0cfdc39352712badd68baa2c3ed5a33ff48b3a4f865dfebdafe3fe22014ee12a",
+        "z": "bbcd6af68c4f188d8dd4bf29b0a6a3f4c077299ea6fbaf45916f62a5cb0fd192",
+        "heel_rel": "018b80e8dd6244d297651b27df5c3d31e734ea7ce56f408d28abb93d33fc2dce"
+      },
+      "m_per_phase": 60,
+      "T": 1.4885521454053237,
+      "v_avg": 0.19999999328226936,
+      "wrap_gap_q": 3.445160823289939e-15,
+      "wrap_gap_scal": 0.03630461918966188
+    },
+    {
+      "target_speed": 0.225,
+      "source_artifact": "gdown_v0225_k0.npz",
+      "source_path": "/home/cvgluser/ros2_data/outputs/gdown_targets/gdown_v0225_k0.npz",
+      "source_sha256": "eb87ad8491adb447d31cbdef25bad9ec678794ac3dddcf433076233bf80011ac",
+      "world_intermediate_sha256": "f229791408523d74aaf2b73cc4bc5ab58d3fec0393e995264be9471570dfac4a",
+      "lut_file": "to41_lut_0225.npz",
+      "lut_file_sha256": "21fef0e9429eafcc3b5a810b02f5b7c5354fb92d365c71fade82a8881a7ef27a",
+      "lut_array_sha256": {
+        "q_ref6": "21e0d82e6096f93f52bf3b1c4a03dcc8247de48378999e6c220b78da6f32a2cf",
+        "tau_ref6": "b2b42c1661a107a428c01512ba445485d87ae5d953626df169f3df0c36c666e8",
+        "pitch": "67d8afd47f3daddedf658b2b62132d2442c5529d589c94e3236e8d78c06024f4",
+        "z": "1116e8104ca533bf8ca9ac381cc38d601d52187f8288d35913f34e43895265a4",
+        "heel_rel": "0a2f4d19708dc6c94eff0fb4ba1908ce54d9edf7691980c0b8060686b558f7a0"
+      },
+      "m_per_phase": 60,
+      "T": 1.3830843444784464,
+      "v_avg": 0.225001723476185,
+      "wrap_gap_q": 1.033895191682177e-15,
+      "wrap_gap_scal": 0.02026977406153648
+    },
+    {
+      "target_speed": 0.25,
+      "source_artifact": "gdown_v0250_k0.npz",
+      "source_path": "/home/cvgluser/ros2_data/outputs/gdown_targets/gdown_v0250_k0.npz",
+      "source_sha256": "626b340737e9d9533f3fd72cab8b7622cc0d95329d3e03debbaadb7dda5ec633",
+      "world_intermediate_sha256": "4e08160d04351081888403f5bf304a2a56ccd56ff9790e88cc4f1c56da1793dc",
+      "lut_file": "to41_lut_0250.npz",
+      "lut_file_sha256": "c90d63638a3134df74047457d4bf40e13214f825e3b9540a61315ec7d1e76eb1",
+      "lut_array_sha256": {
+        "q_ref6": "8d99ce8d8054e9c207ad56fcad5ba6866ff47b06c4b13a654df490e54b507bd3",
+        "tau_ref6": "0dd9ce2c205bdf857cc210ff3e4a4749ffc99f0940345d925ad8f612692c0812",
+        "pitch": "b302862a88b6432bf9464684a79f7f219adacfa6692043fb099650689e8c2c13",
+        "z": "ad77ea6344d175ea37c1a124d86a0ff747c2c9754baa0c8faf5c0b1cffccd583",
+        "heel_rel": "db555dcf14f11ab0bcbd56d9477300b0a0450774d6a18b578961fc5bf426fcdf"
+      },
+      "m_per_phase": 60,
+      "T": 1.3099815507908568,
+      "v_avg": 0.24999999305284457,
+      "wrap_gap_q": 2.314848035478434e-09,
+      "wrap_gap_scal": 0.012886692277401846
+    },
+    {
+      "target_speed": 0.275,
+      "source_artifact": "gdown_smoke_v275_k0.npz",
+      "source_path": "/home/cvgluser/ros2_data/outputs/gdown_smoke/gdown_smoke_v275_k0.npz",
+      "source_sha256": "09c2915c5c713afbc41c49494efcbf468e28ff0816a447ec9ff544554eb9ec30",
+      "world_intermediate_sha256": "8b78656cf24861f820e7afe3f75413422a365fab3519bda6447ecdffd105a854",
+      "lut_file": "to41_lut_0275.npz",
+      "lut_file_sha256": "f3a69338c958b1f42d5a377483ee99df810d9f35c9b962aed5b85914476014f5",
+      "lut_array_sha256": {
+        "q_ref6": "07e67d4c28c733fcc8f2af66c82e1677509bdd2c6bb86935793c3d2e067377ea",
+        "tau_ref6": "9a40d021670106e475b61d2a34d75ff45565ff4f70ac085f4502aa3826aa2285",
+        "pitch": "f82a4e054b77d6bebc3ad8d8a886901a24a8cec50cd5d483edeadf3ee5c37b6b",
+        "z": "a546fd7b9e5fa3c2a3d971e8aa4db5792daa2fe9e171ef8e1ef78fd0a7464b16",
+        "heel_rel": "dd49abf7e2dccb7b574c421c320def00c488e2a75eefd7e3c6df110470adb90e"
+      },
+      "m_per_phase": 60,
+      "T": 1.254001992233567,
+      "v_avg": 0.27499999196104663,
+      "wrap_gap_q": 3.455628565934843e-08,
+      "wrap_gap_scal": 0.007623748342767429
+    },
+    {
+      "target_speed": 0.277,
+      "source_artifact": "to36_hybrid_gait_F11b_flat.npz",
+      "source_path": "/home/cvgluser/ros2_data/apt_g1/outputs/to36_hybrid_gait_F11b_flat.npz",
+      "source_sha256": "3f239cbf991b382b2fc977b21dbf5e20301fed7e6f9e4f10ed041725d7242076",
+      "world_intermediate_sha256": "c32f0ee3cbe3cfc32a0ac0b28d88744d20eff4248d53959144850a0399dfe92d",
+      "lut_file": "to41_lut_0277.npz",
+      "lut_file_sha256": "7c376d86848b3c09685a171696402241ea6eea95d01fd78b98025e5a108cabb7",
+      "lut_array_sha256": {
+        "q_ref6": "24d926899e50cef0b05b9aca86256815add4d7e05a64855c8f867e7c1b3e9995",
+        "tau_ref6": "c711e7397e1e266e101c42e00bac0767e221a4c68c4e3fac92ed334766f9e6eb",
+        "pitch": "d27a1f48307640643f0913a740c8444db448a5e47037f2dbab6063680ed6ae00",
+        "z": "9a2de5a91494f9b5d1cb61afab0e626ac9e53b65401be9b13911e4bdb2b8d234",
+        "heel_rel": "d43068c65d98b4a506c6176a8f1734e67eda953f96f5455f85593ea1ca881588"
+      },
+      "m_per_phase": 60,
+      "T": 2.400000007671036,
+      "v_avg": 0.27678471052565023,
+      "wrap_gap_q": 5.209305209419313e-13,
+      "wrap_gap_scal": 0.09573141756675597
+    },
+    {
+      "target_speed": 0.3,
+      "source_artifact": "to36_hybrid_gait_F11_slope2.npz",
+      "source_path": "/home/cvgluser/ros2_data/apt_g1/outputs/to36_hybrid_gait_F11_slope2.npz",
+      "source_sha256": "da6cb3a6d72c33b520cbf9c71ff8fde9cbf1b5d420746a5e32bfba2a8bbd6e99",
+      "world_intermediate_sha256": "e00ca926fd925b7d391fe546b94012f1db06b3a075538201da1278c5d8fecce9",
+      "lut_file": "to41_lut_0300.npz",
+      "lut_file_sha256": "f4cf8b47df96ee880075bedc42db4d3f15a8863fadcd41888c452a77bb5e0929",
+      "lut_array_sha256": {
+        "q_ref6": "0962eabd1e9750c531dde695ce6a0cb6de8bbf8d7d599716f1d8cb646d02bccd",
+        "tau_ref6": "ace5753faece466a6e98a5caaac9091f29b9fd009fd42914531ca6e5ec60d1d6",
+        "pitch": "3a96bbc89f3f307dac27070418a177ee276d22c5149429f826a6863ab5c95a98",
+        "z": "781db1e053ff4140e21b56f683bf1b1d8295e97b9cc33aa1176c9eda2e1ca8af",
+        "heel_rel": "e346c42853f91178b722de271984a9cbe802a276e6378ba772aaad2027dc95b9"
+      },
+      "m_per_phase": 60,
+      "T": 2.399575552639013,
+      "v_avg": 0.2924983396033704,
+      "wrap_gap_q": 8.326672684688674e-17,
+      "wrap_gap_scal": 0.19391184217895055
+    },
+    {
+      "target_speed": 0.325,
+      "source_artifact": "to36_hybrid_gait_F9.npz",
+      "source_path": "/home/cvgluser/ros2_data/apt_g1/outputs/to36_hybrid_gait_F9.npz",
+      "source_sha256": "e7b4cdf455ab0864902890d21c86ba06bf245a441064190e5236177689782177",
+      "world_intermediate_sha256": "b8f8335b73708f655b0409617302d5bac50d67cdd8d121be52f12be4729b026f",
+      "lut_file": "to41_lut_0325.npz",
+      "lut_file_sha256": "87bb06e24ef3ea9a2ad14eaad94618fc9126db9a82ebee3d9779f2e93c8ea015",
+      "lut_array_sha256": {
+        "q_ref6": "5a715e4a9a12f5650e2e47a25e10858d7e2895f19356e6302be7319ee28e797c",
+        "tau_ref6": "e0ff887270f39ed2ab965142eef653bf8be7539aae9044874c67de59845ccbf6",
+        "pitch": "473edbb7ce03b6fd62fbe229674c4acc7f7d891c6d7d798946c3e7abee6d3bf6",
+        "z": "b3bd92d708351376721bfb524f88a78b454719bc4d7fdf2e906d270f5a46acf6",
+        "heel_rel": "be9eda9684e0fb891f0fc414ad3b92220b177271c98a6cc24d19bf015a632311"
+      },
+      "m_per_phase": 60,
+      "T": 2.399975026667148,
+      "v_avg": 0.3178773939004068,
+      "wrap_gap_q": 2.4685808952540356e-13,
+      "wrap_gap_scal": 0.0035457328865160093
+    }
+  ]
+}
