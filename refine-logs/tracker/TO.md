@@ -990,3 +990,51 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   specification 变成可执行代码；实现中需「重新解释」某已冻结字段 →
   立即停 → genuine incompatibility → owner reopen，禁止顺手修协议
   （协议 §7 保险丝 3）。
+
+**三十六轮（2026-09-02）：owner 批准 implementation 开工 + Mode A runtime / independent checker 落码 + 28-cell D dry-run 全 PASS**
+
+- owner 裁定（本轮指令原文口径）：**批准 implementation 开工，批准先做 Mode A
+  runtime + independent checker；28-cell D dry-run 在实现完成后进入；主 Rung 1
+  compute 继续 BLOCKED**；本轮不再修改协议（风险已从「实验设计」转移为「runtime
+  是否把干净 Mode A treatment 错误实现成另一个 treatment」）。十三点实现契约：
+  τ_runtime(v,C)=τ_frozen(v) 与 C_runtime=T_mapping(v,C) 为唯一契约；immutable
+  execution record 先于 decode；runtime 是执行器不是决策器（禁启发式）；
+  mapping/material 两套 lookup 分开（机械保证两 treatment 轴不合并）；D1 做
+  before/after decoder signature；D2 = Mode A fingerprint 表；D3 checker 从实际
+  运行态独立取数重算 verdict；28-cell 必须有 actual execution receipt；
+  negative tests（A τ 换 hash / B 错 condition / C 改 mode/shape / D 自报 PASS+
+  实际不一致）须先于 dry-run 全过；D 禁做成小型真实实验（checker 忽略
+  performance 字段）；lab-ts-only；runtime/checker 两类代码分开登记；GO/NO-GO
+  判据表（同 v 双 τ hash、mapping 不一致、decoder identity 变化、lineage 不一致、
+  有声明无 receipt、checker 依赖 runtime PASS flag、implementation 需重新解释
+  specification → NO-GO/停）。
+- **落码**（commit 6991299 + 7272303）：`apt_g1/rung1/`（SCRIPT_MAP §8 登记：
+  mode_a_runtime.py=state-changing、d_checker.py=read-only audit、
+  rung1_selftest.py=工具）。独立双解析器（checker 不 import runtime）；receipt
+  封闭 schema + 全域封禁自报 verdict 字段；lab-ts D 报告强制 --materials-root
+  独立重算材料 sha256；--env-tag 机械闸（Windows 禁标 lab-ts）。multi-root
+  materials 搜索（G↓ 四件 canonical 在 ros2_data/outputs/gdown_{targets,smoke}/，
+  registry 三件在 apt_g1/outputs/）。实现日志 = refine-logs/TO41_D_IMPL.md。
+- **negative tests 先于 dry-run 全过**：本机 9/9（T0 双解析器交叉一致 / T1
+  lookup 单元 / T2 覆盖 28/28 / T3 正例控制 / Negative A–E），lab-ts frozen
+  env（python 3.10.20 / torch 2.5.1+cu124）复跑 9/9。
+- **28-cell D dry-run 执行（lab-ts，commit b69a2ce 入仓）**：28/28 decode-only
+  receipt（e39 vae.pt f6adfc50… 加载身份干净：missing 0 / unexpected 8 encoder
+  键；state_dict 前后全等；probe 确定性 seed 20260902）。**independent checker
+  全 PASS：schema / D1 / D2 / D3A / D3B / D3 全绿，failures 全 0**。
+- **D2 Mode A fingerprint 表**：7 v 全部 C1/C2 same-τ + lineage 一致——
+  0038afb8a22cee26(0.200) / eb87ad8491adb447(0.225) / 626b340737e9d953(0.250) /
+  09c2915c5c713afb(0.275) / 3f239cbf991b382b(0.277) / da6cb3a6d72c33b5(0.300) /
+  e7b4cdf455ab0864(0.325)；G↓ 四件完整 sha256 首次落盘（0.200/0.225/0.275 与
+  tracker 三十四/三十五轮截断记录吻合；0.250 = 626b3407… 为新记录）。
+- **服务器状态处置（如实记录）**：sync clone 拉取前存在未提交 apt_flat_env.py
+  改动（TO40C kp 读 sim 的服务器侧旧副本，canonical = 已提交 187f2fb，冻结哈希
+  ca39b76f… 与 HEAD 逐位一致）——已 git stash 保留（信息 "to40c kp server-side
+  variant…stashed before TO41 D dry-run 09-02"）；server push 走 SSH URL
+  （git@github.com，key id_ed25519_github 已认证）。
+- 语义（协议 §3/§8 纪律）：D PASS = **implementation conforms to treatment
+  specification**，不支持「conditioning is valid」、不支持 C1/C2 是两个真实
+  gait regimes；本行不是 Rung 1 scientific result。**execution freeze =
+  PENDING owner 纯状态迁移；Main Rung 1 compute 仍 BLOCKED**。dry-run 范围
+  边界（TO41_D_IMPL.md §4）：τ 注入 env 的 exercise 属 Rung 1 launch sanity
+  （IMPL §6），不在 D 范围。

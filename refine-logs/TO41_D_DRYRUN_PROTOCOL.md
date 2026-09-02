@@ -7,7 +7,11 @@
 > （2026-09-02 三十四轮评审 9.8/10 授权开工；同日三十五轮评审 9.9/10
 > **协议定稿 + implementation 开工**——注意语义是 *protocol
 > authorized / implementation phase opened*，**不是** D 已启动/已通过；
-> Rung 1 compute BLOCKED 不变）。
+> 同日三十六轮 owner 批准 implementation → Mode A runtime + independent
+> checker 落码、negative tests 9/9（本机+lab-ts）、**28-cell D dry-run
+> 执行完毕，D1/D2/D3 全 PASS**（report = `apt_g1/outputs/sync/to41_d/
+> D_report`，lab-ts frozen env，checker 独立审计 failures 0）——
+> execution freeze 待 owner 纯状态迁移；Rung 1 compute BLOCKED 不变）。
 
 ## 0. 对象、边界与当前状态板
 
@@ -25,10 +29,11 @@ Grid                   APPROVED（7-point：0.200–0.325 + 0.277 anchor）
 Mode A                 LOCKED（τ(v,C) = τ(v)；Mode B 永久关闭）
 τ(v) material          FROZEN（7/7，availability map 见 G_DOWN_SPEC §9）
 G↓                     CLOSED / PASS（不再扩展，抽材料纪律见 §5）
-D1/D2/D3               AUTHORIZED（未启动；verdict 全部 PENDING）
+D1/D2/D3               PASS（09-02 三十六轮 lab-ts 28-cell dry-run；
+                       schema/D1/D2/D3A/D3B 全绿，failures 0）
 D protocol             FROZEN（三十五轮 9.9/10 定稿；此后唯一允许变更
                        = 把 frozen specification 变成可执行代码）
-Execution freeze       PENDING（待 D 全 PASS，owner 纯状态迁移）
+Execution freeze       PENDING owner 纯状态迁移（D 全 PASS 前置已满足）
 Main Rung 1 compute    BLOCKED
 ```
 

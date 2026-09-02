@@ -96,10 +96,10 @@ resolve_cell = 二者组合
 
 ## 5. selftest 结果（negative tests 先于 dry-run，owner 实现裁定 §9）
 
-本机 9/9 PASS（`sync/to41_d/selftest_report.json`，selftest 永不作为
-D artifact；lab-ts 需复跑同绿）：
+本机 9/9 PASS，**lab-ts frozen env（python 3.10.20 / torch 2.5.1+cu124）复跑
+9/9 PASS**（`sync/to41_d/selftest_report.json`；selftest 永不作为 D artifact）：
 
-| 用例 | 构造 | 预期 = 实测 |
+| 用例 | 构造 | 预期 = 实测（本机 + lab-ts） |
 |---|---|---|
 | T0 双解析器交叉一致 | runtime vs checker 各自解析三份冻结工件 | PASS |
 | T1 lookup 单元 | 14 rows 逐项 + Mode A 恒等式（同 v 两 arm material 全等）+ 未命中 hard fail | PASS |
@@ -152,16 +152,30 @@ ssh lab-ts "cd ~/ros2_data/g1-apt-cloud-sync && bash /tmp/run_apt_isaac.sh -m ap
 位置 `~/ros2_data/apt_g1/outputs/`，若从 sync clone 跑需以
 `--materials-root`/`--vae-path` 显式指向 canonical 位置。）
 
-## 8. 状态板（本文更新时点）
+**执行结果（2026-09-02，全部按上序完成）**：
+
+- selftest：lab-ts 9/9 PASS；
+- execute：28/28 receipt（`--materials-root` 三根：apt_g1/outputs +
+  ~/ros2_data/outputs/gdown_targets + ~/ros2_data/outputs/gdown_smoke；
+  e39 vae.pt 加载身份干净：missing 0 / unexpected 8 encoder 键）；
+- checker：**schema/D1/D2/D3A/D3B 全 PASS，failures 0**（D2 fingerprint
+  7 v same-τ 全中；D3B 独立重算 7/7 材料全中，registry 三件 16-hex 前缀
+  吻合冻结锚，G↓ 四件完整 sha256 首次落盘：0038afb8… / eb87ad84… /
+  626b3407… / 09c2915c…）；
+- 产物 commit：b69a2ce（server push 经 SSH URL；HTTPS 非交互无凭据）；
+- 环境身份：env_tag=lab-ts，python 3.10.20，torch 2.5.1+cu124，
+  三份冻结源哈希（env/arch/vae.pt）执行前逐位验证通过。
+
+## 8. 状态板（09-02 三十六轮收尾更新）
 
 ```text
 Mode A runtime code        DONE（本机静态验证 + selftest 9/9）
 Independent checker code   DONE（同上）
 SCRIPT_MAP 登记            DONE（runtime=state-changing / checker=read-only）
-Negative tests             PASS（本机；lab-ts 复跑 PENDING）
-28-cell D dry-run          PENDING（lab-ts）
-D1/D2/D3 verdict           PENDING（仅 lab-ts report 有效）
-audit artifact frozen      PENDING（D 全 PASS 后）
-owner execution freeze     PENDING
+Negative tests             PASS（本机 9/9 + lab-ts frozen env 9/9）
+28-cell D dry-run          DONE（28/28 receipt，lab-ts，commit b69a2ce 入仓）
+D1/D2/D3 verdict           PASS（report = sync/to41_d/D_report，failures 0）
+audit artifact             已入仓（frozen 随 owner execution freeze）
+owner execution freeze     PENDING（纯状态迁移，owner 裁定）
 Main Rung 1 compute        BLOCKED（不变）
 ```
