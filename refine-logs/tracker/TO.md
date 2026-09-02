@@ -1159,3 +1159,44 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
       rollout × 7 v × {C1,C2} × 3 eval seed，Mode A condition override 复用
       env_wiring；训练窗口内落码 + 负例测试，训练完成后先 dry-run 再正式
       eval。**28 cells ≠ 28 训练 job**（4 训练 run 供全部 eval cells 取用）。
+
+- **三十九轮（09-03 owner 裁定）——训练继续跑 + eval driver 立即开工
+  （implementation + conformance 限定，不改 frozen protocol）**：
+  - **裁定要点落盘**：①训练全留在 lab-ts frozen env（不因本地方便复制训练
+    环境——frozen HEAD/decoder hash/material hash/py-torch env 均为 execution
+    identity）；②工作面切换 = 云端训练持续 ∥ 本地/服务器完成 eval driver；
+    ③顺序 = driver implementation → negative tests → 训练完成 → checkpoint
+    selection → 28-cell eval → independent audit → statistics；④期间发现
+    implementation/instrumentation 问题可修，**协议不改**（唯一出口 =
+    genuine incompatibility → owner reopen）；⑤不因 reward 趋势提前判断或
+    调整 ckpt/seed/condition/训练长度（工程监控与科学评估严格双线）；
+    ⑥**不重新引入 t05**——Rung 1 主矩阵 = ctrl/t10 × 2 seeds，不把 TO40C
+    三臂结构机械搬入。
+  - **eval driver 架构纪律（十三点裁定核心）**：两 lookup 严格分离
+    （(v,C)→C_id ⊥ v→τ(v)，再组合 (v,C,z)），Mode A τ(v,C1)=τ(v,C2) 由
+    结构机械保证非 dry-run 特例；override 于 episode 全生命周期保持
+    （60s 正式 rollout 的 reset 后 persistence 与 300-step probe 同一机制，
+    receipt 保留 boundary/reset 簿记）；**checkpoint selection 隔离** =
+    同一 (arm,seed) 预注册单 ckpt 供全部 14 cells 共用（C1→A/C2→B、
+    ON/OFF 各选各的 = 污染，checker 判 FAIL）；eval seeds = 既有协议固定
+    清单 {0,1,2} 原样使用（与训练 seed 的 operational identity 分离：
+    eval 随机性 = jitter rng(1000+seed) + sim 动力学，非 policy init
+    replay）；target_speed/achieved 身份分离与 abs_error 非筛选器继续；
+    launch coverage 判据 = **56 份 receipt（28 cells × 2 train seeds）**
+    落盘，非"log 里出现过"。
+  - **实现落地（SCRIPT_MAP §8c 四件）**：`rung1/eval_cell.py`（state-changing
+    正式评测驱动：两 lookup/build_cell_cfg/env_wiring 全部原样复用 →
+    conformance 直接继承；selection manifest 固定单 ckpt；per-cell 进程 +
+    os._exit；`--smoke` 隔离目录）＋ `rung1/select_checkpoint.py`（read-only
+    机械选择：50-iter 窗口最优 tie 取最小窗口序，TO40C §4 规则逐字机械化）
+    ＋ `rung1/eval_checker.py`（read-only 独立审计 G1–G10：不 import 被测
+    代码；G2 ckpt 单一性 / G4 τ(v,C1)=τ(v,C2)=τ_frozen(v) env 层证明 /
+    G5 override 全 call 生效 + ON=steps×decimation、OFF=0 / G6 cfg diff；
+    只判 conformance 不做统计）＋ `rung1/eval_selftest.py`（本机 9/9 全绿：
+    T1 正例 + N1 错 τ（checker G3 + driver preflight 双拦截）/ N2 override
+    覆写 / N3 未授权 config / N4 coverage 缺口 / N5 OFF 臂 τ 泄漏 / N6
+    ckpt 混用 / N7 记录不完整——三十九轮要求的三个负例类全覆盖）。
+    本机 static coverage 56/56。
+  - **待执行**：lab-ts 同步 → ctrl-s0 实测 ckpt driver 冒烟（隔离 smoke
+    目录，非正式 artifact）→ 训练完成后四臂 select_checkpoint → 56 receipt
+    正式 eval → eval_checker 审计 → contrast 分析（下游，与审计分离）。
