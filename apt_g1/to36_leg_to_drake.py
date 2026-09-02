@@ -380,8 +380,9 @@ def do_world(args):
               f"{out['pxz_' + tag][:, 1].max():.3f}] pitch["
               f"{out['pitch_' + tag].min():+.3f},{out['pitch_' + tag].max():+.3f}]"
               f" 髋偏移={np.round(off, 4)}")
-    np.savez(WORLD_NPZ, **out)
-    print(f"[world] 已存 {WORLD_NPZ}（B 门 verify / C 门 closedloop 共用）")
+    _world_out = getattr(args, "world_out", WORLD_NPZ)
+    np.savez(_world_out, **out)
+    print(f"[world] 已存 {_world_out}（B 门 verify / C 门 closedloop 共用）")
 
 
 # -------------------------------------------- D5a Stage B: verify（.venv_mjlab）
@@ -963,6 +964,9 @@ def main():
         "world", help="D5a Stage A：hybrid foot 解 → 世界系样本（.venv_drake）")
     p.add_argument("--gait-npz", default="apt_g1/outputs/to36_hybrid_gait.npz",
                    help="hybrid 解 npz（to36_hybrid_dircol.py solve 的 OUT_NPZ）")
+    p.add_argument("--world-out", default=WORLD_NPZ,
+                   help="world npz 输出路径；默认 = canonical to36_world_knots.npz。"
+                        "TO41 批量导 7 材料 LUT 时必须显式指向独立路径（禁覆盖 canonical）")
     p.add_argument("--sole-drop", type=float, default=0.04,
                    help="pointe 兼容参数（foot 模式自动解析 URDF，忽略）")
     p.set_defaults(fn=do_world)
