@@ -1,0 +1,203 @@
+{
+  "schema": "rung1-d-receipt/v1",
+  "cell_id": "v0225_C2_off",
+  "target_speed": 0.225,
+  "condition_arm": "C2",
+  "tau_ff": "off",
+  "runtime_assignment": {
+    "decoder_condition_id": "vb1_db4",
+    "speed_bin": 1,
+    "dir_bin": 4,
+    "selection_source": "frozen_mapping_v2_lookup"
+  },
+  "tau_material": {
+    "artifact": "gdown_v0225_k0.npz",
+    "sha256": "eb87ad8491adb447d31cbdef25bad9ec678794ac3dddcf433076233bf80011ac",
+    "sha256_16": "eb87ad8491adb447",
+    "source_lineage": "G↓ ↓-k0",
+    "v_realized": 0.225,
+    "abs_err": 1.7e-06,
+    "registry_id": null,
+    "registry_sha256_16": null,
+    "materials_root_used": "/home/cvgluser/ros2_data/outputs/gdown_targets",
+    "mode": "foot(gdown-manifest-fixed-params)",
+    "knots": null,
+    "npz_keys_shapes": {
+      "P_lr": [
+        6,
+        6
+      ],
+      "P_rl": [
+        6,
+        6
+      ],
+      "T": [],
+      "T_left": [],
+      "T_right": [],
+      "U_left": [
+        41,
+        6
+      ],
+      "U_right": [
+        41,
+        6
+      ],
+      "XM_left": [
+        40,
+        12
+      ],
+      "XM_right": [
+        40,
+        12
+      ],
+      "X_left": [
+        41,
+        12
+      ],
+      "X_right": [
+        41,
+        12
+      ],
+      "energy_drift_left": [],
+      "energy_drift_right": [],
+      "gate_a": [],
+      "gate_b": [],
+      "ke_drop_lr": [],
+      "ke_drop_rl": [],
+      "knots": [],
+      "lam_lr": [
+        4
+      ],
+      "lam_rl": [
+        4
+      ],
+      "mode": [],
+      "position_names_left": [
+        6
+      ],
+      "position_names_right": [
+        6
+      ],
+      "step": [],
+      "swing_min_z": [],
+      "tau_peak": [],
+      "v_aux_lr": [
+        6
+      ],
+      "v_aux_rl": [
+        6
+      ],
+      "v_avg": []
+    },
+    "applied_to_env": false
+  },
+  "decoder_identity": {
+    "checkpoint_path": "apt_g1/outputs/token_vae_e39/vae.pt",
+    "checkpoint_sha256": "f6adfc5048ea24eac144b0638a86222ce5c50c4d86b38249e3fe49afda119d75",
+    "state_dict_sha256_before": "01e4d382c01572af526de81466d697fc79d74f6138db451a4769bc67f5415ac0",
+    "architecture": {
+      "class": "DirSpeedPhaseTokenVAE",
+      "token_dim": 64,
+      "window": 10,
+      "latent_dim": 16,
+      "hidden_dim": 256,
+      "phase_dim": 2,
+      "n_vbins": 3,
+      "n_dbins": 8
+    },
+    "state_dict_key_shapes": {
+      "decoder.0.bias": [
+        256
+      ],
+      "decoder.0.weight": [
+        256,
+        34
+      ],
+      "decoder.2.bias": [
+        256
+      ],
+      "decoder.2.weight": [
+        256,
+        256
+      ],
+      "decoder.4.bias": [
+        64
+      ],
+      "decoder.4.weight": [
+        64,
+        256
+      ],
+      "dir_embed.weight": [
+        8,
+        8
+      ],
+      "speed_embed.weight": [
+        3,
+        8
+      ]
+    },
+    "load_missing_keys": [],
+    "load_unexpected_keys": [
+      "encoder.0.bias",
+      "encoder.0.weight",
+      "encoder.2.bias",
+      "encoder.2.weight",
+      "logvar.bias",
+      "logvar.weight",
+      "mu.bias",
+      "mu.weight"
+    ],
+    "arch_source_file_sha256": "b9edf1632e73b533c52fe54239411cc79f1f28cd57cb43a9e0a57cb019e52efe",
+    "env_source_file_sha256": "ca39b76f9e99dff28f3c225cfff18f8c9c6e62b846ee80759ebad59ec7ff602d",
+    "token_window_vae_source_sha256": "52501c55976ca0debd8cdebea25cfc57e953ebb50260967f002acc9be2ad2003",
+    "state_dict_sha256_after": "01e4d382c01572af526de81466d697fc79d74f6138db451a4769bc67f5415ac0"
+  },
+  "mode_layout_shapes": {
+    "mode": "foot(gdown-manifest-fixed-params)",
+    "decode_arg_layout": [
+      "z",
+      "phase_sc(sin,cos)",
+      "v_bin",
+      "d_bin"
+    ],
+    "input_shapes": {
+      "z": [
+        1,
+        16
+      ],
+      "phase_sc": [
+        1,
+        2
+      ],
+      "v_bin": [
+        1
+      ],
+      "d_bin": [
+        1
+      ]
+    },
+    "input_dtypes": {
+      "z": "torch.float32",
+      "phase_sc": "torch.float32",
+      "v_bin": "torch.int64",
+      "d_bin": "torch.int64"
+    },
+    "output_shape": [
+      1,
+      64
+    ],
+    "output_dtype": "torch.float32",
+    "output_min": -0.4011029005050659,
+    "output_max": 0.33254149556159973,
+    "output_sha256": "826b8c7fcc896b60492eddfdc00798ddc61428cd586138416c19df1e8ae9455b"
+  },
+  "execution": {
+    "status": "completed",
+    "device": "cpu",
+    "torch_version": "2.5.1+cu124",
+    "python_version": "3.10.20",
+    "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.35",
+    "started_utc": "2026-09-02T14:00:09Z",
+    "finished_utc": "2026-09-02T14:00:09Z"
+  }
+}

@@ -1,0 +1,871 @@
+{
+  "artifact": "rung1-d-audit/v1",
+  "selftest": false,
+  "generated_utc": "2026-09-02T14:00:25Z",
+  "environment_tag": "lab-ts",
+  "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.35",
+  "python": "3.10.20",
+  "inputs": {
+    "mapping_yaml": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/configs/rung1_tau_dec_mapping.yaml",
+    "mapping_yaml_sha256": "026ceb57df712a8268ab59af21ada87946cbc42cdfc5353d39d8eba4ebbdaa3d",
+    "registry_yaml": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/configs/rung1_source_registry.yaml",
+    "registry_yaml_sha256": "29030952a167cdb9b992e52d6ffe26567dfe5de227afa2e9751dae4a8de34fe8",
+    "gdown_spec": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/refine-logs/TO41_G_DOWN_SPEC.md",
+    "gdown_spec_sha256": "33cd146dc1e6c0615459bd6bb6ca520493c6795c76ee0d58f35ba309567ca81a",
+    "receipts_dir": "apt_g1/outputs/sync/to41_d/receipts",
+    "receipt_count": 28,
+    "receipt_sha256": {
+      "v0200_C1_off": "e1f7f9f1cd43ca887c937f97df0df8f97cdc623e604317e31f80cd758d850a7c",
+      "v0200_C1_on": "0820b295be8561613ae2db399871d9bf9094ff4a9c6656a6fa00a4ebe1cbebbf",
+      "v0200_C2_off": "f1e9566b9ba0523ead2aec4c6429867f0ab342d8101741552c6ac23f35625b16",
+      "v0200_C2_on": "3fb0843b61c4e3f0d924e41a4acd9bc34e9ec38cb42cc6598853ab1783c633aa",
+      "v0225_C1_off": "dd6a984f7fcdae16ed4f633249542dfd79ac804cc5a794a53783aae762a940b7",
+      "v0225_C1_on": "43a4adf75f4146836ed4d591073e2c5e169debc41228178ba53503273f76457e",
+      "v0225_C2_off": "37687f46a72735a8d830fdc200bf85e603dc65aa9cb5087958bf05331dfb9639",
+      "v0225_C2_on": "40d3b5daca22c5ec303882120b769d9ee88bbacecf015552f7bb0407389d3cdb",
+      "v0250_C1_off": "0e2864874d2f6a20d1429a2105d8468629b49409278c37f70efdccd6f1380d96",
+      "v0250_C1_on": "f85b3e4ab7774a97a09ca2cb15f46ba7a95371857ea86e3f02113f625d4e0d6d",
+      "v0250_C2_off": "e55084927c0698ba70e51889603db644533716fe719098f9cb3e6275824a3ccf",
+      "v0250_C2_on": "6cc0ab662545bf51a914013dc0e3cdab13a7b8a99a127aaa5b58da7d33dd9f19",
+      "v0275_C1_off": "ce4688a6fc1473e68b77d2a834945a363165daa52bf8ad7c7d55d1fefb99040b",
+      "v0275_C1_on": "54256ca69644b7d4121b470e7b7b1384509852da63175a133a627e5870ac415d",
+      "v0275_C2_off": "d937a9cd25b706b7d4219d7c3eac1a308732ef47c5685a9e76c3c114955c2ef4",
+      "v0275_C2_on": "5ff790266512e688a449a825affba1afbe453305b11f45a7192d2402081b75f8",
+      "v0277_C1_off": "c33d1fef1208c3ee702d50d0d254c8086e7c829261e9ca034c3214bab5730306",
+      "v0277_C1_on": "a642029f07e6b52cbd5401042dae0909fd28eee2823e59975f2c7b5ffce6e0fb",
+      "v0277_C2_off": "52d3059169391aef435376344aaafa5d67e1a285778ab741e4a8bca266534c37",
+      "v0277_C2_on": "4863895d7acfb2f60df26dd7f2673cce5a88834e9ea7adb8efff6f667eecc766",
+      "v0300_C1_off": "822ab95f26f5f2dbd49569398a70e8fab7eb9d201691db9666944991b37b1023",
+      "v0300_C1_on": "1b85279c4d88d03be878c3c943963094bd8701497d3008245b72c30fc5984cfe",
+      "v0300_C2_off": "42b44f2d586ba9fffb6441270aa1c0946392fee90abf2bf215fd6aa903cf74d2",
+      "v0300_C2_on": "cc87a2437a8fbf630631b456523efe7265fb5d84fd187cafa8e44450d7a4487c",
+      "v0325_C1_off": "e91e2f50dc1133d74a66e12b14332c22f7734bcc4593f54f692ced166e947330",
+      "v0325_C1_on": "20c9dbf0cd1a403e1b6a4719c33014b74b561b500abb02d21b74bcbb5180bc5e",
+      "v0325_C2_off": "6b9c3ecb749f04a470d13a532f9f740b34ee410333465bba9c0d431c0a272e9c",
+      "v0325_C2_on": "abf3fae1e793ab21312ded0bebc60bf3d68f8aff15d2def0a35750e14bdcee73"
+    },
+    "materials_roots": [
+      "/home/cvgluser/ros2_data/apt_g1/outputs",
+      "/home/cvgluser/ros2_data/outputs/gdown_targets",
+      "/home/cvgluser/ros2_data/outputs/gdown_smoke"
+    ]
+  },
+  "static_coverage": {
+    "expected": 28,
+    "resolved": 28
+  },
+  "material_baseline": [
+    {
+      "target": 0.2,
+      "artifact": "gdown_v0200_k0.npz",
+      "v_realized": 0.2,
+      "abs_err": 6.7e-09,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": "0038afb8a22cee2609a4802238711188e27a93672ba1d83aafece21493b14231",
+      "note": ""
+    },
+    {
+      "target": 0.225,
+      "artifact": "gdown_v0225_k0.npz",
+      "v_realized": 0.225,
+      "abs_err": 1.7e-06,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": "eb87ad8491adb447d31cbdef25bad9ec678794ac3dddcf433076233bf80011ac",
+      "note": ""
+    },
+    {
+      "target": 0.25,
+      "artifact": "gdown_v0250_k0.npz",
+      "v_realized": 0.25,
+      "abs_err": 7e-09,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": "626b340737e9d9533f3fd72cab8b7622cc0d95329d3e03debbaadb7dda5ec633",
+      "note": ""
+    },
+    {
+      "target": 0.275,
+      "artifact": "gdown_smoke_v275_k0.npz",
+      "v_realized": 0.275,
+      "abs_err": 8e-09,
+      "source": "G↓ ↓-k0",
+      "determinism": "✅（run A/B）",
+      "registry_id": null,
+      "registry_sha256_16": null,
+      "tau_hash_runtime": "09c2915c5c713afbc41c49494efcbf468e28ff0816a447ec9ff544554eb9ec30",
+      "note": ""
+    },
+    {
+      "target": 0.277,
+      "artifact": "to36_hybrid_gait_F11b_flat.npz",
+      "v_realized": 0.2768,
+      "abs_err": 0.0002,
+      "source": "registry 既有（F 线审计验收）",
+      "determinism": "registry 冻结",
+      "registry_id": "F11b_flat",
+      "registry_sha256_16": "3f239cbf991b382b",
+      "tau_hash_runtime": "3f239cbf991b382b2fc977b21dbf5e20301fed7e6f9e4f10ed041725d7242076",
+      "note": ""
+    },
+    {
+      "target": 0.3,
+      "artifact": "to36_hybrid_gait_F11_slope2.npz",
+      "v_realized": 0.2925,
+      "abs_err": 0.0075,
+      "source": "registry 既有",
+      "determinism": "registry 冻结",
+      "registry_id": "F11_slope2",
+      "registry_sha256_16": "da6cb3a6d72c33b5",
+      "tau_hash_runtime": "da6cb3a6d72c33b520cbf9c71ff8fde9cbf1b5d420746a5e32bfba2a8bbd6e99",
+      "note": "<< accepted under the pre-registered ±0.02 m/s realization tolerance（禁触发重解，协议 §4）"
+    },
+    {
+      "target": 0.325,
+      "artifact": "to36_hybrid_gait_F9.npz",
+      "v_realized": 0.3179,
+      "abs_err": 0.0071,
+      "source": "registry 既有",
+      "determinism": "registry 冻结",
+      "registry_id": "F9",
+      "registry_sha256_16": "e7b4cdf455ab0864",
+      "tau_hash_runtime": "e7b4cdf455ab0864902890d21c86ba06bf245a441064190e5236177689782177",
+      "note": "<< accepted under the pre-registered ±0.02 m/s realization tolerance（禁触发重解，协议 §4）"
+    }
+  ],
+  "observations": [
+    "mapping YAML freeze_status = 'generated-not-frozen'（generated-not-frozen 字样；owner 冻结动作记录于 tracker/TO.md 三十三轮——implementation 不改冻结工件，仅如实记录）",
+    "eval 侧 decoder 类源文件 apt_g1/isaac/token_window_vae.py 在 mapping artifact 中无冻结 hash；D1 架构身份以 state_dict 签名 + 调用点（apt_flat_env.py，preprocessing_hash 冻结）+ 训练源（decoder_architecture_hash 冻结）覆盖，类源 sha 记录于各 receipt 供追溯",
+    "decode-only dry-run：τ 注入 env 的 exercise 属 Rung 1 launch sanity（IMPL §6），不在 D 范围"
+  ],
+  "scope_notes": [
+    "D 只回答 plumbing 是否忠实执行 specification（协议 §4）；PASS 解释上限 = implementation conforms to treatment specification",
+    "本 report 不含任何 performance / locomotion 字段（协议 §4 禁收）"
+  ],
+  "execution_coverage": {
+    "expected_cells": [
+      "v0200_C1_off",
+      "v0200_C1_on",
+      "v0200_C2_off",
+      "v0200_C2_on",
+      "v0225_C1_off",
+      "v0225_C1_on",
+      "v0225_C2_off",
+      "v0225_C2_on",
+      "v0250_C1_off",
+      "v0250_C1_on",
+      "v0250_C2_off",
+      "v0250_C2_on",
+      "v0275_C1_off",
+      "v0275_C1_on",
+      "v0275_C2_off",
+      "v0275_C2_on",
+      "v0277_C1_off",
+      "v0277_C1_on",
+      "v0277_C2_off",
+      "v0277_C2_on",
+      "v0300_C1_off",
+      "v0300_C1_on",
+      "v0300_C2_off",
+      "v0300_C2_on",
+      "v0325_C1_off",
+      "v0325_C1_on",
+      "v0325_C2_off",
+      "v0325_C2_on"
+    ],
+    "missing": [],
+    "extra": []
+  },
+  "schema_check": {
+    "verdict": "PASS",
+    "failures": []
+  },
+  "D1": {
+    "verdict": "PASS",
+    "failures": [],
+    "per_cell": [
+      {
+        "cell": "v0200_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      }
+    ]
+  },
+  "D2": {
+    "verdict": "PASS",
+    "failures": [],
+    "table": [
+      {
+        "target_speed": 0.2,
+        "tau_hash_C1": "0038afb8a22cee2609a4802238711188e27a93672ba1d83aafece21493b14231",
+        "tau_hash_C2": "0038afb8a22cee2609a4802238711188e27a93672ba1d83aafece21493b14231",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      },
+      {
+        "target_speed": 0.225,
+        "tau_hash_C1": "eb87ad8491adb447d31cbdef25bad9ec678794ac3dddcf433076233bf80011ac",
+        "tau_hash_C2": "eb87ad8491adb447d31cbdef25bad9ec678794ac3dddcf433076233bf80011ac",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      },
+      {
+        "target_speed": 0.25,
+        "tau_hash_C1": "626b340737e9d9533f3fd72cab8b7622cc0d95329d3e03debbaadb7dda5ec633",
+        "tau_hash_C2": "626b340737e9d9533f3fd72cab8b7622cc0d95329d3e03debbaadb7dda5ec633",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      },
+      {
+        "target_speed": 0.275,
+        "tau_hash_C1": "09c2915c5c713afbc41c49494efcbf468e28ff0816a447ec9ff544554eb9ec30",
+        "tau_hash_C2": "09c2915c5c713afbc41c49494efcbf468e28ff0816a447ec9ff544554eb9ec30",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      },
+      {
+        "target_speed": 0.277,
+        "tau_hash_C1": "3f239cbf991b382b2fc977b21dbf5e20301fed7e6f9e4f10ed041725d7242076",
+        "tau_hash_C2": "3f239cbf991b382b2fc977b21dbf5e20301fed7e6f9e4f10ed041725d7242076",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      },
+      {
+        "target_speed": 0.3,
+        "tau_hash_C1": "da6cb3a6d72c33b520cbf9c71ff8fde9cbf1b5d420746a5e32bfba2a8bbd6e99",
+        "tau_hash_C2": "da6cb3a6d72c33b520cbf9c71ff8fde9cbf1b5d420746a5e32bfba2a8bbd6e99",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      },
+      {
+        "target_speed": 0.325,
+        "tau_hash_C1": "e7b4cdf455ab0864902890d21c86ba06bf245a441064190e5236177689782177",
+        "tau_hash_C2": "e7b4cdf455ab0864902890d21c86ba06bf245a441064190e5236177689782177",
+        "same_tau_identity": true,
+        "lineage_uniform": true,
+        "verdict": "PASS"
+      }
+    ]
+  },
+  "D3A": {
+    "verdict": "PASS",
+    "failures": [],
+    "table": [
+      {
+        "cell": "v0200_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_on",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_off",
+        "yaml": "vb0_db4",
+        "runtime": "vb0_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_on",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_off",
+        "yaml": "vb1_db4",
+        "runtime": "vb1_db4",
+        "verdict": "PASS",
+        "failures": []
+      }
+    ]
+  },
+  "D3B": {
+    "verdict": "PASS",
+    "failures": [],
+    "table": [
+      {
+        "cell": "v0200_C1_on",
+        "target": 0.2,
+        "artifact": "gdown_v0200_k0.npz",
+        "tau_hash16": "0038afb8a22cee26",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C1_off",
+        "target": 0.2,
+        "artifact": "gdown_v0200_k0.npz",
+        "tau_hash16": "0038afb8a22cee26",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_on",
+        "target": 0.2,
+        "artifact": "gdown_v0200_k0.npz",
+        "tau_hash16": "0038afb8a22cee26",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_off",
+        "target": 0.2,
+        "artifact": "gdown_v0200_k0.npz",
+        "tau_hash16": "0038afb8a22cee26",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_on",
+        "target": 0.225,
+        "artifact": "gdown_v0225_k0.npz",
+        "tau_hash16": "eb87ad8491adb447",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_off",
+        "target": 0.225,
+        "artifact": "gdown_v0225_k0.npz",
+        "tau_hash16": "eb87ad8491adb447",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_on",
+        "target": 0.225,
+        "artifact": "gdown_v0225_k0.npz",
+        "tau_hash16": "eb87ad8491adb447",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_off",
+        "target": 0.225,
+        "artifact": "gdown_v0225_k0.npz",
+        "tau_hash16": "eb87ad8491adb447",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_on",
+        "target": 0.25,
+        "artifact": "gdown_v0250_k0.npz",
+        "tau_hash16": "626b340737e9d953",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_off",
+        "target": 0.25,
+        "artifact": "gdown_v0250_k0.npz",
+        "tau_hash16": "626b340737e9d953",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_on",
+        "target": 0.25,
+        "artifact": "gdown_v0250_k0.npz",
+        "tau_hash16": "626b340737e9d953",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_off",
+        "target": 0.25,
+        "artifact": "gdown_v0250_k0.npz",
+        "tau_hash16": "626b340737e9d953",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_on",
+        "target": 0.275,
+        "artifact": "gdown_smoke_v275_k0.npz",
+        "tau_hash16": "09c2915c5c713afb",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_off",
+        "target": 0.275,
+        "artifact": "gdown_smoke_v275_k0.npz",
+        "tau_hash16": "09c2915c5c713afb",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_on",
+        "target": 0.275,
+        "artifact": "gdown_smoke_v275_k0.npz",
+        "tau_hash16": "09c2915c5c713afb",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_off",
+        "target": 0.275,
+        "artifact": "gdown_smoke_v275_k0.npz",
+        "tau_hash16": "09c2915c5c713afb",
+        "lineage": "G↓ ↓-k0",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_on",
+        "target": 0.277,
+        "artifact": "to36_hybrid_gait_F11b_flat.npz",
+        "tau_hash16": "3f239cbf991b382b",
+        "lineage": "registry 既有（F 线审计验收）",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_off",
+        "target": 0.277,
+        "artifact": "to36_hybrid_gait_F11b_flat.npz",
+        "tau_hash16": "3f239cbf991b382b",
+        "lineage": "registry 既有（F 线审计验收）",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_on",
+        "target": 0.277,
+        "artifact": "to36_hybrid_gait_F11b_flat.npz",
+        "tau_hash16": "3f239cbf991b382b",
+        "lineage": "registry 既有（F 线审计验收）",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_off",
+        "target": 0.277,
+        "artifact": "to36_hybrid_gait_F11b_flat.npz",
+        "tau_hash16": "3f239cbf991b382b",
+        "lineage": "registry 既有（F 线审计验收）",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_on",
+        "target": 0.3,
+        "artifact": "to36_hybrid_gait_F11_slope2.npz",
+        "tau_hash16": "da6cb3a6d72c33b5",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_off",
+        "target": 0.3,
+        "artifact": "to36_hybrid_gait_F11_slope2.npz",
+        "tau_hash16": "da6cb3a6d72c33b5",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_on",
+        "target": 0.3,
+        "artifact": "to36_hybrid_gait_F11_slope2.npz",
+        "tau_hash16": "da6cb3a6d72c33b5",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_off",
+        "target": 0.3,
+        "artifact": "to36_hybrid_gait_F11_slope2.npz",
+        "tau_hash16": "da6cb3a6d72c33b5",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_on",
+        "target": 0.325,
+        "artifact": "to36_hybrid_gait_F9.npz",
+        "tau_hash16": "e7b4cdf455ab0864",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_off",
+        "target": 0.325,
+        "artifact": "to36_hybrid_gait_F9.npz",
+        "tau_hash16": "e7b4cdf455ab0864",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_on",
+        "target": 0.325,
+        "artifact": "to36_hybrid_gait_F9.npz",
+        "tau_hash16": "e7b4cdf455ab0864",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_off",
+        "target": 0.325,
+        "artifact": "to36_hybrid_gait_F9.npz",
+        "tau_hash16": "e7b4cdf455ab0864",
+        "lineage": "registry 既有",
+        "verdict": "PASS",
+        "failures": []
+      }
+    ],
+    "independent_hash_recompute": {
+      "gdown_v0200_k0.npz": "0038afb8a22cee2609a4802238711188e27a93672ba1d83aafece21493b14231",
+      "gdown_v0225_k0.npz": "eb87ad8491adb447d31cbdef25bad9ec678794ac3dddcf433076233bf80011ac",
+      "gdown_v0250_k0.npz": "626b340737e9d9533f3fd72cab8b7622cc0d95329d3e03debbaadb7dda5ec633",
+      "gdown_smoke_v275_k0.npz": "09c2915c5c713afbc41c49494efcbf468e28ff0816a447ec9ff544554eb9ec30",
+      "to36_hybrid_gait_F11b_flat.npz": "3f239cbf991b382b2fc977b21dbf5e20301fed7e6f9e4f10ed041725d7242076",
+      "to36_hybrid_gait_F11_slope2.npz": "da6cb3a6d72c33b520cbf9c71ff8fde9cbf1b5d420746a5e32bfba2a8bbd6e99",
+      "to36_hybrid_gait_F9.npz": "e7b4cdf455ab0864902890d21c86ba06bf245a441064190e5236177689782177"
+    }
+  },
+  "D3": {
+    "verdict": "PASS"
+  },
+  "overall": "PASS"
+}
