@@ -278,13 +278,22 @@ def check_l2(receipts: dict[str, dict], mapping: dict):
         exp_changed = n if exp_natural != asg["speed_bin"] else 0
         if changed != exp_changed:
             bad.append(f"override 生效计数 {changed} != 期望 {exp_changed}")
-        # boundary persistence：强制边界后仍有 decode 调用
+        # boundary persistence：强制边界后仍有 decode 调用（终局推导）
         forced = [b for b in ex["boundaries"] if b["type"] == "forced"]
         if not forced:
             bad.append("无强制 episode boundary（L2 设计要求 ≥1）")
         for b in forced:
-            if b.get("cond_calls_after", 0) < 1:
-                bad.append(f"step{b['step']} 强制边界后无 decode 调用（persistence 不可证）")
+            before = b.get("cond_calls_before")
+            if before is None:
+                bad.append(f"step{b['step']} forced 边界缺 cond_calls_before")
+            elif not (1 <= before < n):
+                bad.append(f"step{b['step']} forced 边界 calls_before={before} "
+                           f"不在 [1, {n}) 内")
+            else:
+                after = n - before
+                if after < 1:
+                    bad.append(f"step{b['step']} 强制边界后无 decode 调用"
+                               "（persistence 不可证）")
         for b in bad:
             failures.append(f"{cid}: {b}")
         per_cell.append({"cell": cid,

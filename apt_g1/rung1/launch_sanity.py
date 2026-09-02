@@ -290,11 +290,11 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
         if step == boundary_step:
             cb, tb = cond.n_calls, tau.n_calls
             _reset_and_cmd(10_000 + cell_index)
+            # 记录边界的绝对调用数（calls_before）；"边界后调用数" =
+            # n_decode_calls - calls_before，由 checker 终局推导
             boundaries.append({"step": step, "type": "forced",
                                "cond_calls_before": cb,
-                               "cond_calls_after": cond.calls_after(cb),
-                               "tau_calls_before": tb,
-                               "tau_calls_after": tau.calls_after(tb)})
+                               "tau_calls_before": tb})
         _set_commands(env, v)
         n_reassert += 1
         env.step(action)
