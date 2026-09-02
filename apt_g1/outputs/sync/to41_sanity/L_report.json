@@ -1,0 +1,759 @@
+{
+  "artifact": "rung1-launch-sanity-report/v1",
+  "environment_tag": "lab-ts",
+  "generated_utc": "2026-09-02T17:06:28Z",
+  "inputs": {
+    "receipts_dir": "apt_g1/outputs/sync/to41_sanity/receipts",
+    "receipts_found": 28,
+    "materials_roots": [
+      "/home/cvgluser/ros2_data/apt_g1/outputs",
+      "/home/cvgluser/ros2_data/outputs/gdown_targets",
+      "/home/cvgluser/ros2_data/outputs/gdown_smoke"
+    ],
+    "lut_manifest": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/sync/to41_sanity/luts/lut_manifest.json",
+    "lut_manifest_sha256": "7ac9827a9255ba6964246913a3fba3a1c106cf35f216d94df929d35e888d194b"
+  },
+  "schema_check": {
+    "verdict": "PASS",
+    "failures": []
+  },
+  "discipline_notes": [
+    "L gate 只回答接线（wiring）问题：τ 材料消费 / condition override persistence / 两臂隔离 / 28-cell receipt 来自真实 env 执行路径；不含任何 reward / walking quality / stability 字段（三十七轮裁定）。",
+    "verdict 全部由本 checker 独立重算；runtime receipt 仅 record。",
+    "L PASS 的解释上限 = treatment specification 在真实 env 执行路径上可忠实实现；不构成任何 Rung 1 科学结论。"
+  ],
+  "L1": {
+    "verdict": "PASS",
+    "failures": [],
+    "per_v": [
+      {
+        "target_speed": 0.2,
+        "cells": {
+          "v0200_C1_on": "PASS",
+          "v0200_C1_off": "PASS",
+          "v0200_C2_on": "PASS",
+          "v0200_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "0038afb8a22cee26"
+        ],
+        "buffer_sha256_16": [
+          "3f3e3fed5c8800f7"
+        ]
+      },
+      {
+        "target_speed": 0.225,
+        "cells": {
+          "v0225_C1_on": "PASS",
+          "v0225_C1_off": "PASS",
+          "v0225_C2_on": "PASS",
+          "v0225_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "eb87ad8491adb447"
+        ],
+        "buffer_sha256_16": [
+          "b2b42c1661a107a4"
+        ]
+      },
+      {
+        "target_speed": 0.25,
+        "cells": {
+          "v0250_C1_on": "PASS",
+          "v0250_C1_off": "PASS",
+          "v0250_C2_on": "PASS",
+          "v0250_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "626b340737e9d953"
+        ],
+        "buffer_sha256_16": [
+          "0dd9ce2c205bdf85"
+        ]
+      },
+      {
+        "target_speed": 0.275,
+        "cells": {
+          "v0275_C1_on": "PASS",
+          "v0275_C1_off": "PASS",
+          "v0275_C2_on": "PASS",
+          "v0275_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "09c2915c5c713afb"
+        ],
+        "buffer_sha256_16": [
+          "9a40d021670106e4"
+        ]
+      },
+      {
+        "target_speed": 0.277,
+        "cells": {
+          "v0277_C1_on": "PASS",
+          "v0277_C1_off": "PASS",
+          "v0277_C2_on": "PASS",
+          "v0277_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "3f239cbf991b382b"
+        ],
+        "buffer_sha256_16": [
+          "c711e7397e1e266e"
+        ]
+      },
+      {
+        "target_speed": 0.3,
+        "cells": {
+          "v0300_C1_on": "PASS",
+          "v0300_C1_off": "PASS",
+          "v0300_C2_on": "PASS",
+          "v0300_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "da6cb3a6d72c33b5"
+        ],
+        "buffer_sha256_16": [
+          "ace5753faece466a"
+        ]
+      },
+      {
+        "target_speed": 0.325,
+        "cells": {
+          "v0325_C1_on": "PASS",
+          "v0325_C1_off": "PASS",
+          "v0325_C2_on": "PASS",
+          "v0325_C2_off": "PASS"
+        },
+        "verdict": "PASS",
+        "frozen_sha256_16": [
+          "e7b4cdf455ab0864"
+        ],
+        "buffer_sha256_16": [
+          "e0ff887270f39ed2"
+        ]
+      }
+    ]
+  },
+  "L2": {
+    "verdict": "PASS",
+    "failures": [],
+    "per_cell": [
+      {
+        "cell": "v0200_C1_on",
+        "natural_bin": 0,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C1_off",
+        "natural_bin": 0,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_on",
+        "natural_bin": 0,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_off",
+        "natural_bin": 0,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_on",
+        "natural_bin": 0,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_off",
+        "natural_bin": 0,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_on",
+        "natural_bin": 0,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_off",
+        "natural_bin": 0,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_on",
+        "natural_bin": 0,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_off",
+        "natural_bin": 0,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_on",
+        "natural_bin": 0,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_off",
+        "natural_bin": 0,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_on",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_off",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_on",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_off",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_on",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_off",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_on",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_off",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_on",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_off",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_on",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_off",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_on",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_off",
+        "natural_bin": 1,
+        "mapped_bin": 0,
+        "n_calls": 300,
+        "n_override_changed": 300,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_on",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_off",
+        "natural_bin": 1,
+        "mapped_bin": 1,
+        "n_calls": 300,
+        "n_override_changed": 0,
+        "n_boundaries": 3,
+        "verdict": "PASS",
+        "failures": []
+      }
+    ]
+  },
+  "L3": {
+    "verdict": "PASS",
+    "failures": [],
+    "per_pair": [
+      {
+        "pair": "v0200_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0200_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0225_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0225_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0250_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0250_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0275_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0275_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0277_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0277_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0300_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0300_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0325_C1",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "pair": "v0325_C2",
+        "cfg_diff_keys": [
+          "to_tau"
+        ],
+        "verdict": "PASS",
+        "failures": []
+      }
+    ]
+  },
+  "L4": {
+    "verdict": "PASS",
+    "failures": [],
+    "per_cell": [
+      {
+        "cell": "v0200_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0200_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0225_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0250_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0275_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0277_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0300_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C1_off",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_on",
+        "verdict": "PASS",
+        "failures": []
+      },
+      {
+        "cell": "v0325_C2_off",
+        "verdict": "PASS",
+        "failures": []
+      }
+    ]
+  },
+  "material_baseline": [
+    {
+      "target_speed": 0.2,
+      "artifact": "gdown_v0200_k0.npz",
+      "v_realized": 0.2,
+      "abs_err": 6.7e-09,
+      "checker_recomputed_sha256_16": "0038afb8a22cee26",
+      "note": ""
+    },
+    {
+      "target_speed": 0.225,
+      "artifact": "gdown_v0225_k0.npz",
+      "v_realized": 0.225,
+      "abs_err": 1.7e-06,
+      "checker_recomputed_sha256_16": "eb87ad8491adb447",
+      "note": ""
+    },
+    {
+      "target_speed": 0.25,
+      "artifact": "gdown_v0250_k0.npz",
+      "v_realized": 0.25,
+      "abs_err": 7e-09,
+      "checker_recomputed_sha256_16": "626b340737e9d953",
+      "note": ""
+    },
+    {
+      "target_speed": 0.275,
+      "artifact": "gdown_smoke_v275_k0.npz",
+      "v_realized": 0.275,
+      "abs_err": 8e-09,
+      "checker_recomputed_sha256_16": "09c2915c5c713afb",
+      "note": ""
+    },
+    {
+      "target_speed": 0.277,
+      "artifact": "to36_hybrid_gait_F11b_flat.npz",
+      "v_realized": 0.2768,
+      "abs_err": 0.0002,
+      "checker_recomputed_sha256_16": "3f239cbf991b382b",
+      "note": ""
+    },
+    {
+      "target_speed": 0.3,
+      "artifact": "to36_hybrid_gait_F11_slope2.npz",
+      "v_realized": 0.2925,
+      "abs_err": 0.0075,
+      "checker_recomputed_sha256_16": "da6cb3a6d72c33b5",
+      "note": "accepted under the pre-registered ±0.02 m/s realization tolerance（禁触发重解）"
+    },
+    {
+      "target_speed": 0.325,
+      "artifact": "to36_hybrid_gait_F9.npz",
+      "v_realized": 0.3179,
+      "abs_err": 0.0071,
+      "checker_recomputed_sha256_16": "e7b4cdf455ab0864",
+      "note": "accepted under the pre-registered ±0.02 m/s realization tolerance（禁触发重解）"
+    }
+  ],
+  "verdict": {
+    "schema_check": "PASS",
+    "L1": "PASS",
+    "L2": "PASS",
+    "L3": "PASS",
+    "L4": "PASS",
+    "overall": "PASS"
+  }
+}
