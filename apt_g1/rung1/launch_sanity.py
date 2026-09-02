@@ -392,6 +392,8 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
             "checkpoint_sha256": sha256_file(vae_path),
             "state_dict_sha256_before_episode": sd_before,
             "state_dict_sha256_after_episode": sd_after,
+            "state_dict_key_shapes": {
+                k: list(v.shape) for k, v in sorted(env._vae.state_dict().items())},
             "architecture": {
                 "class": type(env._vae).__name__,
                 "token_dim": env._vae.token_dim,
