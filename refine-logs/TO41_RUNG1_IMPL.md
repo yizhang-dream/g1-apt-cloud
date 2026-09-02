@@ -6,11 +6,17 @@
 > Compute BLOCKED**（D + execution freeze 全过前不得开跑，并覆盖
 > per-condition τ material generation——Decision 3）。分支状态：
 > Unambiguous parts PROCEEDING（仅章程/harness 骨架）｜ Conditioning
-> impl **BLOCKED** ｜ Incompatibility #1 已裁定为 Mode A（§3.3，十四轮）｜
+> impl **AUTHORIZED（仅 Mode A，三十四轮）** ｜ Incompatibility #1 已裁定为 Mode A（§3.3，十四轮）｜
 > Estimands **LOCKED\*** ｜ **owner freeze review 完成（三十三轮，
 > 2026-09-02，§8）：G↓ CLOSED/PASS + material 7/7 + 批准进入 D1/D2/D3 +
-> 不为 0.277/0.300/0.325 重解；Main Rung 1 experimental compute 仍不
-> 批准，待 D1/D2/D3 全 PASS + execution freeze**。
+> 不为 0.277/0.300/0.325 重解｜三十四轮评审（9.8/10，§9）：项目跨入
+> 运行时 conformance 阶段，D 阶段执行协议 = `TO41_D_DRYRUN_PROTOCOL.md`，
+> 下一份审计产物 = 28-cell D dry-run report（非实验结果）｜三十五轮
+> 评审（9.9/10，同日）：**D 协议定稿 FROZEN + implementation 开工**
+> （语义 = protocol authorized / implementation phase opened，非 D 已
+> 通过；D 阶段判据唯一事实源自协议文档，本章程不再新增 D 判据）；
+> Main Rung 1 experimental compute 仍不批准，待 D1/D2/D3 全 PASS +
+> execution freeze**。
 > **FROZEN\*/LOCKED\* 语义（十一轮）**：除 genuine incompatibility 外不得
 > 修改；发现 incompatibility 时由 owner 决定是否 reopen——protocol frozen
 > against implementation drift, but reopenable by owner decision。
@@ -610,3 +616,73 @@ generation / cell assignment / stopping rule（详见 G_DOWN_SPEC §10）。
 能，CLOSED）转为 **「冻结 decoder 后，在严格控制 τ(v) material identity
 的情况下，C1/C2 是否改变 τ_ff effect?」**——这才是 B / Mode A 真正要回答
 的问题。
+
+## 9. 评审轮（三十四轮，2026-09-02）：9.8/10 —— 运行时 conformance 阶段 + implementation 开工授权
+
+**裁定**：G↓ **CLOSED / PASS** 维持；material map **FROZEN / 7-of-7**；
+D1/D2/D3 **AUTHORIZED**；**Conditioning runtime implementation
+AUTHORIZED（只能实现 Mode A：`τ(v,C)=τ(v)`）**；Main Rung 1 experimental
+compute **继续 BLOCKED**。评审定性：冻结/未冻结状态完全分离（见
+`TO41_D_DRYRUN_PROTOCOL.md` §0 状态板），项目从「材料供应问题」正式跨入
+「运行时 conformance」阶段；本轮落盘本身无流程错误。
+
+**本轮增量（11 条执行性审查点；其中 1–3 为对既有状态的确认，4–11 为新增
+纪律，全部落盘进 `TO41_D_DRYRUN_PROTOCOL.md`）**：
+
+1. **状态板分离确认**：Specification FROZEN / Grid APPROVED / Mode A
+   LOCKED / τ material FROZEN / G↓ CLOSED / D AUTHORIZED / execution
+   freeze PENDING / compute BLOCKED——material freeze 到 experiment 之间的
+   D1/D2/D3 未被偷掉（G↓ 成功没有直接兑换成 experiment）。
+2. **28-cell launch table 确认为 execution sanity 核心检查**：Mode A
+   不变量 `τ(v,C)=τ(v)` 的 runtime 落地判据 = 同一 target speed 的 4 个
+   cell 共享同一 τ material identity——比「YAML 有 14 行」强得多。
+3. **D3 两条等式确认分开保留**：`T_runtime = T_mapping`（assignment
+   conformance）与 `τ_runtime = τ_frozen`（material conformance）不可
+   合并成单句「runtime conforms」。
+4. **D1 检查面加严**：不得把「weights unchanged」当完整 invariance——
+   必查 checkpoint hash / state_dict hash / architecture identity /
+   latent dim / input transform identity / normalization semantics /
+   **output tensor contract**（防「weights 同、preprocessing 改、输出
+   变」的假 PASS）。
+5. **D2 机械化**：∀v，C1/C2 两 cell 的 `tau_hash` 完全一致 = Mode A
+   fingerprint；出现 C1→H1 / C2→H2（各自都合法）也判 **FAIL**——语义是
+   Mode A 被实现成了 Mode B / joint treatment，不是「两个 τ 都有效」。
+6. **abs_error 纪律**：七字段诊断量恒为 execution diagnostic；禁止
+   Rung 1 开始后临时把 `abs_error` 升格为分析模型 covariate adjustment
+   （会把 material realization error 重新引入 analysis model）；
+   `target_speed = treatment identity` 不变。
+7. **0.300/0.325 realization error**：0.2925/0.3179（7.5e-03/7.1e-03）
+   在最终 material map 显眼记录，但**不得**触发重解——否则 ±0.02 容差门
+   事后变成精度优化目标；语义恒为 accepted under pre-registered
+   tolerance。
+8. **G↓ CLOSED 后不再从其抽材料**：不新增 downward source / 不重解低速 /
+   不扩 seed / 不改 canonical material；D 阶段 material plumbing 问题
+   报 conformance failure（修 implementation 重跑 D），重开 material
+   freeze 需显式 owner reopen。
+9. **tracker 科学/工程收束分离**：TO41 台账中 G↓ 4 run = material-
+   generation/coverage 结果（工程收束），非 Rung 1 scientific result
+   （已同步 `tracker/TO.md` TO41 段头 + 本节 §8 语义）。
+10. **implementation 第一份输出 = 完整 D dry-run report**（单一 audit
+    artifact，schema 见协议 §4：cell / target_speed / decoder_condition /
+    tau_hash / decoder_hash / assignment / PASS-FAIL / 失败原因），不是
+    实验结果；它是 execution freeze 的证据对象。
+11. **28 cells ≠ 28 独立 solver/训练 jobs**：dry-run = 最小执行样本验证
+    plumbing；Rung 1 compute 才按实验设计启动训练/评估。
+
+**执行顺序（本轮批准）**：implementation → 28-cell D dry-run → D1 → D2 →
+D3 → audit artifact → 全 PASS → owner execution freeze → Rung 1 compute。
+
+**保险丝（本轮特别强调）**：D 阶段发现 runtime bug → 修 implementation
+→ 重跑 D，**不能为让 D PASS 修改 frozen specification**；若 implementation
+发现 Mode A 在真实代码里无法忠实实现 → 不是普通 bug，而是 **genuine
+incompatibility → owner reopen**（§3 流程）。
+
+**三十五轮（2026-09-02，9.9/10）尾注**：批准提交 + implementation 开工
+（语义 = protocol authorized / implementation phase opened，**不是**
+「D dry-run completed」）；协议文档定稿 **FROZEN**，十条执行性加严
+（D1 mode/layout/shapes 升 runtime identity、D2 `tau_source_lineage`、
+D3A/D3B verdict 拆分、checker 独立审计、D 禁收 performance 字段、
+lab-ts-only 执行、SCRIPT_MAP read-only checker 等）全部落盘
+`TO41_D_DRYRUN_PROTOCOL.md` §1–§4、§7、§9–§10。本章程不再新增 D 阶段
+判据——**D 阶段判据唯一事实源 = 协议文档**；协议冻结后唯一允许变更 =
+把 frozen specification 变成可执行代码。

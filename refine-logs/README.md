@@ -78,13 +78,19 @@ refine-logs/README.md…………………………………………………�
 │   │   ……………………………………………………………（Rung 0：τ_ff+PD+RL 三臂配对 + 2×2
 │   │   ……………………………………………………………交叉注入诊断 + 门控三分支）。活跃
 │   ├── TO41_RUNG1_IMPL.md………………………… 实施章程：Rung 1 运行时实现 + D1/D2/D3
-│   │   ……………………………………………………………integrity test（owner freeze review 完成：
-│   │   ……………………………………………………………G↓ 结案 + D1/D2/D3 授权 + identity 解释
-│   │   ……………………………………………………………纪律；compute BLOCKED）。活跃
+│   │   ……………………………………………………………integrity test（三十三轮 owner freeze：
+│   │   ……………………………………………………………G↓ 结案 + D 授权 + identity 解释纪律；
+│   │   ……………………………………………………………三十四轮 9.8/10：implementation 授权
+│   │   ……………………………………………………………（仅 Mode A）；compute BLOCKED）。活跃
 │   ├── TO41_G_DOWN_SPEC.md……………………… sub-campaign：低速 downward-continuation
 │   │   ……………………………………………………………材料生成（收束：4/4 k=0 首过 + 7/7
 │   │   ……………………………………………………………availability map + determinism 全 PASS，
 │   │   ……………………………………………………………owner 裁定 CLOSED/PASS，09-02）。收束
+│   ├── TO41_D_DRYRUN_PROTOCOL.md…………… 执行协议：D1/D2/D3 28-cell conformance
+│   │   ……………………………………………………………dry-run（状态板 + D1 七字段清单 +
+│   │   ……………………………………………………………D2 same-τ fingerprint + D3 两等式 +
+│   │   ……………………………………………………………audit schema + 材料纪律 + 保险丝）。
+│   │   ……………………………………………………………活跃
 │   └── EXPERIMENT_PLAN.md………………………… 计划：早期英文实验计划（被阶段史收束）。归档
 └── 域外路由（上游/下游权威，不属本树强制范围，仅作导航）
     ├── ../HANDOFF/README.md……………………… 层位总图（§0）+ 结论口径（§3，跨域权威）

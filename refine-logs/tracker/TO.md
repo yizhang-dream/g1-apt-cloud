@@ -949,3 +949,44 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
 5. **0.2667 分裂带降级**为 post-hoc consistency observation（历史诊断
    信息），退出 target definition / source selection / material
    generation / cell assignment / stopping rule 一切设计功能。
+
+**三十四轮评审（2026-09-02，9.8/10）与语义分离**
+
+- **本段 G↓ 4 run（TO41-GD-\*）= material-generation / coverage 结果
+  （工程收束），不是 Rung 1 scientific result**——Rung 1 科学结论只能
+  来自 D 全 PASS + execution freeze + 28-cell compute 之后；未来回看
+  不得把 TO41 误读为「已产生 Rung 1 研究结论」。
+- 裁定：G↓ CLOSED/PASS 维持、material map FROZEN 7/7、D1/D2/D3
+  AUTHORIZED、**Conditioning runtime implementation AUTHORIZED（仅
+  Mode A：τ(v,C)=τ(v)）**、Main Rung 1 experimental compute 继续
+  BLOCKED。
+- D 阶段执行协议（D1 七字段清单 / D2 same-τ fingerprint / D3 两等式 /
+  audit artifact schema / G↓ CLOSED 后材料纪律 / abs_error 不进分析
+  模型 / 两条保险丝）= **TO41_D_DRYRUN_PROTOCOL.md**；下一份审计产物 =
+  28-cell D dry-run report（非实验结果）。叙事全文 = TO41_RUNG1_IMPL.md
+  §9。
+
+**三十五轮评审（2026-09-02，9.9/10）：D 协议定稿 + implementation 开工**
+
+- 裁定：批准提交本轮文档，语义为 **D dry-run execution protocol
+  authorized / implementation phase opened**（**不是**「D 已启动/已
+  通过」）；D1/D2/D3 verdict 全部 PENDING，execution freeze 待 D 全
+  PASS。
+- 十点加严全部落盘协议文档：①D1 的 mode / variable layout / tensor
+  shape 升格 runtime identity（先例 = G_DOWN_SPEC「launch audit
+  incident（三十一轮）」pointe/foot mismatch），weights same 不构成
+  D1 PASS；②D2 逐 cell 加记 `tau_source_lineage`（防巧合同 hash）；
+  ③D3 verdict 拆 `D3A assignment_conformance` / `D3B
+  material_conformance` / `D3` 三行（失败可定位 condition vs material
+  plumbing）；④checker 独立审计，禁止消费 runtime 自报 PASS flag
+  （runtime 产 record，verdict 只出自 checker）；⑤D PASS 禁收任何
+  performance/locomotion quality 字段（reward/平滑度/stability 与
+  conformance 无关，防 D 滑向小型实验）；⑥G↓ CLOSED 禁抽材料维持；
+  ⑦abs_error 恒为 diagnostic 维持；⑧D 实际执行仅限 lab-ts frozen
+  env，本机（无 venv）禁偷跑写 PASS；⑨SCRIPT_MAP 登记：runtime =
+  state-changing、checker = read-only audit；⑩execution freeze 留到
+  D 全 PASS 之后（状态板不变）。
+- **协议自此 FROZEN**：implementation 阶段唯一允许变更 = 把 frozen
+  specification 变成可执行代码；实现中需「重新解释」某已冻结字段 →
+  立即停 → genuine incompatibility → owner reopen，禁止顺手修协议
+  （协议 §7 保险丝 3）。
