@@ -151,12 +151,53 @@ def _make_materials(tmp: Path, availability: dict) -> dict[float, dict]:
     return mats
 
 
+def _make_luts(tmp: Path, mats: dict[float, dict]) -> dict:
+    """7 份合成 LUT npz + tmp manifest（双层身份链的 derived 层）。"""
+    import datetime as _dt
+
+    ldir = tmp / "luts"
+    ldir.mkdir(exist_ok=True)
+    rng = np.random.default_rng(7)
+    entries = []
+    for v, m in sorted(mats.items()):
+        p = ldir / f"to41_lut_{v:.3f}.npz"
+        lut_tau = rng.normal(0, 1, size=(120, 6)) * (1.0 + v)  # 独立内容
+        np.savez(p, q_ref6=lut_tau * 0.5, tau_ref6=lut_tau,
+                 pitch=rng.normal(size=120), z=rng.normal(size=120) + 0.78,
+                 heel_rel=rng.normal(size=(120, 2)), T=np.float64(1.5),
+                 v_avg=np.float64(v))
+        entries.append({
+            "target_speed": v,
+            "source_artifact": m["path"].name,
+            "source_sha256": m["file_sha256"],
+            "lut_file": p.name,
+            "lut_file_sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+            "lut_array_sha256": {k: canonical_array_sha256(np.load(p)[k])
+                                 for k in ("q_ref6", "tau_ref6", "pitch", "z", "heel_rel")},
+            "m_per_phase": 60, "T": 1.5, "v_avg": v, "wrap_gap_q": 0.0,
+            "wrap_gap_scal": 0.0,
+        })
+    manifest = {
+        "artifact_id": "rung1-material-lut-manifest", "schema_version": 1,
+        "created_utc": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "entries": entries,
+    }
+    mp = ldir / "lut_manifest.json"
+    mp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    from apt_g1.rung1.l_checker import load_lut_manifest
+
+    return load_lut_manifest(mp)
+
+
 def _synthetic_receipt(cell: dict, cell_index: int, mapping: dict,
-                       mats: dict[float, dict], tmp: Path) -> dict:
+                       mats: dict[float, dict], luts: dict, tmp: Path) -> dict:
     v = cell["target_speed"]
     availability = rt_load_availability()
     a = resolve_cell(cell, mapping, availability)
     m = mats[v]
+    lut_entry = luts["entries"][round(float(v), 3)]
+    lut_path = luts["manifest_path"].parent / lut_entry["lut_file"]
+    lut_file_sha = hashlib.sha256(lut_path.read_bytes()).hexdigest()
     nat_bin = _natural_bin(v)
     mapped_bin = a["speed_bin"]
     nat_id = next((cid for cid, c in mapping["conditions"].items()
@@ -166,7 +207,7 @@ def _synthetic_receipt(cell: dict, cell_index: int, mapping: dict,
     changed = STEPS if nat_bin != mapped_bin else 0
     fake_sd = "a" * 64
     return {
-        "schema": "rung1-launch-sanity-receipt/v1",
+        "schema": "rung1-launch-sanity-receipt/v2",
         "cell_id": cell["cell_id"],
         "cell_index": cell_index,
         "target_speed": v,
@@ -198,27 +239,38 @@ def _synthetic_receipt(cell: dict, cell_index: int, mapping: dict,
             "latent_cmd_phase_rate": False, "latent_vae_path": "vae.pt",
             "vx_max": 0.8, "vx_min": 0.0, "use_sonic_prior": True,
             "sonic_decoder_path": "dec.onnx", "router_model_dir": "router",
-            "use_2hz_gate": True, "to_ref": True, "to_ref_npz": str(m["path"]),
+            "use_2hz_gate": True, "to_ref": True, "to_ref_npz": str(lut_path),
             "to_ref_obs_zero": True, "to_ref_w": 0.0,
             "to_tau": cell["tau_ff"] == "on", "to_tau_w": 1.0,
             "to_ref_gate2": 0.0036, "to_ref_sigma2": 0.1,
             "terrain": "plane_importer(seed=0,noise=0.04)",
         },
         "tau_material": {
-            "artifact": a["tau_material"]["artifact"],
-            "materials_root_used": str(tmp),
-            "npz_path": str(m["path"]),
-            "file_sha256": m["file_sha256"],
-            "sha256_16": m["file_sha256"][:16],
-            "source_lineage": f"synthetic-lineage-{v}",
-            "v_realized": a["tau_material"]["v_realized"],
-            "abs_err": a["tau_material"]["abs_err"],
-            "registry_id": None, "registry_sha256_16": None,
-            "applied_to_env": True,
-            "cfg_to_ref_npz": str(m["path"]),
+            "lut_manifest_sha256": luts["manifest_sha256"],
+            "frozen_material": {
+                "artifact": a["tau_material"]["artifact"],
+                "materials_root_used": str(tmp),
+                "npz_path": str(m["path"]),
+                "file_sha256": m["file_sha256"],
+                "sha256_16": m["file_sha256"][:16],
+                "source_lineage": f"synthetic-lineage-{v}",
+                "v_realized": a["tau_material"]["v_realized"],
+                "abs_err": a["tau_material"]["abs_err"],
+                "registry_id": None, "registry_sha256_16": None,
+            },
+            "derived_lut": {
+                "file": str(lut_path),
+                "file_sha256": lut_file_sha,
+                "array_sha256": lut_entry["lut_array_sha256"],
+                "source_sha256_manifest": lut_entry["source_sha256"],
+                "source_artifact_manifest": lut_entry["source_artifact"],
+                "m_per_phase": 60, "T": 1.5, "v_avg": v, "wrap_gap_q": 0.0,
+                "applied_to_env": True,
+                "cfg_to_ref_npz": str(lut_path),
+            },
             "buffer_shape": [120, 6], "buffer_dtype": "<f4",
-            "buffer_sha256_pre": m["buffer_sha256"],
-            "buffer_sha256_post": m["buffer_sha256"],
+            "buffer_sha256_pre": lut_entry["lut_array_sha256"]["tau_ref6"],
+            "buffer_sha256_post": lut_entry["lut_array_sha256"]["tau_ref6"],
             "to_vavg": a["tau_material"]["v_realized"],
             "to_m": 120, "to_rate": 2.618, "to_kp_sagittal6": [99.1] * 6,
         },
@@ -271,22 +323,23 @@ def _synthetic_receipt(cell: dict, cell_index: int, mapping: dict,
     }
 
 
-def _build_synthetic_set(base: Path) -> Path:
+def _build_synthetic_set(base: Path) -> tuple[Path, dict]:
     mapping = rt_load_mapping()
     availability = rt_load_availability()
     mats = _make_materials(base, availability)
+    luts = _make_luts(base, mats)
     rdir = base / "receipts"
     rdir.mkdir()
     for i, cell in enumerate(rt_enumerate_cells(mapping)):
-        r = _synthetic_receipt(cell, i, mapping, mats, base)
+        r = _synthetic_receipt(cell, i, mapping, mats, luts, base)
         (rdir / f"receipt_{cell['cell_id']}.json").write_text(
             json.dumps(r, ensure_ascii=False), encoding="utf-8")
-    return rdir
+    return rdir, luts
 
 
 def t_l3_checker_positive(base: Path) -> tuple[bool, str]:
-    rdir = _build_synthetic_set(base)
-    rep = l_checker.build_report(rdir, [base], "local")
+    rdir, luts = _build_synthetic_set(base)
+    rep = l_checker.build_report(rdir, [base], "local", luts)
     v = rep["verdict"]
     if v["overall"] != "PASS":
         return False, (f"T-L3: 合成正例未全 PASS：{v}；"
@@ -299,9 +352,9 @@ def t_l3_checker_positive(base: Path) -> tuple[bool, str]:
 def _mutated_report(mutator) -> dict:
     with tempfile.TemporaryDirectory() as td:
         base = Path(td)
-        rdir = _build_synthetic_set(base)
+        rdir, luts = _build_synthetic_set(base)
         mutator(rdir)
-        return l_checker.build_report(rdir, [base], "local")
+        return l_checker.build_report(rdir, [base], "local", luts)
 
 
 def t_l4_negatives() -> tuple[bool, str]:

@@ -42,7 +42,9 @@ from apt_g1.rung1.d_checker import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RECEIPT_SCHEMA = "rung1-launch-sanity-receipt/v1"
+RECEIPT_SCHEMA = "rung1-launch-sanity-receipt/v2"
+LUT_MANIFEST_PATH = REPO_ROOT / "apt_g1/outputs/sync/to41_sanity/luts/lut_manifest.json"
+LUT_ARRAY_FIELDS = ("q_ref6", "tau_ref6", "pitch", "z", "heel_rel")
 
 RECEIPT_TOP_KEYS = {
     "schema", "cell_id", "cell_index", "target_speed", "condition_arm",
@@ -90,6 +92,15 @@ def find_material(artifact: str, roots: list[Path]) -> Path | None:
     return None
 
 
+def load_lut_manifest(path: Path = LUT_MANIFEST_PATH) -> dict:
+    """L0 manifest 的 checker 侧独立解析（不 import launch_sanity）。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if raw.get("artifact_id") != "rung1-material-lut-manifest" or raw.get("schema_version") != 1:
+        raise SystemExit(f"FAIL: {path} 不是 rung1-material-lut-manifest/v1")
+    entries = {round(float(e["target_speed"]), 3): e for e in raw["entries"]}
+    return {"manifest_path": path, "manifest_sha256": sha256_file(path), "entries": entries}
+
+
 def validate_receipt(r: dict) -> list[str]:
     bad: list[str] = []
     if r.get("schema") != RECEIPT_SCHEMA:
@@ -108,15 +119,31 @@ def validate_receipt(r: dict) -> list[str]:
 # L1 — τ material consumption（Mode A env-level fingerprint）
 # ---------------------------------------------------------------------------
 
-def check_l1(receipts: dict[str, dict], mapping: dict, materials_roots: list[Path]):
+def check_l1(receipts: dict[str, dict], mapping: dict, materials_roots: list[Path],
+             lut_manifest: dict):
+    """τ material consumption（双层身份链 + Mode A env-level fingerprint）。
+
+    身份链：冻结材料 npz（canonical，D 链锚定）--manifest source_sha256-->
+    derived LUT（env cfg.to_ref_npz 消费形式）--> env._to_tau buffer。
+    checker 独立重算：材料文件 sha / LUT 文件 sha / LUT 5 字段数组级规范
+    哈希 / buffer（= LUT tau_ref6 float32 规范哈希）。
+    """
     failures: list[str] = []
     per_v: list[dict] = []
     for v in mapping["grid"]:
+        v3 = round(float(v), 3)
         cells = [c for c in enumerate_cells(mapping) if c["target_speed"] == v]
         bad: list[str] = []
         row = {"target_speed": v, "cells": {}, "verdict": "PASS"}
-        hashes: set[str] = set()
+        hashes_frozen: set[str] = set()
+        hashes_lut: set[str] = set()
+        hashes_buf: set[str] = set()
         lineages: set[str] = set()
+        lut_entry = lut_manifest["entries"].get(v3)
+        if lut_entry is None:
+            bad.append(f"LUT manifest 缺 v={v}")
+        lut_path = (lut_manifest["manifest_path"].parent / lut_entry["lut_file"]) \
+            if lut_entry else None
         for cell in cells:
             cid = cell["cell_id"]
             r = receipts.get(cid)
@@ -126,33 +153,51 @@ def check_l1(receipts: dict[str, dict], mapping: dict, materials_roots: list[Pat
                 continue
             tm = r["tau_material"]
             tc = r["tau_consumption"]
+            fm = tm["frozen_material"]
+            dl = tm["derived_lut"]
             cell_bad: list[str] = []
-            # buffer 前后全等（episode 内缓冲不被换）
+            # (a) 冻结材料层：buffer episode 前后全等（缓冲不被换）
             if tm["buffer_sha256_pre"] != tm["buffer_sha256_post"]:
                 cell_bad.append("τ buffer 哈希 episode 前后不一致")
-            hashes.add(tm["buffer_sha256_pre"])
-            lineages.add(tm["source_lineage"])
-            # checker 独立重算：文件 sha + npz tau_ref6 → float32 buffer 哈希
-            mp = find_material(tm["artifact"], materials_roots)
+            hashes_frozen.add(fm["file_sha256"])
+            hashes_lut.add(dl["file_sha256"])
+            hashes_buf.add(tm["buffer_sha256_pre"])
+            lineages.add(fm["source_lineage"])
+            # (b) 冻结材料文件独立重算
+            mp = find_material(fm["artifact"], materials_roots)
             if mp is None:
-                cell_bad.append(f"material 不可达: {tm['artifact']}")
+                cell_bad.append(f"material 不可达: {fm['artifact']}")
             else:
-                fsha = sha256_file(mp)
-                if fsha != tm["file_sha256"]:
-                    cell_bad.append("material 文件 sha256 != receipt 记录")
-                recomputed = None
-                with np.load(mp) as z:
-                    if "tau_ref6" not in z.files:
-                        cell_bad.append("npz 缺 tau_ref6")
-                    else:
-                        recomputed = _array_sha256(z["tau_ref6"])
-                if recomputed is not None and tm["buffer_sha256_pre"] != recomputed:
-                    cell_bad.append("buffer 哈希 != checker 独立重算 npz tau_ref6")
-            if not tm.get("source_lineage"):
+                if sha256_file(mp) != fm["file_sha256"]:
+                    cell_bad.append("冻结材料文件 sha256 != receipt 记录")
+            # (c) LUT 层：文件 sha + 5 字段数组级哈希独立重算 + source 链闭合
+            if lut_path is None or not lut_path.exists():
+                cell_bad.append("LUT 不可达")
+            else:
+                if sha256_file(lut_path) != dl["file_sha256"]:
+                    cell_bad.append("LUT 文件 sha256 != receipt 记录")
+                with np.load(lut_path) as z:
+                    recomputed = {k: _array_sha256(z[k]) for k in LUT_ARRAY_FIELDS
+                                  if k in z.files}
+                for k in LUT_ARRAY_FIELDS:
+                    if recomputed.get(k) != dl["array_sha256"].get(k):
+                        cell_bad.append(f"LUT 数组身份 {k} != checker 独立重算")
+                with np.load(lut_path) as z:
+                    buf_expect = _array_sha256(z["tau_ref6"])
+                if tm["buffer_sha256_pre"] != buf_expect:
+                    cell_bad.append("buffer 哈希 != checker 独立重算 LUT tau_ref6")
+                # source 链闭合：LUT 必须声称源自该冻结材料，且 manifest 同
+                if dl.get("source_sha256_manifest") != fm["file_sha256"]:
+                    cell_bad.append("derived_lut.source_sha256 != 冻结材料 sha（链断裂）")
+                if lut_entry and lut_entry.get("source_sha256") != fm["file_sha256"]:
+                    cell_bad.append("manifest source_sha256 != 冻结材料 sha（链断裂）")
+                if lut_entry and lut_entry.get("lut_file_sha256") != dl["file_sha256"]:
+                    cell_bad.append("manifest lut_file_sha256 != receipt 记录")
+            if lut_entry and tm.get("lut_manifest_sha256") != lut_manifest["manifest_sha256"]:
+                cell_bad.append("receipt 的 lut_manifest_sha256 != checker 读到的 manifest")
+            if not fm.get("source_lineage"):
                 cell_bad.append("tau_source_lineage 缺失（协议加严：hash 相等也不足）")
-            if tm.get("applied_to_env") is not True:
-                cell_bad.append("applied_to_env != true（材料未进入 env 装载路径）")
-            # 消费语义：ON 臂有消费且无 NaN；OFF 臂零注入
+            # (d) 消费语义：ON 臂有消费且无 NaN；OFF 臂零注入
             if cell["tau_ff"] == "on":
                 if tc["n_tau_calls"] < 1:
                     cell_bad.append("τ ON 臂 n_tau_calls == 0（冻结消费点未执行）")
@@ -164,11 +209,15 @@ def check_l1(receipts: dict[str, dict], mapping: dict, materials_roots: list[Pat
             row["cells"][cid] = "FAIL" if cell_bad else "PASS"
             for b in cell_bad:
                 failures.append(f"{cid}: {b}")
-        if len(hashes) > 1:
-            bad.append(f"Mode A fingerprint 破坏：4 cell buffer 哈希不唯一 ({len(hashes)} 种)")
+        for hashes, label in [(hashes_frozen, "冻结材料"), (hashes_lut, "LUT"),
+                              (hashes_buf, "buffer")]:
+            if len(hashes) > 1:
+                bad.append(f"Mode A fingerprint 破坏：4 cell {label}哈希不唯一 "
+                           f"({len(hashes)} 种)")
         if len(lineages) > 1:
             bad.append("lineage 不一致（同 v 不同冻结 artifact 引用）")
-        row["buffer_sha256_16"] = sorted(h[:16] for h in hashes)
+        row["frozen_sha256_16"] = sorted(h[:16] for h in hashes_frozen)
+        row["buffer_sha256_16"] = sorted(h[:16] for h in hashes_buf)
         row["verdict"] = "FAIL" if (bad or any(
             s == "FAIL" for s in row["cells"].values())) else "PASS"
         for b in bad:
@@ -274,9 +323,16 @@ def check_l3(receipts: dict[str, dict], mapping: dict):
                 bad.append(f"两臂 cfg diff {diff} != {{'to_tau': (False, True)}}")
             for a, b_, label in [
                 (off["decoder_identity"], on["decoder_identity"], "decoder_identity"),
-                (off["tau_material"]["file_sha256"], on["tau_material"]["file_sha256"], "material file sha"),
-                (off["tau_material"]["buffer_sha256_pre"], on["tau_material"]["buffer_sha256_pre"], "buffer sha"),
-                (off["assignment"]["decoder_condition_id"], on["assignment"]["decoder_condition_id"], "condition"),
+                (off["tau_material"]["frozen_material"]["file_sha256"],
+                 on["tau_material"]["frozen_material"]["file_sha256"], "frozen material sha"),
+                (off["tau_material"]["derived_lut"]["file_sha256"],
+                 on["tau_material"]["derived_lut"]["file_sha256"], "derived LUT sha"),
+                (off["tau_material"]["derived_lut"]["array_sha256"],
+                 on["tau_material"]["derived_lut"]["array_sha256"], "derived LUT array sha"),
+                (off["tau_material"]["buffer_sha256_pre"],
+                 on["tau_material"]["buffer_sha256_pre"], "buffer sha"),
+                (off["assignment"]["decoder_condition_id"],
+                 on["assignment"]["decoder_condition_id"], "condition"),
                 (off["execution"]["steps_requested"], on["execution"]["steps_requested"], "steps"),
                 (off["execution"]["boundary_step"], on["execution"]["boundary_step"], "boundary_step"),
                 (off["execution"]["python_version"], on["execution"]["python_version"], "python"),
@@ -344,8 +400,10 @@ def check_l4(receipts: dict[str, dict], mapping: dict):
         if di["mode_layout"]["decode_call_form"] != "decode(z, phase_sc(sin,cos), v_bin, d_bin)":
             bad.append("decode 调用形 != 冻结 4 参形式")
         # owner L4 receipt 必备字段非空
-        if not r["tau_material"]["source_lineage"]:
+        if not r["tau_material"]["frozen_material"]["source_lineage"]:
             bad.append("tau_source_lineage 空")
+        if not r["tau_material"]["derived_lut"].get("source_sha256_manifest"):
+            bad.append("derived_lut.source_sha256 空（LUT→冻结材料链缺失）")
         if not r["tau_consumption"].get("consumer_identity"):
             bad.append("consumer_identity 空")
         for b in bad:
@@ -373,7 +431,8 @@ def material_baseline(mapping: dict, materials_roots: list[Path]) -> list[dict]:
     return rows
 
 
-def build_report(receipts_dir: Path, materials_roots: list[Path], env_tag: str) -> dict:
+def build_report(receipts_dir: Path, materials_roots: list[Path], env_tag: str,
+                 lut_manifest: dict | None = None) -> dict:
     receipts: dict[str, dict] = {}
     schema_failures: list[str] = []
     found = sorted(receipts_dir.glob("receipt_*.json"))
@@ -393,6 +452,8 @@ def build_report(receipts_dir: Path, materials_roots: list[Path], env_tag: str) 
             "receipts_dir": str(receipts_dir),
             "receipts_found": len(found),
             "materials_roots": [str(p) for p in materials_roots],
+            "lut_manifest": str(lut_manifest["manifest_path"]),
+            "lut_manifest_sha256": lut_manifest["manifest_sha256"],
         },
         "schema_check": {"verdict": "FAIL" if schema_failures else "PASS",
                          "failures": schema_failures},
@@ -405,7 +466,7 @@ def build_report(receipts_dir: Path, materials_roots: list[Path], env_tag: str) 
             "可忠实实现；不构成任何 Rung 1 科学结论。",
         ],
     }
-    l1v, l1f, l1t = check_l1(receipts, mapping, materials_roots)
+    l1v, l1f, l1t = check_l1(receipts, mapping, materials_roots, lut_manifest)
     l2v, l2f, l2t = check_l2(receipts, mapping)
     l3v, l3f, l3t = check_l3(receipts, mapping)
     l4v, l4f, l4t = check_l4(receipts, mapping)
@@ -480,7 +541,9 @@ def main() -> int:
     if args.env_tag == "lab-ts" and not args.materials_root:
         raise SystemExit("FAIL: lab-ts 报告必须 --materials-root（checker 独立重算材料）")
 
-    rep = build_report(args.receipts_dir, list(args.materials_root), args.env_tag)
+    lut_manifest = load_lut_manifest()
+    rep = build_report(args.receipts_dir, list(args.materials_root), args.env_tag,
+                       lut_manifest)
     args.out.mkdir(parents=True, exist_ok=True)
     suffix = "" if args.env_tag == "lab-ts" else "_local_not_L_artifact"
     jp = args.out / f"L_report{suffix}.json"

@@ -49,8 +49,9 @@ D1/D2/D3 decode conformance → L1–L4 env launch sanity → execution wiring P
 对每个 target v：C1、C2（及 τ ON/OFF 共 4 cell）消费同一个 τ(v)，并记录
 实际 consumer identity/hash：
 
-- **material 进入路径** = 冻结 env 既有通道 `cfg.to_ref_npz` → env
-  `__init__` 自行 `np.load`（`apt_flat_env.py:319-328`，零改动）；
+1. **材料进入路径** = 冻结材料的 **L0 derived LUT**（§5b manifest）→ env
+   既有通道 `cfg.to_ref_npz` → env `__init__` 自行 `np.load`（
+   `apt_flat_env.py:319-328`，零改动）；
 - **consumer identity** = `apt_flat_env.py:765-773 _apply_action (to_tau
   branch) ← _to_ref_lookup():776-787 ← self._to_tau`（receipt 逐 cell 记录
   该字符串 + buffer 快照）；
@@ -146,6 +147,43 @@ achieved speed / h_min 一律不入 receipt 与 verdict——本 gate 只测接�
    起止，preflight 三源哈希每 cell 进程都跑。
 5. **执行环境**：仅 lab-ts frozen env（`.venv_isaac`，D §10.1 同款
    env-tag 机械闸）；本机只允许 static 配置层核对 / selftest / 登记。
+
+## 5b. L0 — 材料消费格式导出（launch preparation；gate 首格发现，2026-09-03）
+
+**gap 发现（gate 的第一项产出）**：cell 0 执行即暴露 `KeyError: 'q_ref6'`——
+7 份冻结材料全部是 to36 hybrid dump 格式（X_left/X_right/U_left/U_right…），
+而 env 冻结加载路径（`apt_flat_env.py:319-328`）需要 TO38 LUT 格式
+（q_ref6/tau_ref6/pitch/z/heel_rel/T/v_avg）。**D decode-only dry-run 无法
+发现这一断链**（D 只验材料身份哈希，不加载 q_ref6）——正是本轮 gate 存在
+的理由（"完整训练环境 plumbing" ≠ "decode plumbing"）。
+
+**定性**：缺失的 launch-preparation plumbing，**不是** genuine
+incompatibility、**不是** material reopen——材料 canonical 身份 = 冻结 npz
+一个字节不动（D1/D2/D3B 结论全部不动），TO38 既有生产链（to36 dump →
+`to36_leg_to_drake.py world`（Drake FK，81 样本/相，确定性）→
+`to38_export_ref.py`（numpy 重采样 + PHASE_PERM 符号映射，m_per_phase=60，
+确定性））就是当年 to38_ref.npz 的实际生产路径。
+
+**机械证据（三项）**：
+
+1. **交叉验证**：F11b_flat（0.277）经新链重导 vs canonical `to38_ref.npz`
+   （TO38/TO40 实际消费过的同一 LUT）——q_ref6/tau_ref6/pitch/z/heel_rel
+   **逐位一致 max|diff| = 0.0**（T/v_avg 一致）；
+2. **确定性**：v0.200 同输入两次导出——全部数组逐位一致（meta.world_src
+   路径除外）；npz 文件字节级 sha 因 zip mtime 不可作复现锚，身份锚 =
+   **数组级规范哈希**（lut_array_sha256）；
+3. **周期闭合**：7 份 LUT wrap_gap_q 全部 0.0000。
+
+**产物**：7 份 derived LUT + `lut_manifest.json`（v → source_artifact /
+source_sha256 / lut_file / lut_array_sha256 / wrap_gap / T / v_avg）入仓
+`apt_g1/outputs/sync/to41_sanity/luts/`（commit 8a6ee96）。工具侧唯一变更 =
+`to36_leg_to_drake.py` world 子命令加 `--world-out`（默认 = canonical
+to36_world_knots.npz 逐字节不变；commit e8bb406）。
+
+**身份链（双层）**：冻结材料 npz（canonical，D 链锚定）--manifest
+source_sha256--> derived LUT（env `cfg.to_ref_npz` 消费形式）--> env
+`_to_tau` buffer。receipt 与 l_checker 的 L1 三层（材料/LUT/buffer）独立
+重算对照。
 
 ## 6. 判据与保险丝
 

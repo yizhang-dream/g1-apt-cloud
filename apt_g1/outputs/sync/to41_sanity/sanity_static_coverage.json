@@ -1,7 +1,7 @@
 {
   "artifact": "rung1-launch-sanity-static-coverage/v1",
   "environment_tag": "local",
-  "generated_utc": "2026-09-02T15:12:33Z",
+  "generated_utc": "2026-09-02T16:17:36Z",
   "expected_cells": 28,
   "resolved_cells": 28,
   "note": "静态配置层核对；非 L artifact（真实 env receipt 仅 lab-ts）",
@@ -18,8 +18,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0200_k0.npz",
+      "expected_lut": "to41_lut_0200.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_v0200_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0200.npz",
       "registry_id": null
     },
     {
@@ -34,8 +35,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0200_k0.npz",
+      "expected_lut": "to41_lut_0200.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_v0200_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0200.npz",
       "registry_id": null
     },
     {
@@ -50,8 +52,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0200_k0.npz",
+      "expected_lut": "to41_lut_0200.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_v0200_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0200.npz",
       "registry_id": null
     },
     {
@@ -66,8 +69,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0200_k0.npz",
+      "expected_lut": "to41_lut_0200.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_v0200_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0200.npz",
       "registry_id": null
     },
     {
@@ -82,8 +86,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0225_k0.npz",
+      "expected_lut": "to41_lut_0225.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_v0225_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0225.npz",
       "registry_id": null
     },
     {
@@ -98,8 +103,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0225_k0.npz",
+      "expected_lut": "to41_lut_0225.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_v0225_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0225.npz",
       "registry_id": null
     },
     {
@@ -114,8 +120,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0225_k0.npz",
+      "expected_lut": "to41_lut_0225.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_v0225_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0225.npz",
       "registry_id": null
     },
     {
@@ -130,8 +137,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0225_k0.npz",
+      "expected_lut": "to41_lut_0225.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_v0225_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0225.npz",
       "registry_id": null
     },
     {
@@ -146,8 +154,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0250_k0.npz",
+      "expected_lut": "to41_lut_0250.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_v0250_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0250.npz",
       "registry_id": null
     },
     {
@@ -162,8 +171,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0250_k0.npz",
+      "expected_lut": "to41_lut_0250.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_v0250_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0250.npz",
       "registry_id": null
     },
     {
@@ -178,8 +188,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0250_k0.npz",
+      "expected_lut": "to41_lut_0250.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_v0250_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0250.npz",
       "registry_id": null
     },
     {
@@ -194,8 +205,9 @@
       "natural_condition": "vb0_db4",
       "natural_speed_bin": 0,
       "expected_material": "gdown_v0250_k0.npz",
+      "expected_lut": "to41_lut_0250.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_v0250_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0250.npz",
       "registry_id": null
     },
     {
@@ -210,8 +222,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "gdown_smoke_v275_k0.npz",
+      "expected_lut": "to41_lut_0275.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_smoke_v275_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0275.npz",
       "registry_id": null
     },
     {
@@ -226,8 +239,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "gdown_smoke_v275_k0.npz",
+      "expected_lut": "to41_lut_0275.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_smoke_v275_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0275.npz",
       "registry_id": null
     },
     {
@@ -242,8 +256,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "gdown_smoke_v275_k0.npz",
+      "expected_lut": "to41_lut_0275.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "gdown_smoke_v275_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0275.npz",
       "registry_id": null
     },
     {
@@ -258,8 +273,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "gdown_smoke_v275_k0.npz",
+      "expected_lut": "to41_lut_0275.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "gdown_smoke_v275_k0.npz",
+      "expected_to_ref_npz": "to41_lut_0275.npz",
       "registry_id": null
     },
     {
@@ -274,8 +290,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_lut": "to41_lut_0277.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_to_ref_npz": "to41_lut_0277.npz",
       "registry_id": "F11b_flat"
     },
     {
@@ -290,8 +307,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_lut": "to41_lut_0277.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_to_ref_npz": "to41_lut_0277.npz",
       "registry_id": "F11b_flat"
     },
     {
@@ -306,8 +324,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_lut": "to41_lut_0277.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_to_ref_npz": "to41_lut_0277.npz",
       "registry_id": "F11b_flat"
     },
     {
@@ -322,8 +341,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_lut": "to41_lut_0277.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11b_flat.npz",
+      "expected_to_ref_npz": "to41_lut_0277.npz",
       "registry_id": "F11b_flat"
     },
     {
@@ -338,8 +358,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_lut": "to41_lut_0300.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_to_ref_npz": "to41_lut_0300.npz",
       "registry_id": "F11_slope2"
     },
     {
@@ -354,8 +375,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_lut": "to41_lut_0300.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_to_ref_npz": "to41_lut_0300.npz",
       "registry_id": "F11_slope2"
     },
     {
@@ -370,8 +392,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_lut": "to41_lut_0300.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_to_ref_npz": "to41_lut_0300.npz",
       "registry_id": "F11_slope2"
     },
     {
@@ -386,8 +409,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_lut": "to41_lut_0300.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "to36_hybrid_gait_F11_slope2.npz",
+      "expected_to_ref_npz": "to41_lut_0300.npz",
       "registry_id": "F11_slope2"
     },
     {
@@ -402,8 +426,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F9.npz",
+      "expected_lut": "to41_lut_0325.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "to36_hybrid_gait_F9.npz",
+      "expected_to_ref_npz": "to41_lut_0325.npz",
       "registry_id": "F9"
     },
     {
@@ -418,8 +443,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F9.npz",
+      "expected_lut": "to41_lut_0325.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "to36_hybrid_gait_F9.npz",
+      "expected_to_ref_npz": "to41_lut_0325.npz",
       "registry_id": "F9"
     },
     {
@@ -434,8 +460,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F9.npz",
+      "expected_lut": "to41_lut_0325.npz",
       "expected_to_tau": true,
-      "expected_to_ref_npz": "to36_hybrid_gait_F9.npz",
+      "expected_to_ref_npz": "to41_lut_0325.npz",
       "registry_id": "F9"
     },
     {
@@ -450,8 +477,9 @@
       "natural_condition": "vb1_db4",
       "natural_speed_bin": 1,
       "expected_material": "to36_hybrid_gait_F9.npz",
+      "expected_lut": "to41_lut_0325.npz",
       "expected_to_tau": false,
-      "expected_to_ref_npz": "to36_hybrid_gait_F9.npz",
+      "expected_to_ref_npz": "to41_lut_0325.npz",
       "registry_id": "F9"
     }
   ]

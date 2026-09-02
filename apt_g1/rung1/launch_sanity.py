@@ -57,10 +57,31 @@ from apt_g1.rung1.mode_a_runtime import (
     state_dict_sha256,
 )
 
-RECEIPT_SCHEMA = "rung1-launch-sanity-receipt/v1"
+RECEIPT_SCHEMA = "rung1-launch-sanity-receipt/v2"
+LUT_MANIFEST = REPO_ROOT / "apt_g1/outputs/sync/to41_sanity/luts/lut_manifest.json"
+LUT_ARRAY_FIELDS = ("q_ref6", "tau_ref6", "pitch", "z", "heel_rel")
 ENV_SOURCE = REPO_ROOT / "apt_g1/isaac/apt_flat_env.py"
 ARCH_SOURCE = REPO_ROOT / "apt_g1/train_token_vae_e39.py"
 TOKEN_VAE_SOURCE = REPO_ROOT / "apt_g1/isaac/token_window_vae.py"
+
+
+def load_lut_manifest(path: Path = LUT_MANIFEST) -> dict:
+    """L0 derived-LUT manifest（材料→env 消费格式的确定性导出身份）。
+
+    L gate 首格发现的格式断链修复：7 份冻结材料 = to36 hybrid dump 格式，
+    env 冻结加载路径需要 TO38 LUT 字段；导出链（world Drake FK → to38
+    resample/PERM）已 F11b 交叉验证逐位一致 + 数组级确定性 PASS。
+    checker 侧另有独立解析/重算。
+    """
+    import json
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if raw.get("artifact_id") != "rung1-material-lut-manifest" or raw.get("schema_version") != 1:
+        raise SystemExit(f"FAIL: {path} 不是 rung1-material-lut-manifest/v1")
+    entries = {}
+    for e in raw["entries"]:
+        entries[round(float(e["target_speed"]), 3)] = e
+    return {"manifest_path": path, "manifest_sha256": sha256_file(path), "entries": entries}
 
 # cfg 快照闭集（receipt cfg_snapshot 的全部键；两臂 diff 判定 L3 的证据面）
 CFG_SNAPSHOT_FIELDS = [
@@ -128,12 +149,14 @@ def static_coverage(out_dir: Path) -> Path:
     mapping = load_mapping()
     availability = load_availability()
     registry = load_registry()
+    lut_manifest = load_lut_manifest()
     rows = []
     for i, cell in enumerate(enumerate_cells(mapping)):
         a = resolve_cell(cell, mapping, availability)
         nat_bin = _natural_bin(cell["target_speed"])
         nat_id = next((cid for cid, c in mapping["conditions"].items()
                        if c["speed_bin"] == nat_bin and c["dir_bin"] == a["dir_bin"]), None)
+        lut = lut_manifest["entries"][round(float(cell["target_speed"]), 3)]
         rows.append({
             "cell_id": cell["cell_id"],
             "cell_index": i,
@@ -146,8 +169,9 @@ def static_coverage(out_dir: Path) -> Path:
             "natural_condition": nat_id,
             "natural_speed_bin": nat_bin,
             "expected_material": a["tau_material"]["artifact"],
+            "expected_lut": lut["lut_file"],
             "expected_to_tau": cell["tau_ff"] == "on",
-            "expected_to_ref_npz": a["tau_material"]["artifact"],
+            "expected_to_ref_npz": lut["lut_file"],
             "registry_id": next((k for k, s in registry["sources"].items()
                                  if s["path"] == a["tau_material"]["artifact"]), None),
         })
@@ -173,8 +197,9 @@ def _natural_bin(v: float, vx_max: float = 0.8, n: int = 3) -> int:
     return int(np.searchsorted(edges, v, side="left"))
 
 
-def _preflight(mapping: dict, materials_roots: list[Path], vae_path: Path) -> None:
-    """冻结锚 preflight（Isaac 启动前 fail-fast）：三源哈希 + 7 材料 + vae。"""
+def _preflight(mapping: dict, materials_roots: list[Path], vae_path: Path,
+               lut_manifest: dict) -> None:
+    """冻结锚 preflight（Isaac 启动前 fail-fast）：三源哈希 + 7 材料 + vae + LUT。"""
     checks = [
         (ENV_SOURCE, mapping["hashes"]["preprocessing"], "apt_flat_env.py"),
         (ENV_SOURCE, mapping["hashes"]["normalization"], "apt_flat_env.py(normalization)"),
@@ -195,7 +220,14 @@ def _preflight(mapping: dict, materials_roots: list[Path], vae_path: Path) -> No
     for v, mat in sorted(availability.items()):
         if find_material(mat["artifact"], materials_roots) is None:
             raise SystemExit(f"FAIL preflight: material 不可达: {mat['artifact']}")
-    print(f"[preflight] 冻结锚三源 OK；vae.pt {got[:16]}…；7/7 material 可达")
+    for v in mapping["grid"]:
+        if round(float(v), 3) not in lut_manifest["entries"]:
+            raise SystemExit(f"FAIL preflight: LUT manifest 缺 v={v}")
+        lut_path = lut_manifest["manifest_path"].parent / lut_manifest["entries"][round(float(v), 3)]["lut_file"]
+        if not lut_path.exists():
+            raise SystemExit(f"FAIL preflight: LUT 不可达: {lut_path}")
+    print(f"[preflight] 冻结锚三源 OK；vae.pt {got[:16]}…；7/7 material 可达；"
+          f"7/7 LUT 可达（manifest {lut_manifest['manifest_sha256'][:16]}…）")
 
 
 def _set_commands(env, v: float) -> None:
@@ -206,9 +238,15 @@ def _set_commands(env, v: float) -> None:
 
 
 def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
-                 registry: dict, vae_path: Path, materials_roots: list[Path],
+                 registry: dict, lut_manifest: dict, vae_path: Path,
+                 materials_roots: list[Path],
                  steps: int, boundary_step: int) -> dict:
-    """单 cell：新建真实 env → 接线 → 真实 step 循环 → 快照 → close → receipt。"""
+    """单 cell：新建真实 env → 接线 → 真实 step 循环 → 快照 → receipt。
+
+    材料身份双层：canonical = 冻结材料 npz（D 链锚定的身份，不进 env）；
+    derived = L0 manifest 的 to38 LUT（进 env cfg.to_ref_npz 的消费形式，
+    数组级身份锚）。二者由 manifest 的 source_sha256 链闭合。
+    """
     import torch
 
     from apt_g1.isaac.apt_flat_env import AptFlatG1Env
@@ -221,8 +259,10 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
     mat_path, mat_root = find_material(mat["artifact"], materials_roots)
     if mat_path is None:
         raise FileNotFoundError(mat["artifact"])
+    lut_entry = lut_manifest["entries"][round(float(cell["target_speed"]), 3)]
+    lut_path = lut_manifest["manifest_path"].parent / lut_entry["lut_file"]
 
-    cfg = build_cell_cfg(cell, mat_path, vae_path)
+    cfg = build_cell_cfg(cell, lut_path, vae_path)
     env = AptFlatG1Env(cfg)
 
     sd_before = state_dict_sha256(env._vae.state_dict())
@@ -270,6 +310,7 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
     buf_post = tau_buffer_snapshot(env)
     sd_after = state_dict_sha256(env._vae.state_dict())
     mat_file_sha = sha256_file(mat_path)
+    lut_file_sha = sha256_file(lut_path)
     reg_id = next((k for k, s in registry["sources"].items()
                    if s["path"] == mat["artifact"]), None)
     reg_entry = registry["sources"].get(reg_id) if reg_id else None
@@ -309,18 +350,32 @@ def execute_cell(cell: dict, cell_index: int, mapping: dict, availability: dict,
         },
         "cfg_snapshot": _cfg_snapshot(cfg),
         "tau_material": {
-            "artifact": mat["artifact"],
-            "materials_root_used": str(mat_root),
-            "npz_path": str(mat_path),
-            "file_sha256": mat_file_sha,
-            "sha256_16": mat_file_sha[:16],
-            "source_lineage": mat["source"],
-            "v_realized": mat["v_realized"],
-            "abs_err": mat["abs_err"],
-            "registry_id": reg_id,
-            "registry_sha256_16": reg_entry["sha256_16"] if reg_entry else None,
-            "applied_to_env": True,
-            "cfg_to_ref_npz": str(mat_path),
+            "lut_manifest_sha256": lut_manifest["manifest_sha256"],
+            "frozen_material": {
+                "artifact": mat["artifact"],
+                "materials_root_used": str(mat_root),
+                "npz_path": str(mat_path),
+                "file_sha256": mat_file_sha,
+                "sha256_16": mat_file_sha[:16],
+                "source_lineage": mat["source"],
+                "v_realized": mat["v_realized"],
+                "abs_err": mat["abs_err"],
+                "registry_id": reg_id,
+                "registry_sha256_16": reg_entry["sha256_16"] if reg_entry else None,
+            },
+            "derived_lut": {
+                "file": str(lut_path),
+                "file_sha256": lut_file_sha,
+                "array_sha256": {k: lut_entry["lut_array_sha256"][k] for k in LUT_ARRAY_FIELDS},
+                "source_sha256_manifest": lut_entry["source_sha256"],
+                "source_artifact_manifest": lut_entry["source_artifact"],
+                "m_per_phase": lut_entry["m_per_phase"],
+                "T": lut_entry["T"],
+                "v_avg": lut_entry["v_avg"],
+                "wrap_gap_q": lut_entry["wrap_gap_q"],
+                "applied_to_env": True,
+                "cfg_to_ref_npz": str(lut_path),
+            },
             "buffer_shape": buf_pre["shape"],
             "buffer_dtype": buf_pre["dtype"],
             "buffer_sha256_pre": buf_pre["buffer_sha256"],
@@ -411,6 +466,7 @@ def main() -> int:
     import os
 
     mapping = load_mapping()
+    lut_manifest = load_lut_manifest()
     if args.cell_index is None:
         raise SystemExit("FAIL: execute 模式必须 --cell-index 0..27（per-cell 进程模型，"
                          "服务器侧 bash 循环驱动 28 次）")
@@ -419,7 +475,7 @@ def main() -> int:
         raise SystemExit(f"FAIL: --cell-index {args.cell_index} 越界（0..{len(cells) - 1}）")
     cell = cells[args.cell_index]
 
-    _preflight(mapping, list(args.materials_root), args.vae_path)
+    _preflight(mapping, list(args.materials_root), args.vae_path, lut_manifest)
     availability = load_availability()
     registry = load_registry()
 
@@ -443,7 +499,7 @@ def main() -> int:
     print(f"[launch-sanity] cell {args.cell_index}: {cell['cell_id']} × {args.steps} steps "
           f"(boundary@{args.boundary_step})，zero-action 驱动，仅记录不判定", flush=True)
     receipt = execute_cell(cell, args.cell_index, mapping, availability, registry,
-                           args.vae_path, list(args.materials_root),
+                           lut_manifest, args.vae_path, list(args.materials_root),
                            args.steps, args.boundary_step)
     receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
                             encoding="utf-8")
