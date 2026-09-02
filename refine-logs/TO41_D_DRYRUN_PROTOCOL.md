@@ -41,10 +41,10 @@ D protocol             FROZEN（三十五轮 9.9/10 定稿；此后唯一允许�
 Env launch sanity      PASS（09-03 三十七轮 lab-ts 28-cell 接线验证，
                        checker schema/L1/L2/L3/L4 全 PASS failures 0；
                        L0 材料格式断链经既有 TO38 链修复 = TO41_LAUNCH_SANITY.md）
-Execution freeze       PENDING owner 纯状态迁移（launch sanity PASS 前置
-                       已满足；freeze 不得同时修改 runtime/mapping/
-                       τ material/analysis protocol）
-Main Rung 1 compute    BLOCKED
+Execution freeze       EXECUTED / FROZEN（09-03 三十八轮 owner 纯状态
+                       迁移；freeze commit 仅状态板字段，零内容变化）
+Main Rung 1 compute    UNBLOCKED（freeze 已提交；正式允许进入 Rung 1
+                       训练/评估，限 lab-ts frozen execution env）
 ```
 
 **28 cells ≠ 28 个独立 jobs**：`7 v × {C1,C2} × {τ ON, τ OFF} = 28` 是

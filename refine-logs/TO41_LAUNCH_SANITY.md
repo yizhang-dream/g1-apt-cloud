@@ -32,10 +32,10 @@ L0 材料消费格式导出          PASS（gate 首格发现格式断链 → �
                              逐位 MATCH；§5b，09-03）
 Env launch sanity（本文）    PASS（09-03 lab-ts 28-cell，checker
                              schema/L1/L2/L3/L4 全 PASS，failures 0）
-Execution freeze             PENDING owner 纯状态迁移（launch sanity
-                             PASS 前置已满足；freeze 不得同时修改
-                             runtime/mapping/τ material/analysis protocol）
-Rung 1 compute               BLOCKED（待 owner freeze）
+Execution freeze             EXECUTED / FROZEN（09-03 三十八轮 owner 纯
+                             状态迁移，仅状态板字段零内容变化）
+Rung 1 compute               UNBLOCKED（freeze 已提交；正式允许进入
+                             Rung 1 训练/评估）
 Scientific result            NONE
 ```
 
