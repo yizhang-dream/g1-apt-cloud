@@ -1038,3 +1038,61 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   PENDING owner 纯状态迁移；Main Rung 1 compute 仍 BLOCKED**。dry-run 范围
   边界（TO41_D_IMPL.md §4）：τ 注入 env 的 exercise 属 Rung 1 launch sanity
   （IMPL §6），不在 D 范围。
+
+- **三十七轮（09-02 owner 裁定落盘 → 09-03 执行完毕）——Rung 1 launch sanity
+  （L1–L4 真实 env 接线 gate，纯执行 gate、非新 protocol round；判据唯一
+  事实源 = refine-logs/TO41_LAUNCH_SANITY.md）**：
+  - **owner 改判**：暂不做 execution freeze——D 全 PASS 证明的是 decode
+    plumbing（T_runtime=T_mapping、τ_runtime=τ_frozen），不是完整训练环境
+    plumbing（τ material 进错时间步 / override 被 natural bucketize 覆盖 /
+    两臂消费另一份 buffer / reset 边界恢复 natural assignment 等对
+    decode-only 不可见）。链 = D → L1–L4 env launch sanity → execution
+    wiring PASS → owner execution freeze → Rung 1 compute；compute 继续
+    BLOCKED。
+  - **L0 材料消费格式断链（gate 首格发现，真 gap）**：cell 0 首跑
+    `KeyError: 'q_ref6'`——7 份冻结材料均为 to36 hybrid dump 格式，env 冻结
+    加载路径（apt_flat_env.py:319-328）需要 TO38 LUT 格式；**D decode-only
+    dry-run 结构上不可见**（只验身份哈希不加载 q_ref6）。定性 = 缺失的
+    launch-preparation plumbing，非 material reopen——按既有 TO38 生产链
+    （to36_leg_to_drake world Drake FK 81 样本/相 → to38_export_ref 重采样
+    + PHASE_PERM 符号，m_per_phase=60，全确定性）导出 7 份 derived LUT +
+    lut_manifest（数组级规范哈希身份，npz 文件 sha 因 zip mtime 不可作锚；
+    commit 8a6ee96 入仓 luts/）；**交叉验证：F11b_flat 重导 vs canonical
+    to38_ref.npz（TO38/40 实际消费）全字段逐位一致 max|diff|=0.0**；确定性
+    v0.200 两次导出数组逐位一致；wrap_gap_q 7/7 = 0.0000；材料 canonical
+    身份一字节不动（D1/D2/D3B 结论不动）。工具侧唯一变更 = world 子命令加
+    --world-out（默认 canonical 不变，e8bb406）。
+  - **落码（SCRIPT_MAP §8b）**：rung1 新四件——env_wiring.py（state-changing
+    接线 shim：实例级 shadowing env._vae.decode / _to_ref_lookup，per-call
+    natural/applied 双记录，零 env 文件改动）/ launch_sanity.py（**per-cell
+    进程模型**：--cell-index 0..27 每 cell 独立 python 进程 + AppLauncher，
+    receipt 落盘后 os._exit——规避 DirectRLEnv.close() sim.clear_instance /
+    同进程重复建 env prim 冲突 / Isaac 退出挂死；冻结三源哈希 preflight 每
+    进程 fail-fast）/ l_checker.py（read-only，独立 manifest 解析 + npz 重算
+    + 自然 bucketize 重算，不 import 被测模块）/ l_selftest.py。selftest
+    5/5（本机 + lab-ts；**Negative D 揪出并修复 l_checker 缺件静默 continue
+    覆盖洞**）。接线纪律 = 零 env 文件改动（env sha256 == mapping
+    preprocessing_hash 冻结锚，checker 机械校验）；两臂 = TO40C ctrl/t10
+    配方 × L0 LUT × e39 vae，唯一 cfg 差 == {to_tau}（OFF 臂 LUT 照载但
+    obs 置零 + reward 权 0 + 注入关 = 动力学中性）。
+  - **28-cell execute（lab-ts frozen env，per-cell 进程，commit d477562 入仓）**：
+    28/28 receipt rc=0（每 cell 真实 AptFlatG1Env 300 控制步 + 中段强制
+    boundary + 恒定 cmd_vx 每 step 重申（reset 重采样 U(vx_min,vx_max) 的
+    确定性压制）+ 零 z 动作；单 cell 墙钟 10–20 s）。observe：ON 臂
+    n_tau_calls=1200（=300 步 × decimation 4）、OFF 臂 0；auto reset 逐格
+    自然发生并记录。
+  - **independent checker 全 PASS：schema / L1 / L2 / L3 / L4 全绿，
+    failures 0**（report = sync/to41_sanity/L_report）：
+    L1 = 7/7 v 三层 Mode A fingerprint（冻结材料 sha 0038afb8/eb87ad84/
+    626b3407/09c2915c/3f239cbf/da6cb3a6/e7b4cdf4 与 D 报告逐一吻合 + LUT
+    文件/5 字段数组身份独立重算 + buffer==LUT tau_ref6 重算 + source 链
+    闭合）；L2 = 14 interventional cell 逐 call 300/300 override 生效（含
+    boundary 与 auto reset 之后）、14 natural cell no-op、natural 分布 ==
+    checker 重算；L3 = 14 对两臂 cfg diff 全部 == {to_tau}；L4 = 28/28
+    冻结枚举 + env 源哈希 == preprocessing_hash（接线零 env 文件改动的
+    机械证明）+ decoder 签名表/episode 前后全等。
+  - 语义（沿 D §3/§8）：L PASS = **treatment specification 在真实人形仿真
+    执行路径上可忠实实现**，不构成任何 Rung 1 科学结论（全链禁收
+    performance 字段）。**execution freeze = PENDING owner 纯状态迁移；
+    Main Rung 1 compute 仍 BLOCKED**（freeze 不得同时修改 runtime/mapping/
+    τ material/analysis protocol）。

@@ -27,10 +27,15 @@ Material map                 FROZEN 7/7
 Mode A                       LOCKED
 D protocol                   FROZEN
 D1/D2/D3                     PASS（三十六轮 lab-ts 28-cell dry-run）
-Env launch sanity（本文）    NEXT / PENDING → 09-02 lab-ts 执行
-Execution freeze             BLOCKED pending launch sanity（三十七轮裁定改判；
-                             原「D 全 PASS 即 PENDING」状态作废）
-Rung 1 compute               BLOCKED
+L0 材料消费格式导出          PASS（gate 首格发现格式断链 → 既有 TO38 链
+                             确定性导出 7 LUT + manifest，F11b 交叉验证
+                             逐位 MATCH；§5b，09-03）
+Env launch sanity（本文）    PASS（09-03 lab-ts 28-cell，checker
+                             schema/L1/L2/L3/L4 全 PASS，failures 0）
+Execution freeze             PENDING owner 纯状态迁移（launch sanity
+                             PASS 前置已满足；freeze 不得同时修改
+                             runtime/mapping/τ material/analysis protocol）
+Rung 1 compute               BLOCKED（待 owner freeze）
 Scientific result            NONE
 ```
 
@@ -198,15 +203,52 @@ source_sha256--> derived LUT（env `cfg.to_ref_npz` 消费形式）--> env
 - **保险丝 3（spec 再解释熔断）**：实现中需要"重新解释"任何冻结字段才能
   继续 → 立即停 → owner reopen（沿 D §7.3）。
 
-## 7. 执行记录（2026-09-02）
+## 7. 执行记录（2026-09-02 落码 → 09-03 lab-ts 执行）
 
 - selftest：本机 5/5 PASS（T-L0 双解析器交叉 / T-L1 wiring mock 单测 /
   T-L2b canonical hash 双实现交叉 / T-L3 合成正例 schema+L1–L4 全 PASS /
   Negative A–E）。**Negative D 揪出并修复 l_checker 一个真 bug**：缺
   receipt 时 L2 原为静默 `continue`（27/28 也能 L2 PASS）→ 已改为显式
-  FAIL（覆盖洞必须级联）。
+  FAIL（覆盖洞必须级联）。lab-ts frozen env 复跑 5/5 PASS。
 - static 配置层覆盖：28/28（`sanity_static_coverage.json`，local 口径），
   interventional 配对抽查正确（0.200 C2 = vb1 on natural vb0；0.325 C1 =
   vb0 on natural vb1）。
-- **lab-ts execute + checker：PENDING**（本节收到 L report 后回填；未回填
-  前任何文档不得写「launch sanity PASS」）。
+- **gate 首格发现并修复 L0 格式断链**（详见 §5b）：cell 0 首跑
+  `KeyError: 'q_ref6'`——7 份冻结材料 = to36 hybrid dump 格式，env 冻结
+  加载路径需要 TO38 LUT 格式。修复 = 既有 TO38 链确定性导出（材料身份
+  不动），F11b 交叉验证逐位 MATCH + 数组级确定性 PASS + wrap_gap 全 0。
+  **这条断链 D decode-only dry-run 结构上不可见——本轮 gate 存在理由的
+  直接验证。**
+- implementation 修复两次（保险丝 1 路径，均不触冻结工件）：①
+  cfg_snapshot 的 terrain_seed 属性不存在；② forced boundary 记录改绝对
+  calls_before（原增量语义恒 0）；③ receipt 补 state_dict_key_shapes
+  （L4 签名表首跑 28×8 FAIL 后补）。
+- **28-cell execute（lab-ts frozen env，per-cell 进程模型，commit
+  d477562 入仓）**：28/28 receipt rc=0（每 cell 独立 python 进程 +
+  AppLauncher；真实 `AptFlatG1Env` 300 控制步 ≈ 6 s + 中段强制 boundary；
+  零 z 动作驱动；preflight 冻结三源哈希 28 进程次次通过；单 cell 墙钟
+  ~10–20 s）。observe：ON 臂 n_tau_calls=1200（=300 步 × decimation 4，
+  `_apply_action` 每 physics 子步消费一次）、OFF 臂 = 0；auto reset 每格
+  自然发生并被记录。
+- **independent checker：schema / L1 / L2 / L3 / L4 全 PASS，failures 0**
+  （`L_report`，lab-ts `--materials-root` 三根）：
+  - **L1**：7/7 v 三层 Mode A fingerprint——冻结材料 sha
+    0038afb8…(0.200) / eb87ad84…(0.225) / 626b3407…(0.250) / 09c2915c…
+    (0.275) / 3f239cbf…(0.277) / da6cb3a6…(0.300) / e7b4cdf4…(0.325)
+    与 D 报告逐一吻合；LUT 文件+5 字段数组身份独立重算全中；
+    buffer == LUT tau_ref6 重算；source 链闭合（manifest source_sha256 ==
+    冻结材料 sha）。
+  - **L2**：14 个 interventional cell（低带 C2 + 高带 C1）逐 call
+    300/300 override 生效（含强制 boundary 与 auto reset 之后），14 个
+    natural cell no-op；natural 分布 == checker 重算 bucketize（恒定
+    cmd 每 step 重申生效）。
+  - **L3**：14 对两臂 cfg snapshot diff **全部 == {to_tau}**（唯一预注册
+    干预）；decoder 身份/材料身份/seed 协议两臂一致。
+  - **L4**：28/28 冻结枚举 + env 源哈希 == mapping preprocessing_hash
+    （**接线零 env 文件改动的机械证明**）+ decoder 签名表/episode 前后
+    全等。
+- 环境身份：env_tag=lab-ts；冻结三源（env ca39b76f… = preprocessing_hash
+  锚 / vae f6adfc50… / arch b9edf163…）。
+- 语义上限：L PASS = **treatment specification 在真实人形仿真执行路径上
+  可忠实实现**；不构成任何 Rung 1 科学结论（禁收字段纪律全链无
+  performance 字段）。**execution freeze 归还 owner 纯状态迁移。**
