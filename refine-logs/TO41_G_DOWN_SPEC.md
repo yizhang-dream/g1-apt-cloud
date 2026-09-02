@@ -181,4 +181,16 @@ map**（主 Rung 1 的预注册输入）。
   audit_admitted_no_certificate——证书 absent 如实记录不作门）。
   **reachability PASS ＋ material validity = mechanically_valid**；run B
   确定性见证已发射，hash 一致后 freeze 为 canonical τ(0.275) candidate。
-- （run B hash 对照与其余 target 结果在此追加）
+- **run B 确定性见证（0.275）**：run A/B npz **sha256 逐位一致**
+  （09c2915c5c713afbc41c49494efcbf468e28ff0816a447ec9ff544554eb9ec30）；
+  τ(0.275) **freeze 为 canonical**。
+- **三低速 target campaign（三十一轮并行发射，每 target 独立 ladder）**：
+  **全部 k=0 首过即停**——
+  | target | v_realized | abs_err | solver 证书 | material |
+  |---|---|---|---|---|
+  | 0.200 | 0.2000 | 6.7e-09 | **present** | mechanically_valid |
+  | 0.225 | 0.2250 | 1.7e-06 | audit-admitted | mechanically_valid |
+  | 0.250 | 0.2500 | 7.0e-09 | **present** | mechanically_valid |
+  剩余流程：三材料确定性复现（§5.2 ⑦，已发射）→ 全 7 target availability
+  map → 主 Rung 1 执行 freeze 审查。
+- （确定性复现结果在此追加）
