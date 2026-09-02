@@ -2,9 +2,11 @@
 
 > 【层位 L3 实施章程】↑ `refine-logs/README.md`（扇出树根地图）｜
 > 上游：`TO40C_PLAN.md` §10（**frozen specification**，规格侧一切判据以该节
-> 为准，本文不得与其冲突）｜ 状态：**Implementation STARTED（八轮授权），
-> Compute BLOCKED**（D + execution freeze 全过前不得开跑，并覆盖
-> per-condition τ material generation——Decision 3）。分支状态：
+> 为准，本文不得与其冲突）｜ 状态：**Implementation STARTED（八轮授权）；
+> execution freeze 已执行（09-03 三十八轮 owner 纯状态迁移，freeze commit
+> 76954a0）→ Rung 1 compute UNBLOCKED**（原门 = D + execution freeze 全过
+> 前不得开跑，两前置均已 PASS；per-condition τ material generation 已随
+> G↓ CLOSED 收束——Decision 3）。分支状态：
 > Unambiguous parts PROCEEDING（仅章程/harness 骨架）｜ Conditioning
 > impl **AUTHORIZED（仅 Mode A，三十四轮）** ｜ Incompatibility #1 已裁定为 Mode A（§3.3，十四轮）｜
 > Estimands **LOCKED\*** ｜ **owner freeze review 完成（三十三轮，
@@ -26,8 +28,9 @@
 - 八轮裁定：implementation AUTHORIZED——**"只实现已冻结的 specification，
   不再修改 specification"**；protocol 侧（§10）自本章程起不再修改。
 - 两层 freeze 语义：**specification freeze 已完成**（§10）；**execution
-  freeze 未完成**（待 D 全 PASS 后由 owner 纯状态迁移）。任何文档不得把
-  二者混写为「Protocol FROZEN」。
+  freeze 已完成**（09-03 三十八轮 owner 纯状态迁移，freeze commit 76954a0
+  ——L1–L4 launch sanity PASS 前置满足后执行）。任何文档不得把二者混写
+  为「Protocol FROZEN」。
 
 ## 1. 实现纪律（不可协商，全文约束）
 

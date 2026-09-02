@@ -8,7 +8,9 @@
 > 状态：**活跃**（三十七轮裁定：**暂不做 execution freeze**——D 全 PASS 证明的是
 > decode plumbing，不是完整训练环境 plumbing；先做真实 `apt_flat_env.py` 的
 > τ 注入/控制路径接线验证，通过后 owner 才做纯状态迁移 execution freeze；
-> 主 Rung 1 compute 继续 BLOCKED）。
+> 主 Rung 1 compute 继续 BLOCKED；**09-03 三十八轮：owner execution freeze
+> 已执行（76954a0 纯状态迁移）→ Rung 1 compute UNBLOCKED，本文 gate 链
+> 闭合**）。
 
 ## 0. gate 定位与状态板
 

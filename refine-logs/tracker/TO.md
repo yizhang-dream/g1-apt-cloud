@@ -1096,3 +1096,39 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
     performance 字段）。**execution freeze = PENDING owner 纯状态迁移；
     Main Rung 1 compute 仍 BLOCKED**（freeze 不得同时修改 runtime/mapping/
     τ material/analysis protocol）。
+
+- **三十八轮（09-03 owner 裁定，本轮落盘执行）——execution freeze GO
+  （纯状态迁移执行完毕）→ Rung 1 compute 解锁**：
+  - **裁定**：四道真实环境接线门 L1=L2=L3=L4 全 PASS = 跨过最后一个真正
+    危险层级——frozen specification → runtime → decode → 真实
+    `apt_flat_env` 的 τ consumption / condition override / ON-OFF
+    isolation / 28-cell coverage 实际闭环；「implementation 可能把 Mode A
+    偷做成别的 treatment」的已知路径不存在。**Execution freeze：GO，owner
+    执行纯状态迁移；Rung 1 experimental compute 在 freeze 状态提交完成前
+    BLOCKED，freeze commit 落地后正式允许进入 Rung 1 云端/服务器训练/
+    实验计算**。
+  - **freeze commit = `76954a0`**：仅改两块活状态板字段（`Execution
+    freeze PENDING→EXECUTED/FROZEN`、`Rung 1 compute BLOCKED→UNBLOCKED`，
+    DRYRUN_PROTOCOL §0 权威板 + LAUNCH_SANITY §0 配套板），零内容变化
+    （不碰 runtime/mapping/τ material/derived LUT/checker/analysis code/
+    seed/training config）。**规则留痕：freeze commit 若出现上述任何内容
+    变更 → freeze 失效，重新走 conformance**。
+  - **L0 gap 修复措辞锁定（防未来文档写歪）**：q_ref6 断链修复 =
+    **execution-format derivative artifact**（格式转换 conformance
+    repair），**不是「重新生成 τ」**——material canonical identity 一字节
+    不动，D1/D2/D3B 结论继续有效。
+  - **两层身份纪律（Rung 1 全阶段 provenance 要求）**：
+    `τ_canonical(v) →（确定性导出）→ derived q_ref6 LUT → env 消费`；
+    **material hash 与 runtime-consumed LUT hash 是两层身份，不得混为
+    一谈**——derived LUT 不是新的 τ material。
+  - **设计审查正式结束**：freeze 后不再进行任何 protocol design review，
+    直接进入 Rung 1 训练/评估。
+  - **结果解释预注册（四分支全部可接受，各对应不同 scientific story）**：
+    Δ_ff≠0 ｜ Δ_cond≈0 ｜ Δ_cond≠0 ｜ interaction contrast≈0。
+  - **执行环境纪律（重申 owner 提醒）**：正式 Rung 1 训练/评测只在
+    lab-ts frozen execution env（与 D/L 阶段同一 execution identity：
+    venv / frozen decoder / material hashes / env 接线 / 28-cell receipt
+    均为该 identity 的一部分）；本机仅文档 / 静态检查 / 代码审阅 / 结果
+    分析；**不做 freeze→本地实验→再搬云端**。
+  - 语义边界不变：本轮 = 状态迁移 + 记录，**Scientific result 仍 = NONE**
+    （沿 D §8 tracker 语义分离；Run 行待 Rung 1 开跑后追加 TO41xx）。

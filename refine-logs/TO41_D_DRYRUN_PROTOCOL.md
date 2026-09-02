@@ -15,7 +15,10 @@
 > **09-02 三十七轮 owner 改判：暂不 freeze**——D decode-only PASS ≠ 完整
 > 训练环境 plumbing，先过真实 `apt_flat_env.py` 的 L1–L4 launch sanity
 > （= `TO41_LAUNCH_SANITY.md`，纯执行 gate，本文判据不动）；**09-03
-> launch sanity 全 PASS，execution freeze 归还 owner 纯状态迁移**）。
+> launch sanity 全 PASS，execution freeze 归还 owner 纯状态迁移**；
+> **09-03 三十八轮 owner 裁定 GO：execution freeze 已执行（freeze commit
+> 76954a0，仅状态板字段零内容变化）→ Rung 1 compute UNBLOCKED，protocol
+> design review 正式结束**）。
 > （执行 freeze 状态以此为准；上方三十六轮语义保留作历史。）
 
 ## 0. 对象、边界与当前状态板
