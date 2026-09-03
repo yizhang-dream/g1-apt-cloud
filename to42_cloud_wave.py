@@ -36,10 +36,12 @@ _REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(_REPO))
 os.chdir(str(_REPO))
 
+# 注意：不要覆写 PYTHONPATH——gm-run 注入的原环境（isaacsim/isaaclab 解析路径）
+# 必须原样传给子进程；仓根由 `python -m` 的 cwd 语义自动进入子进程 sys.path
+# （2026-09-03 首跑教训：覆写 PYTHONPATH → 子进程 `No module named 'isaacsim'`）。
 os.environ.setdefault("OMNI_KIT_ACCEPT_EULA", "YES")
 os.environ.setdefault("ACCEPT_EULA", "Y")
 os.environ.setdefault("PRIVACY_CONSENT", "Y")
-os.environ["PYTHONPATH"] = str(_REPO)
 os.environ.setdefault("MUJOCO_GL", "egl")
 
 GRID7 = (0.200, 0.225, 0.250, 0.275, 0.277, 0.300, 0.325)
@@ -250,6 +252,8 @@ def main() -> int:
     _head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                            cwd=str(_REPO), capture_output=True, text=True)
     commit = _head.stdout.strip() if _head.returncode == 0 else "unknown"
+    print(f"[wave-env] exe={sys.executable} cwd={os.getcwd()} "
+          f"PYTHONPATH={os.environ.get('PYTHONPATH', '<unset>')}", flush=True)
     print(f"=== TO42 wave start {time.strftime('%F %T')} "
           f"commit={commit} stages={stages} ===", flush=True)
     t0 = time.monotonic()
