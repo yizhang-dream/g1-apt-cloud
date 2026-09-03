@@ -3,8 +3,9 @@
 > 【层位 L2 专题分析（判读诊断）】↑ `refine-logs/README.md`（扇出树根地图）｜
 > 上游：`tracker/TO.md` 四十轮三连判读行（数据唯一事实源）＋ 四十一轮 owner
 > 裁定（2026-09-03：选 (c) 先补维度再判，不新增训练/speed/protocol，第三
-> 训练 seed 不授权）｜ 下游：owner 对分支 (b) 的最终裁定 → 收束报告或
-> 第三 seed 授权重述 ｜ 状态：**活跃**（诊断完成，待 owner 裁定分支）
+> 训练 seed 不授权）｜ 下游：四十二轮 owner 终裁 = 分支 (b) ACCEPT →
+> `TO41_RUNG1_CLOSURE.md`（Rung 1 关线，09-03）｜ 状态：**收束**（诊断
+> 落点被终裁采纳）
 >
 > 执行产物：`apt_g1/rung1/eval_diagnose.py`（SCRIPT_MAP §8c 已登记）→
 > `apt_g1/outputs/sync/to41_eval/diagnosis_v1.{json,txt}`。

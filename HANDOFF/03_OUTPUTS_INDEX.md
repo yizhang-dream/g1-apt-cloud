@@ -152,6 +152,9 @@
 | `to38{a,b}_eval_*.json`（14 组） | 同上 | TO38 配对评测：两臂 {best,final}×低速带 A + best 全 battery；配对差分结论见 tracker/TO.md TO38-eval 行 |
 | `to39c/` | 同上 | TO39c（obs-only）关键 ckpt it150/it200/it2000（自云平台 checkpoint 系统迁出，it2000 尾部退化仅存档） |
 | `to39_lowband/` | 同上 | TO39 三臂原始 rollout 行（各 31 行）+ c 臂采样训练曲线；云上 /personal 另有 15 个评测 JSON summary（平台内） |
+| `to41_d/` | 同上 | TO41 D1/D2/D3 28-cell conformance dry-run 产物（D_report + receipts + selftest/static coverage；STATIC 件为本地旁证非 D artifact） |
+| `to41_sanity/` | 同上 | TO41 L1–L4 真实 env 接线验证产物（L_report + receipts + 7 v derived LUT） |
+| `to41_eval/` | 同上 | TO41 Rung 1 56-cell formal eval 产物（receipts×56 + effect_table_v1 + eval_audit G1–G10 PASS + ckpt_selection manifest + diagnosis_v1 + smoke）；判读与 scientific closure（分支 b）见 refine-logs/TO41_RUNG1_CLOSURE.md，Run 行见 tracker/TO.md TO41 系列 |
 
 ## 9. 汇总图表（2026-08-27 补生成，服务器与本地 `apt_g1/outputs/figs/`）
 

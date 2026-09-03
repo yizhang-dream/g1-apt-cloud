@@ -19,6 +19,10 @@
 > 通过；D 阶段判据唯一事实源自协议文档，本章程不再新增 D 判据）；
 > Main Rung 1 experimental compute 仍不批准，待 D1/D2/D3 全 PASS +
 > execution freeze**。
+> **终态（09-03 四十二轮）**：Rung 1 三连已执行（训练 4/4 + 56-cell eval +
+> G1–G10 审计全 PASS）→ scientific closure = 分支 (b) ACCEPT，**关线**
+> （收束文 = `TO41_RUNG1_CLOSURE.md`；本章程自此为历史章程，规格文本
+> 不再变动）。
 > **FROZEN\*/LOCKED\* 语义（十一轮）**：除 genuine incompatibility 外不得
 > 修改；发现 incompatibility 时由 owner 决定是否 reopen——protocol frozen
 > against implementation drift, but reopenable by owner decision。

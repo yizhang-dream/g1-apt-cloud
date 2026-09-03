@@ -917,10 +917,10 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
 | TO41-GD-0200 | G↓ 低速 target 0.200（独立 ladder，无 chain） | to37_v016 guess / v_min=0.200，↓-k0 | §5.2 全门集（⑨↓ 容差 + 确定性复现） | DONE | **k=0 首过即停**：v_realized 0.2000（abs_err 6.7e-09）、IPOPT 证书 **present**、mechanically_valid；确定性复现 sha256 逐位一致（0038afb8…） |
 | TO41-GD-0225 | G↓ 低速 target 0.225 | to37_v016 guess / v_min=0.225，↓-k0 | 同上 | DONE | **k=0 首过即停**：v_realized 0.2250（abs_err 1.7e-06）、audit-admitted（证书 absent 如实记录不作门）、mechanically_valid；确定性复现逐位一致（eb87ad84…） |
 | TO41-GD-0250 | G↓ 低速 target 0.250 | to37_v016 guess / v_min=0.250，↓-k0 | 同上 | DONE | **k=0 首过即停**：v_realized 0.2500（abs_err 7.0e-09）、IPOPT 证书 **present**、mechanically_valid；确定性复现逐位一致（626b3407…） |
-| TO41-R1-CTRL-S0 | Rung 1 训练臂 ctrl seed 0（freeze HEAD 新训） | E47 精确配方 + ctrl 臂旗标（TO40C_PLAN §3 逐字：`--latent-mode --latent-vae-path token_vae_e39/vae.pt --latent-speed-bins --latent-dir-bins --latent-kl-prior zero --progress-scale 1.0 --heading-scale 0.4 --to-ref --to-ref-npz to38_ref.npz --to-ref-obs-zero --to-ref-w 0`），128envs×2000it | train_log 落盘 + rew 无 NaN + fall 记录；ckpt 用途 = Rung 1 28-cell eval（ckpt 规则 = 50-iter 窗口最优，对称非手挑） | RUNNING（09-03 launch） | 执行身份：sync clone@8f6ba1e（freeze HEAD）+ .venv_isaac，vae sha f6adfc50… preflight 核对；driver `/home/cvgluser/to41r1_train.sh`，log `apt_g1/outputs/to41r1_train.log` |
-| TO41-R1-T10-S0 | Rung 1 训练臂 t10 seed 0（freeze HEAD 新训） | ctrl + `--to-tau --to-tau-w 1.0`（TO40C 主臂配方），128envs×2000it | 同上 | RUNNING | 同上（串行队列第 2） |
-| TO41-R1-CTRL-S1 | Rung 1 训练臂 ctrl seed 1（第二训练 seed） | 同 CTRL-S0，`--seed 1` | 同上 | RUNNING | 同上（串行队列第 3） |
-| TO41-R1-T10-S1 | Rung 1 训练臂 t10 seed 1（第二训练 seed） | 同 T10-S0，`--seed 1` | 同上 | RUNNING | 同上（串行队列第 4） |
+| TO41-R1-CTRL-S0 | Rung 1 训练臂 ctrl seed 0（freeze HEAD 新训） | E47 精确配方 + ctrl 臂旗标（TO40C_PLAN §3 逐字：`--latent-mode --latent-vae-path token_vae_e39/vae.pt --latent-speed-bins --latent-dir-bins --latent-kl-prior zero --progress-scale 1.0 --heading-scale 0.4 --to-ref --to-ref-npz to38_ref.npz --to-ref-obs-zero --to-ref-w 0`），128envs×2000it | train_log 落盘 + rew 无 NaN + fall 记录；ckpt 用途 = Rung 1 28-cell eval（ckpt 规则 = 50-iter 窗口最优，对称非手挑） | DONE（09-03 rc=0；窗口最优 it350 rew 2.417，入 manifest 8fab587f） | 执行身份：sync clone@8f6ba1e（freeze HEAD）+ .venv_isaac，vae sha f6adfc50… preflight 核对；driver `/home/cvgluser/to41r1_train.sh`，log `apt_g1/outputs/to41r1_train.log` |
+| TO41-R1-T10-S0 | Rung 1 训练臂 t10 seed 0（freeze HEAD 新训） | ctrl + `--to-tau --to-tau-w 1.0`（TO40C 主臂配方），128envs×2000it | 同上 | DONE（09-03 rc=0；窗口最优 it200 rew 2.410） | 同上（串行队列第 2） |
+| TO41-R1-CTRL-S1 | Rung 1 训练臂 ctrl seed 1（第二训练 seed） | 同 CTRL-S0，`--seed 1` | 同上 | DONE（09-03 rc=0；窗口最优 it1250 rew 2.408） | 同上（串行队列第 3） |
+| TO41-R1-T10-S1 | Rung 1 训练臂 t10 seed 1（第二训练 seed） | 同 T10-S0，`--seed 1` | 同上 | DONE（09-03 rc=0；窗口最优 it50 rew 2.377，早期窗机械接受） | 同上（串行队列第 4） |
 
 **G↓ 收束 + owner freeze review 裁定（三十三轮，2026-09-02）**
 
@@ -1321,3 +1321,42 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
       **Scientific result 维持：OBSERVED，无机制级结论**（gate≠机制、
       PASS-AS-CHANNEL 纪律继续有效）；**第三训练 seed 仍 NOT
       AUTHORIZED**（待 owner 对分支 b 裁定）。
+  - **四十二轮（09-03）：owner 终裁分支 (b) ACCEPT → Rung 1 scientific
+    closure，关线**（收束文 = refine-logs/TO41_RUNG1_CLOSURE.md；零新增
+    执行，云端算力消耗 0；无新 Run 行）：
+    - **裁定**：接受分支 (b)——C1/C2 不是同一 locomotion support 上两个
+      可交换 decoder conditions，而是**两个不同 decode regimes**（C1 ≡
+      vb0-regime / C2 ≡ vb1-regime，treatment-assigned；natural/matched
+      降级为 (v,C) 的 speed-dependent 派生标签，不再是固定臂身份）。六
+      不做全冻结：不加第三训练 seed / 新 eval seed / 新 speed，不改
+      Mode A / decoder binning，不重新求 τ、不重新设计 C1/C2。
+    - **措辞裁定**：主报告 = Δ_ff(v,C1) 与 Δ_ff(v,C2) 各自作为
+      **regime-specific / condition-stratified contrast**（PRIMARY）；
+      Δ_cond^raw 保留为 descriptive（SECONDARY）；**不得称 interaction
+      effect**（共同 support 不成立，NOT INTERPRETABLE AS pooled causal
+      interaction）。
+    - **收束文内容**：7v×2C×2seed regime-specific Δ_ff 全曲线（C1 regime
+      s0 +0.018…+0.090 / s1 −0.008…−0.049 符号翻转；C2 regime 两 seed
+      同正 +0.001…+0.046 幅度差 ~5×）+ 五附件（eval-seed 方差 sd 中位
+      0.0018 强镇定、train-seed |Δdff| 中位 0.052 主导、OFF 7/7 分离、
+      target vs realized speed——步态速度由 decode regime 决定几乎不由
+      cmd 决定（C1 恒蠕行 ~0.13 / C2 恒 ~0.61 m/s，cmd ±63% 扫描下
+      realized 几乎不动）、material lineage 全链哈希锚）+ established /
+      not identified / open 三段 + 论文结果段骨架（中英）。
+    - **叙事降级**：「τ_ff 填补低速 decoder 空洞」证据不足，降为「τ_ff
+      interacts with a strongly regime-dependent frozen decoder
+      substrate, and its low-speed effect is not stable across training
+      seeds」；conditioning 通道 ≥ τ_ff 效应量级（OFF 层 regime 差
+      间隙 0.040–0.339、regime 响应差 ±0.064–0.068 vs τ_ff 效应
+      0.01–0.09）——本轮真正正面产出。
+    - **关线声明**：Rung 1 主矩阵全部判读关闭；eval seed 增补问题关闭
+      （再加价值 = 低）；第三训练 seed 永久不作为本线修复（仅可能为
+      未来独立 robustness 实验）；ckpt manifest / τ 材料 / Mode A /
+      speed grid 全冻结。核心结论（论文结果段）：
+      "Rung 1 did not establish a stable τ_ff main effect across
+      training seeds. The observed τ_ff contrast is strongly
+      training-seed dependent and differs between two decoder regimes
+      whose OFF baselines have no common support under the
+      pre-registered comparability criterion. Therefore the pooled
+      cross-regime interaction is not identified; the valid scientific
+      output is regime-specific τ_ff contrast."
