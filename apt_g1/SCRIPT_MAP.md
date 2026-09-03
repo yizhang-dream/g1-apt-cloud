@@ -230,3 +230,21 @@ l_checker 不 import launch_sanity/env_wiring（audit 独立性同 D §9）。
 | `rung1/eval_checker.py` | 审计（**read-only**） | eval receipts 独立审计（不 import 被测代码；mapping/LUT/数组哈希/natural bucketize 审计侧独立实现）：G1 28×seed 覆盖精确 / G2 每 (arm,seed) 单 ckpt == selection manifest（C1→A/C2→B 或 ON/OFF 各选各的 = FAIL）/ G3 消费 LUT 数组身份==冻结 manifest / G4 每 (v,seed) 四 cell τ 消费身份唯一且==冻结 LUT（Mode A env 层证明）/ G5 override 全 call 生效 + call 数语义（ON=steps×decimation，OFF=0）+ buffer 恒定 / G6 归一化 cfg 全局唯一 + on/off diff=={to_tau} / G7 target∈冻结 grid + assignment==mapping lookup / G8 边界簿记 / G9 eval seeds==预注册 / G10 outcome 字段完整。只判 conformance，不做科学统计（双线纪律） | TO41 R1（Rung 1） |
 | `rung1/eval_selftest.py` | 工具（自测） | eval 栈自测（synthetic 28-receipt 场景 + 仓内真实 LUT 副本，本机可跑）：T1 正例全 PASS / **N1 错 τ→G3 + driver preflight hard fail** / N2 override 覆写→G5 / N3 未授权 cfg→G6 / N4 coverage 缺口→G1+G4 / N5 OFF 臂 τ 泄漏→G5 / N6 ckpt 混用→G2 / N7 probe 记录不完整→G5。正式 eval 前必须全绿 | TO41 R1（Rung 1） |
 | `rung1/eval_diagnose.py` | 分析（**read-only**） | 四十轮三连后 owner 裁定 (c) 诊断：仅消费已入仓 receipts + effect_table_v1（零新增执行，纯 stdlib 本机可跑）。五块：V 方差分解（eval-seed vs train-seed，读数取 effect_table per-eval-seed 配对差=主指标原生粒度；receipt 聚合字段与 err60s 口径不可互推，仅作形态证据）/ S eval seed identity 审计（jitter 代码事实 + 逐 episode bit-level 差异）/ N natural-vs-interventional（natural_vb_distribution 逐格提取 + bucketize 复算 + Δ_cond 双段拼接判定）/ D C1-C2 comparability（OFF 臂 support 区间重叠机械判定）/ W 分叉裁决（owner 预注册树映射，决定权在 owner）。产出 `sync/to41_eval/diagnosis_v1.{json,txt}` | TO41（四十一轮诊断） |
+
+## 8d. `apt_g1/isaac/to42_*` + 仓根 `to42_cloud_wave.py` —— TO42 学习型 regime selection 栈（2026-09-03 owner 开跑授权登记）
+
+| 脚本 | 角色 | 用途 | 实验号 |
+|---|---|---|---|
+| `isaac/to42_gate.py` | MODULE | 论文 gait-gate 语义在 {vb0,vb1} 二元 regime 上的纯 torch 状态机（2Hz 决策边界采纳 / 边界间锁存 0.5s / gate 布尔只在真切换步；fbkt 模式 = 每步 clamp(bucketize(cmd),0,1) 且 gate 恒静、策略位被忽略；reset 自然 bin 中性起步）——env 消费与 G0 自检是同一份代码；被 `apt_flat_env.py` cfg 门控加载（`to42_sel="off"` 时零接触） | TO42 |
+| `isaac/to42_selftest.py` | DEV | G0 纯 torch 自检（**负例先行**，本机 CPU 全绿）：边界错位可察觉 / 非法参数拒绝 / fbkt 偏离即失败 / 非边界切换的坏实现可被抓到 / 冻结公式对照 torch.bucketize / fbkt 随机流逐位 / lsel 边界-锁存-布尔语义 / 策略 gate_k=2 头 + PPO gate 分支有限且梯度可达 | TO42 |
+| `rung1/to42_eval.py` | 入口（**state-changing**） | 单 (arm×v×train_seed) cell 正式评测（per-cell 进程 + receipt 落盘后 os._exit）：harness 逐字继承 TO41（jitter rng(1000+seed) / 恒定 cmd 每步重申 / 确定性策略 / episode_length_s=120 → 60s 无 auto-reset / eval seeds {0,1,2}）；cfg = TO41 ctrl 臂形状 + `to42_sel`；receipt = to42-eval-receipt/v1（err60s / vx / disp / h_min + **selection 时间线 b64** + 切换步 + 策略选择头 p(vb1) 均值）；`--smoke` 隔离目录 | TO42 R1 |
+| `rung1/to42_select.py` | 分析（**read-only**） | ckpt 机械选择：50-iter 窗口 argmax 规则逐字复用 `select_checkpoint.select_run`，臂集合 {lsel,fbkt}×{s0,s1}；manifest = to42-ckpt-selection/v1（同一 (arm,seed) 全 7 v-cells 共用同一 ckpt） | TO42 R1 |
+| `rung1/to42_checker.py` | 审计（**read-only**） | eval receipts 独立审计（**先审计后分析，不读行为指标**）：C1 28-receipt 覆盖精确 / C2 84 episodes completed 零 fall / C3 每 (arm,seed) 单 ckpt == manifest / C4 env 源哈希 + vae sha + to42 cfg 跨 receipt 一致 / G0a fbkt 时间线逐位 == 自然 bin 且 gate 恒静 / G0b lsel 切换 ⊆ 2Hz 边界（t%25==0）。verdict 唯一出自本文件 | TO42 R1 |
+| `to42_cloud_wave.py`（仓根） | 入口（**state-changing**） | 云端 wave 编排（flux gm-run 入口；单 A10 pod 内全链 fail-fast，`--stages` 可子集重入）：G0 自检 → 双臂冒烟训练（30it）+ Isaac 级 G0 冒烟 eval（行内断言）→ 4 runs 全训（E47 配方 + ctrl 旗标 + τ 恒 OFF，同 pod 串行 = 同机配对）→ ckpt 选择 → 28-receipt eval → checker → err60s 效应表（descriptive）→ 产物打包 `output/to42/to42_artifacts.pt`（平台 ckpt 发现通道取回）+ `TO42_RESULT_JSON` stdout 摘要 | TO42 R1 |
+
+> **canonical 文件的 TO42 增量**（cfg 门控、默认 `"off"` = 行为与 TO41 逐位一致）：
+> `apt_flat_env.py`（`to42_sel/to42_hold_steps/to42_n_sel` cfg + To42Gate 状态机 +
+> decode vb 覆写 + obs 追加 [sel_state, gate_bool] + reset 自然 bin 起步）、
+> `train_apt_isaac.py`（`--to42-sel/--to42-hold-steps` 旗标 + action 16→17 +
+> policy gate_k=2 + buf["gate"] 槽位，PPO gate 分支原样复用）。
+> **TO41 九项冻结清单不受影响**（TO41 复现路径全部走 off 默认值）。

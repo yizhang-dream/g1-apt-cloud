@@ -117,6 +117,10 @@ def build_args():
     ap.add_argument("--terrain-seed", type=int, default=0)
     ap.add_argument("--use-elevation", type=int, default=0)
     ap.add_argument("--gate-sel", type=int, default=0)
+    # TO42: learned regime selection on the frozen decoder substrate
+    # (TO42_PLAN §3；骑在 --latent-mode 上；action 16→17，obs +2)
+    ap.add_argument("--to42-sel", choices=["off", "lsel", "fbkt"], default="off")
+    ap.add_argument("--to42-hold-steps", type=int, default=25)
     ap.add_argument("--progress-scale", type=float, default=0.0)
     ap.add_argument("--anti-stop", type=float, default=0.0)
     ap.add_argument("--anti-stop-thresh", type=float, default=0.3)
@@ -228,6 +232,17 @@ def main():
         if cli.latent_residual:
             cfg.action_space = 16 + 29  # z(16) + full-joint residual(29)
             cfg.observation_space += 29  # residual action feedback
+    if cli.to42_sel != "off":
+        # TO42: selection rides on the latent decode path；两臂 obs/action
+        # 布局完全一致，唯一差异 = 选择由策略学出还是由冻结 bucketize 产生
+        assert not cli.gate_sel, "--to42-sel and --gate-sel are mutually exclusive"
+        assert cli.latent_mode and not cli.decft and not cli.latent_residual, (
+            "--to42-sel rides on plain --latent-mode")
+        cfg.to42_sel = cli.to42_sel
+        cfg.to42_hold_steps = cli.to42_hold_steps
+        cfg.action_space = 17        # z(16) + sel bit(1)
+        cfg.observation_space += 2   # [sel_state, gate_bool]
+    to42_active = cli.to42_sel != "off"
     if cli.decft:
         from apt_g1.isaac.decft_policy import OBS_DIM as DECFT_OBS_DIM
 
@@ -272,7 +287,7 @@ def main():
         policy = AptPPOPolicy(
             obs_dim=cfg.observation_space,
             aux_dim=29 if cli.latent_residual else 12,
-            gate_k=3 if cfg.use_gate_sel else 0,
+            gate_k=(2 if to42_active else (3 if cfg.use_gate_sel else 0)),
             hidden_dim=256,
             use_phase=not cfg.use_gate_sel and not cfg.latent_mode,
             latent_dim=16 if cfg.latent_mode else 0,
@@ -355,6 +370,10 @@ def main():
     if cli.gate_sel:
         buf["gate"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
         buf["phase"] = None
+    if to42_active:
+        # phase z 保留 + 增加 gate(sel) 槽位；PPOTrainer.update 的 gate 分支
+        # （Categorical log_prob/entropy 重算）原样复用
+        buf["gate"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
 
     if buf_phase_none:
         buf["phase"] = None
@@ -386,6 +405,12 @@ def main():
                     buf["gate"][t] = act["gate"].detach()
                     action = torch.cat(
                         [act["aux"], act["gate"].float().unsqueeze(-1)], dim=1
+                    )
+                elif to42_active:
+                    buf["phase"][t] = act["phase"].detach()
+                    buf["gate"][t] = act["gate"].detach()
+                    action = torch.cat(
+                        [act["phase"], act["gate"].float().unsqueeze(-1)], dim=1
                     )
                 else:
                     buf["phase"][t] = act["phase"].detach()

@@ -43,6 +43,7 @@ from apt_g1.isaac.elevation_map import (
     wrap_height_function,
 )
 from apt_g1.isaac.sonic_decoder_torch import SonicTorchDecoder
+from apt_g1.isaac.to42_gate import To42Gate
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +239,17 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     use_gate_sel: bool = False
     gate_groups: tuple = ((0, -1.0, 4), (1, 0.2, 4), (2, -1.0, 4))  # idle/slow/walk fwd
 
+    # TO42: learned regime selection on the frozen decoder substrate
+    # (TO42_PLAN §3)。"off" = 行为与 TO41 canonical 逐位一致；"lsel" = 策略
+    # Bernoulli 位在 2 Hz 决策边界采纳（边界间锁存 0.5 s，gate 布尔只在真切换
+    # 步为 True，语义同 _gate_tick）；"fbkt" = selection 槽位每步写
+    # clamp(bucketize(cmd), 0, 1)、gate 恒 False、策略位被忽略（配对基线臂；
+    # eval 网格 v≤0.325<0.533 上与冻结自然分配逐位一致）。obs 追加
+    # [sel_state, gate_bool] 两维（两臂一致），action 追加 sel 位一维（16→17）。
+    to42_sel: str = "off"
+    to42_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
+    to42_n_sel: int = 2        # Rung 1 selector 值域 {vb0, vb1}（vb2 不进）
+
     # command sampling (paper ranges come later; start MuJoCo-parity)
     vx_min: float = 0.0
     vx_max: float = 0.8
@@ -423,6 +435,20 @@ class AptFlatG1Env(DirectRLEnv):
                 f"gate groups not in router: {self.cfg.gate_groups}"
             )
 
+        # TO42: per-env regime selector state machine（与 selftest 同一份代码）
+        self._to42 = None
+        if self.cfg.to42_sel != "off":
+            assert self.cfg.latent_mode and not self.cfg.decft_mode, (
+                "to42 selection rides on the latent decode path only")
+            self._to42 = To42Gate(
+                self.num_envs, self.device,
+                hold_steps=self.cfg.to42_hold_steps,
+                mode=self.cfg.to42_sel,
+                vx_max=self.cfg.vx_max,
+                n_bins=self.cfg.latent_vae_n_bins,
+                n_sel=self.cfg.to42_n_sel,
+            )
+
         # history buffers (oldest -> newest along dim 1)
         self._hist_ang_vel = torch.zeros(
             self.num_envs, 10, 3, dtype=torch.float32, device=self.device
@@ -583,7 +609,10 @@ class AptFlatG1Env(DirectRLEnv):
                     n = self.cfg.latent_vae_n_bins
                     cmd_v = self._commands[:, 0]
                     edges = torch.linspace(0.0, self.cfg.vx_max, n + 1)[1:-1].to(cmd_v.device)
-                    vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
+                    if self._to42 is not None:
+                        vb = self._to42.state  # TO42: 锁存的 selector 状态
+                    else:
+                        vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
                     ang = torch.atan2(self._commands[:, 1], self._commands[:, 0])
                     db = torch.floor((ang + math.pi) / (2.0 * math.pi) * 8).long() % 8
                     tokens = self._vae.decode(phase, sc, vb, db).detach().cpu().numpy()
@@ -593,7 +622,10 @@ class AptFlatG1Env(DirectRLEnv):
                     n = self.cfg.latent_vae_n_bins
                     cmd_v = self._commands[:, 0]
                     edges = torch.linspace(0.0, self.cfg.vx_max, n + 1)[1:-1].to(cmd_v.device)
-                    vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
+                    if self._to42 is not None:
+                        vb = self._to42.state  # TO42: 锁存的 selector 状态
+                    else:
+                        vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
                     tokens = self._vae.decode(phase, sc, vb).detach().cpu().numpy()
                 else:
                     tokens = self._vae.decode(phase, sc).detach().cpu().numpy()
@@ -721,6 +753,11 @@ class AptFlatG1Env(DirectRLEnv):
                 phase = torch.zeros_like(aux[:, :2])
             elif self.cfg.latent_mode:
                 phase = actions[:, :16]
+                if self._to42 is not None:
+                    # TO42: action = [z(16), sel bit(1)]；边界处采纳（lsel）
+                    # 或忽略（fbkt），见 to42_gate.To42Gate
+                    sel_bit = (actions[:, 16] > 0.5).long()
+                    self._to42.step(self._commands[:, 0], sel_bit)
                 if self.cfg.latent_residual:
                     # E48: action = [z(16), res(29)] -- res is the full-joint
                     # escape channel added on top of the frozen-decoder prior.
@@ -858,6 +895,10 @@ class AptFlatG1Env(DirectRLEnv):
                 parts.append(
                     torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
                 )
+        if self._to42 is not None:
+            # TO42: [sel_state, gate_bool] feedback（两臂同槽位）
+            parts.append(torch.stack(
+                [self._to42.state.float(), self._to42.gate.float()], dim=1))
         obs = torch.cat(
             [
                 *parts,
@@ -973,6 +1014,10 @@ class AptFlatG1Env(DirectRLEnv):
 
         # commands
         self._commands[env_ids] = self._commands_from_cfg(env_ids)
+        if self._to42 is not None:
+            # TO42: 自然 bin 中性起步；count 归零（首边界在 reset 后第
+            # to42_hold_steps 步）
+            self._to42.reset(env_ids, self._commands[env_ids, 0])
 
         # history: fill with the standing frame
         gravity = torch.tensor(
