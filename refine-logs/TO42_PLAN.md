@@ -7,7 +7,9 @@
 > τ_ff 效应 regime/seed 依赖）、`TO41_C_DIAGNOSIS.md`（bucketize 边界与 C1/C2
 > 身份重构）、`TO40C_PLAN.md`（§3 E47 配方与对照臂重训先例 / §5 评测协议骨架，
 > 本轮逐字平移）、`tracker/TO.md`（Run 行唯一事实源）｜状态：**活跃**
-> （协议冻结候选；开跑 / compute 须 owner 批准）
+> （协议冻结候选 → **FROZEN**（2026-09-03 owner 开跑授权 + 数据保全裁定后
+> 顺序冻结：Recovery Gate → lineage audit → scientific readout，判读前置于
+> Gate PASS）；开跑 / compute 已获 owner 批准）
 
 **这篇讲什么**：TO41 证明了两件事——**decode regime（vb0/vb1 locomotion
 manifold）支配行为，强度 ≥ τ_ff**；以及移植度比对确认 APT-RL 移植里**唯一没

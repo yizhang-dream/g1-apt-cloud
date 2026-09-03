@@ -1482,3 +1482,31 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   {0.275,0.277,0.300,0.325} selection-interface contrast（err60s(lsel) −
   err60s(fbkt)），绝对前沿 = TO41 OFF 臂 per-v best-fixed（本地分析阶段对照）；
   停止规则三支（塌缩/无改善/seed 换向）。
+- **owner 数据保全裁定（2026-09-03 晚，eval 进行中下达；定性 = 当前真正的工程
+  风险不是算力而是 cloud artifact survivability）**：云环境不稳定 + 数据必须
+  下载保存。状态判定 = **v3 是「结果正在产生，但主 artifact 通道不可信」的
+  实验**（平台自动上传实测 FAIL：正训 40 ckpt 零上传，列表仅冒烟期 2 件）。
+  三层保护获认可（签名下载通道已演练验证 / 日志数据副本已加固 / 增量 bundle
+  已加固）但两处加严：① **bundle 必须原子写**（write tmp → flush → fsync →
+  os.replace + 目录 fsync，已修 commit 3f6c665）——否则「增量打包最多丢最后
+  几分钟」不成立，半写会撞坏上一版好 bundle；**v3 跑旧代码无增量 bundle，
+  其 pod 死亡最坏情形 = 全部 receipts 仅剩日志 summary 行**；②
+  **RESULT-RECOVERABLE ≠ AUDIT-RECOVERABLE**：恢复分级 A/B/C（A = FULL
+  RECOVERY：bundle 28 receipts + 4 train_logs + manifest + audit PASS + 4
+  selected ckpt 文件级可取且哈希全中；B = SCIENTIFICALLY RECOVERABLE，
+  artifact-reproduction incomplete；C = DESCRIPTIVE SALVAGE ONLY，不得冒充
+  完整可审计实验）。**Recovery Gate 顺序冻结**：model/artifact list → 全量
+  下载 ckpt → 下载 bundle → 下载完整 eval receipts → 下载 train_log →
+  audit/manifest/report → **sha256 全量重核 → 才许 scientific readout**；
+  判读闸门 = analysis BLOCKED until Gate PASS。Gate 脚本 =
+  `tmp/to42_recovery_gate.py`（本机 ops 工具，按序机械执行，判级写
+  `sync/to42_r1/recovery_report.json`）。**v4 现在不开**（防 v3/v4 混合
+  lineage；仅当 v3 FAIL 且不可恢复才授权）；**矩阵不扩**（冻结 = 2 臂
+  {lsel,fbkt} × 2 训练 seed × 7 v × 3 eval seeds，τ 恒 OFF；不补 speed /
+  seed / eval seed / τ / condition，不趁云环境活着补实验——此刻最大价值是
+  保住既有证据链，不是多一个 datapoint）。
+- **训练收官（20:28）**：4/4 rc=0（17:56→20:28，单臂 36–40 min）；ckpt 窗口
+  （50-iter argmax 机械规则）：lsel-s0 it1750 / lsel-s1 it800 / fbkt-s0
+  it100 / fbkt-s1 it450（fbkt 早期窗 = E47 族已知 early-best 形态，机械接受
+  非 treatment 效应）；日志快照1（159KB，训练曲线+选择窗口）已落本地 tmp/。
+  eval 阶段 20:28 起跑，28 cells。
