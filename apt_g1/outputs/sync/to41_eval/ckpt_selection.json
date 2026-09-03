@@ -1,0 +1,72 @@
+{
+  "artifact": "rung1-eval-ckpt-selection/v1",
+  "rule": "checkpoint selection mechanically derived from training trajectories only; ONE pre-registered ckpt per (arm, seed) shared by all 14 eval cells of that (arm, seed); eval conditions (C1/C2, τ ON/OFF) play no role in selection",
+  "generated_utc": "2026-09-03T02:08:45Z",
+  "runs_root": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs",
+  "runs": {
+    "ctrl": {
+      "0": {
+        "run_dir": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-ctrl-s0",
+        "train_log_sha256": "77005a2c59824e3b52e37a5c1fdd2e981b728dbe98d35a8604f6fe3dade94a08",
+        "n_train_iters": 2000,
+        "window_iters": [
+          301,
+          350
+        ],
+        "window_mean_rew": 2.417477,
+        "ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-ctrl-s0/policy_it_350.pt",
+        "ckpt_sha256": "70934c2d8a35ada90c7bac7c30a2642b85d039102d17aa9e48d5ba368be878e3",
+        "final_ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-ctrl-s0/policy_final.pt",
+        "final_ckpt_sha256": "484b64df2f1e23a0a4d8eefa2d33bf6770971f5c89d92efdf38e709e770c96ae",
+        "rule": "argmax mean(train_log.rewards) over 50-iter windows aligned to policy_it_{N}.pt saves; tie-break = lowest window end iter; pre-registered (TO40C_PLAN §4), applied symmetrically to all arms"
+      },
+      "1": {
+        "run_dir": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-ctrl-s1",
+        "train_log_sha256": "fc4395e5673dfb12dd037b35fe604b02a4a2c2c3856c0bd1d8da7436036309ef",
+        "n_train_iters": 2000,
+        "window_iters": [
+          1201,
+          1250
+        ],
+        "window_mean_rew": 2.408096,
+        "ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-ctrl-s1/policy_it_1250.pt",
+        "ckpt_sha256": "78ec24cab0da30d5f52fd8eec7fb1d8f5230a794a25db4cb2a05b4063db4210a",
+        "final_ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-ctrl-s1/policy_final.pt",
+        "final_ckpt_sha256": "316ba9df1a29ee7f33fd828311c439d8f2489a6b08a836284c37866d83b63c92",
+        "rule": "argmax mean(train_log.rewards) over 50-iter windows aligned to policy_it_{N}.pt saves; tie-break = lowest window end iter; pre-registered (TO40C_PLAN §4), applied symmetrically to all arms"
+      }
+    },
+    "t10": {
+      "0": {
+        "run_dir": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-t10-s0",
+        "train_log_sha256": "55744c5dc1f31517b6cbee5b65a007c2044110cdef8704df9479be825cd7bb3d",
+        "n_train_iters": 2000,
+        "window_iters": [
+          151,
+          200
+        ],
+        "window_mean_rew": 2.410008,
+        "ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-t10-s0/policy_it_200.pt",
+        "ckpt_sha256": "441e397669dce38c776fd97e1aaadaa78b8214ad8b050f20ad954fe12eeb9f93",
+        "final_ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-t10-s0/policy_final.pt",
+        "final_ckpt_sha256": "5dbb33929a82c4a6c333e5a315cf99744b9d4ddd173c2b418e821b04b525ffa2",
+        "rule": "argmax mean(train_log.rewards) over 50-iter windows aligned to policy_it_{N}.pt saves; tie-break = lowest window end iter; pre-registered (TO40C_PLAN §4), applied symmetrically to all arms"
+      },
+      "1": {
+        "run_dir": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-t10-s1",
+        "train_log_sha256": "88fe77c20dba158ce93063aa032cb93c0a98268efa3557b3a405542079cc333f",
+        "n_train_iters": 2000,
+        "window_iters": [
+          1,
+          50
+        ],
+        "window_mean_rew": 2.376882,
+        "ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-t10-s1/policy_it_50.pt",
+        "ckpt_sha256": "f82f8614cb747769107961d6a3c8aef72a5b43271a54a789ffe1ef6d06b206bf",
+        "final_ckpt_file": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/outputs/to41r1-t10-s1/policy_final.pt",
+        "final_ckpt_sha256": "c7d8d40efbb9afa776f75e173d3a0e95faefa3ae37323abc0579ec741ad718da",
+        "rule": "argmax mean(train_log.rewards) over 50-iter windows aligned to policy_it_{N}.pt saves; tie-break = lowest window end iter; pre-registered (TO40C_PLAN §4), applied symmetrically to all arms"
+      }
+    }
+  }
+}

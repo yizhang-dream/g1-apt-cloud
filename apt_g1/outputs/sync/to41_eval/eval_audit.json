@@ -1,0 +1,51 @@
+{
+  "artifact": "rung1-eval-audit/v1",
+  "generated_utc": "2026-09-03T05:22:27Z",
+  "env_tag": "lab-ts",
+  "receipts_dir": "apt_g1/outputs/sync/to41_eval/receipts",
+  "n_receipts": 56,
+  "checks": {
+    "G1": {
+      "verdict": "PASS",
+      "note": "56/56 receipts"
+    },
+    "G2": {
+      "verdict": "PASS",
+      "note": "4 (arm,seed) 组全部单 ckpt 且 == manifest"
+    },
+    "G3": {
+      "verdict": "PASS",
+      "note": "全部消费 LUT 数组身份 == 冻结 manifest"
+    },
+    "G4": {
+      "verdict": "PASS",
+      "note": "每 (v,seed) 四 cell τ 消费身份唯一且 == 冻结 LUT"
+    },
+    "G5": {
+      "verdict": "PASS",
+      "note": "override 全 call 生效 + call 数语义 + buffer 恒定"
+    },
+    "G6": {
+      "verdict": "PASS",
+      "note": "归一化 cfg 全局唯一；on/off diff == {to_tau}"
+    },
+    "G7": {
+      "verdict": "PASS",
+      "note": "target/grid/cell_id/assignment 自洽；diagnostic 照录"
+    },
+    "G8": {
+      "verdict": "PASS",
+      "note": "边界/reset 簿记自洽"
+    },
+    "G9": {
+      "verdict": "PASS",
+      "note": "eval seeds == [0, 1, 2]（预注册清单）"
+    },
+    "G10": {
+      "verdict": "PASS",
+      "note": "outcome 聚合字段完整（record 层）"
+    }
+  },
+  "failures": [],
+  "overall": "PASS"
+}
