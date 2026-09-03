@@ -1234,3 +1234,44 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
     （seed 外层 × cell-index 内层循环；无 `--force`；单格实测 ~3.3 min →
     全程估 ~3.1 h；完成自动接 eval_checker 审计 G1–G10）。
     **Scientific result 仍 = NONE**（审计全 PASS 前不产生任何判读）。
+  - **三连收官（09-03 13:22，40-cell eval 全 rc=0 后审计）**：56/56
+    receipts、0 失败（10:09–13:22，~3.2 h）；**eval_checker G1–G10 全
+    PASS，overall PASS rc=0**（`sync/to41_eval/eval_audit.json`，
+    sha256 f9f08753…）；168/168 episodes completed（零倒地）。硬点④
+    解除，进入第一轮判读。
+  - **第一轮科学判读（主指标 = 60s |vx−cmd| 均值配对差分；Δ_ff =
+    err(ON)−err(OFF)，负 = ON 更好；产物 `sync/to41_eval/
+    effect_table_v1.txt`）**：
+    - **方差结构（最稳健观察）**：eval seed 间配对差几乎恒定
+      （如 +0.090/+0.089/+0.090）——不确定性几乎全部来自**训练 seed**，
+      eval 噪声可忽略（3 eval seed 冗余但无害）。
+    - **Δ_ff(v,C1) 符号在训练 seed 间翻转**：s0 = +0.077…+0.090（低速
+      最大、随 v 单调降到 0.325 的 +0.018）；s1 = −0.008…−0.049。
+      **Δ_ff(v,C2) 两 seed 同号**（+0.001…+0.046，ON 略差）。
+    - **Δ_cond(v) = Δ_ff(C1)−Δ_ff(C2)**：s0 全正（+0.017…+0.081）、
+      s1 全负（−0.052…−0.084）——幅度远超 0.02 决策边界且随 v 结构化，
+      **但方向训练 seed 依赖**。
+    - **conditioning override 本身 = 强 treatment（两 seed 一致）**：
+      OFF 臂同 ckpt 下 C1/C2 err 差 ~10 倍（0.2: 0.028 vs 0.382）——
+      vb0↔vb1 干预强烈改变步态（与 bucketize 两态语义一致）。
+    - **四分支归属**：Δ_ff≠0 不成立（不稳健）；Δ_cond≈0 不成立；
+      Δ_cond≠0 形式上成立但方向不稳，可比性前提存疑（DiD 只能读作
+      「两个 decoder 状态下 τ_ff 效应不同」，不能升格 interaction
+      机制结论）；interaction≈0 亦无证据。**无干净落点 → 按诚实读法
+      =「主效应训练 seed 间不可判定 + conditioning 通道本身强效应」**。
+      不满足消失规则全-null 条件（|Δ| 最大 0.09），也不满足稳健存在。
+    - **候选解释（仅记录，不做 post-hoc 纠偏）**：t10-s1 机械选中
+      it50 极早期 ckpt；ctrl/t10 两 seed 的 ckpt 相位差异（it50/200 vs
+      it350/1250）与已知「前期最优→后期 KL 漂移」形态——seed 翻转
+      可能反映 τ_ff 效应与训练相位强互作，但这正是主指标要求 2 训练
+      seed 要暴露的方差，不是执行错误（审计已证 execution 干净）。
+    - **对照 TO40C（旁证级）**：TO40C 无 override natural 条件下 t10
+      低带正向（−0.09）；本轮 natural cells 的 ON err 跨 seed 0.035–
+      0.165 横跨该值——TO40C 正向与「早期训练相位」相容的假说浮出，
+      不作结论。
+    - **下一步待 owner 裁定**：(a) 补第三训练 seed（seed 翻转情形在
+      Rung 1 §10.4 未预注册——两规则只覆盖「全-null 消失」与「连续
+      两点边界」，未决处置需 owner 定）；(b) 以 2-seed 不一致直接进入
+      收束报告（不可判定也是可接受结果）；(c) 先补 eff/disp/full-
+      battery 维度分析再判。**Scientific result = 首次非 NONE，但仍
+      无机制级结论**（PASS-AS-CHANNEL 纪律与 gate≠机制 界限继续有效）。
