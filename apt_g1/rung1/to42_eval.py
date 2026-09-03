@@ -179,7 +179,8 @@ def rollout_eval(env, policy, cmd_vx: float, eval_seed: int, steps: int,
 
 def execute_eval_cell(arm: str, v: float, train_seed: int, ckpt_path: Path,
                       vae_path: Path, ref_npz: Path, steps: int,
-                      eval_seeds: list, hold_steps: int, smoke: bool) -> dict:
+                      eval_seeds: list, hold_steps: int, smoke: bool,
+                      worker_tag: str = "w0") -> dict:
     import torch
 
     from apt_g1.isaac.apt_flat_env import AptFlatG1Env
@@ -281,6 +282,7 @@ def execute_eval_cell(arm: str, v: float, train_seed: int, ckpt_path: Path,
             "torch_version": torch.__version__,
             "python_version": _platform_python(),
             "platform": _platform(),
+            "worker_tag": worker_tag,
             "started_utc": t0,
             "finished_utc": _utcnow(),
             "wall_seconds": round(time.monotonic() - wall0, 1),
@@ -307,6 +309,8 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--eval-seeds", default="0,1,2")
     ap.add_argument("--hold-steps", type=int, default=25)
+    ap.add_argument("--worker-tag", default="w0",
+                    help="并发 worker 位次（TO42_PLAN §9 执行身份修订 v2：入 receipt）")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--env-tag", choices=["lab-ts", "cloud"], default="cloud")
     args = ap.parse_args()
@@ -370,7 +374,8 @@ def main() -> int:
     try:
         receipt = execute_eval_cell(
             args.arm, float(args.v), args.train_seed, args.ckpt, args.vae_path,
-            args.ref_npz, args.steps, eval_seeds, args.hold_steps, args.smoke)
+            args.ref_npz, args.steps, eval_seeds, args.hold_steps, args.smoke,
+            args.worker_tag)
     except SystemExit:
         raise
     except Exception:

@@ -1541,6 +1541,18 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   产物仅冒烟 2 ckpt（已上传平台，无科学内容）；重跑从零起（全链 ≈4.5–5h
   ≈ ¥18–20）。数据保全链（原子 bundle/日志 b64/checker 修复）均已在仓
   （commit 8fb8aee/3f6c665/a961a0d），充值后重发即用。
+- **执行身份修订 v2 = worker-pool 并发（09-03 深夜 owner 授权「最省时间」，
+  待 API 切换/充值后以 v5 发车）**：科学配置零变化（冻结矩阵/配方/判据逐字
+  ），编排层改并发——训练 2 并发（同 seed (lsel,fbkt) 成对，对内共享争用
+  状态保配对对称；s0 对先发）、评测 3 并发（每 cell 单 env 零科学足迹，
+  mid-band 16 cells 优先出队最大化 salvage 价值）；并发位次入 receipt
+  （execution.worker_tag）+ bundle meta.concurrency；bundle 写全收敛编排
+  主线程 + 原子写不变；pool 带 timeout/失败终止其余/存在性断言 fail-fast。
+  串行惯例起源勘定 = 3060 12G 装不下两份 128 envs 的物理约束 + 同机同条件
+  冻结纪律（并发位设计保住后者）。预期全程 4.4h → **~2.8–3.2h（省
+  ~1.2h ≈ ¥5）**，同时压缩中途被平台终止的风险窗口。详文 =
+  TO42_PLAN §9 执行身份修订 v2 + SCRIPT_MAP §8d。本机 `--stages selftest`
+  已验证 pool 机制（launch/poll/on_done 全链）。
 - **owner 正式状态定义（2026-09-03 深夜，v4 运行中下达；镜像入档）**：
   `TO42 R1: v3 = CLOSED / PILOT ONLY / Case C（execution completed, evidence
   recovery failed）；v4 = execution active / lineage = independent rerun /

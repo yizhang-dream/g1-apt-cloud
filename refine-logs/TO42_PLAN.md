@@ -228,3 +228,16 @@ practical-equivalence 口径，TO41 沿用）。
 - **与协议正文的偏差（两处，owner 授权链内留痕）**：① venue 云化（本节）；
   ② legacy 锚点（TO41 ctrl ckpt 免费旁证 eval）**不执行**——TO42 obs +2 维
   使 TO41 ckpt 不可直接加载，如需旁证须另加 padding 兼容加载器，留待按需。
+- **执行身份修订 v2（2026-09-03 深夜 owner 授权「worker-pool 最省时间」）**：
+  venue 不变（A10 pod），科学配置零变化（冻结矩阵/配方/判据逐字），编排层
+  改并发——① **训练 2 并发**：同 seed (lsel, fbkt) 成对并发（对内共享 GPU
+  争用状态，配对对称性按对保持；s0 对先于 s1 对），单臂浮点路径受争用影响
+  如实声明：单臂不再可 solo 逐位复现（重跑语义 = 同配置重训，与既有跨机
+  不可逐位一致口径一致）；② **评测 3 并发**：每 cell 单 env 确定性策略 +
+  冻结 jitter，并发零科学足迹；**mid-band 16 cells 优先出队**（中途死亡的
+  salvage 价值最大化）。并发位次入 receipt（execution.worker_tag）与
+  bundle meta.concurrency；bundle 写全部收敛在编排主线程（无并发写）+
+  原子写不变。依据：串行惯例的起源是 3060 12G 装不下两份 128 envs 的物理
+  约束 + 「同机同条件」冻结纪律——并发位设计保住后者。预期全程
+  4.4h → ~2.8–3.2h（省 ~1.2h ≈ ¥5），同时压缩中途被平台终止的风险窗口。
+  实现 = to42_cloud_wave.py worker-pool（SCRIPT_MAP §8d）。
