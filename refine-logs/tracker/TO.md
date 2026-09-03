@@ -1510,3 +1510,23 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   it100 / fbkt-s1 it450（fbkt 早期窗 = E47 族已知 early-best 形态，机械接受
   非 treatment 效应）；日志快照1（159KB，训练曲线+选择窗口）已落本地 tmp/。
   eval 阶段 20:28 起跑，28 cells。
+- **v3 结案（22:18 Terminated）+ Recovery Gate 判级 = Case C + v4 开跑**：
+  - v3 评测 **28/28 cells 全部跑完**（20:28→22:18，~4.2 min/cell），但 checker
+    阶段崩于 `natural_vb(np.array)` 的 `.device` AttributeError（本仓代码
+    bug，非环境），wave ABORT 于 report/bundle 之前；任务 Terminated（status
+    6）触发**零产物扫传**（平台列表恒为冒烟期 2 件）。v3 跑旧代码无增量
+    bundle → 28 receipts / 4 train_logs / manifest 滞留已终止 pod，不可取回。
+  - **Recovery Gate（tmp/to42_recovery_gate.py，冻结顺序机械执行）判级 =
+    Case C: DESCRIPTIVE SALVAGE ONLY**：日志滑动窗口只剩最后 14 cell 汇总行
+    （= seed 1 双臂 × 7 v 全；seed 0 全缺）+ 选择窗口 3/4 行（lsel-s0 it1750
+    由 eval 命令行补证）+ 签名下载仅冒烟 2 件；无 bundle/无 receipts/
+    无 b64 通道（v3 为加固前代码）。`sync/to42_r1/recovery_report.json` +
+    `log_salvage.json` 留档。**v3 = pilot，仅 descriptive，永不与 v4 合并
+    解读**（owner 反混合 lineage 纪律）。
+  - **v4 = canonical 全重跑（owner 预授权链：FAIL 且不可恢复 → 授权）**：
+    TASK_20260903_167，冻结矩阵逐字不变（2 臂 × 2 seed × 7 v × 3 eval
+    seeds，τ 恒 OFF）；加固链全量生效（增量**原子** bundle：每训练臂/select/
+    每 cell 后重写，write tmp→fsync→rename；receipt+train_log 全文 gz+b64
+    进日志；checker np 兼容修复 a961a0d）。pod 冒烟即见 lsel selection 机制
+    真实开火（300 步内 switches=[25] 恰在首个 2Hz 边界；fbkt 保持逐位静默
+    ）。守望器挂 8h。
