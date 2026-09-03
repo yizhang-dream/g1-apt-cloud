@@ -62,7 +62,11 @@ BASE_ARGS = [
     "--latent-kl-prior", "zero",
     "--progress-scale", "1.0", "--heading-scale", "0.4",
     "--to-ref", "--to-ref-npz", REF, "--to-ref-obs-zero", "--to-ref-w", "0",
-    "--num-envs", "128", "--iters", "2000",
+    # 显式仓相对路径——train 入口的 --decoder-path/--router-model-dir 默认值是
+    # lab-ts 绝对路径（云 pod 上不存在；2026-09-03 v2 首跑即挂此）
+    "--router-model-dir", ROUTER,
+    "--decoder-path", DECODER,
+    "--num-envs", "128",
 ]
 
 
@@ -96,13 +100,24 @@ def stage_selftest() -> None:
     run_py("g0-selftest", "apt_g1.isaac.to42_selftest", [], timeout=600)
 
 
+def _require_train_outputs(run_dir: Path) -> None:
+    """训练产物存在性断言——Isaac 崩溃会把退出码吞成 0（atexit 硬退出），
+    rc 不可信，产物在才算数。"""
+    for f in ("policy_final.pt", "train_log.json"):
+        p = run_dir / f
+        if not p.exists():
+            raise SystemExit(f"WAVE ABORT: 训练产物缺失 {p}（训练子进程实际失败，"
+                             "rc 被 Isaac atexit 吞掉）")
+
+
 def stage_smoke() -> None:
     for arm in ARMS:
         run_py(f"smoke-train-{arm}", "apt_g1.isaac.train_apt_isaac",
-               BASE_ARGS[:-2] + ["--iters", "30", "--seed", "0",
-                                 "--to42-sel", arm,
-                                 "--out", f"output/to42/smoke-{arm}"],
+               BASE_ARGS + ["--iters", "30", "--seed", "0",
+                            "--to42-sel", arm,
+                            "--out", f"output/to42/smoke-{arm}"],
                timeout=3600)
+        _require_train_outputs(RUNS_ROOT / f"smoke-{arm}")
     # Isaac 级 G0：300 步冒烟 eval + 行内断言（协议 §5 G0 的 wiring 部分）
     for arm in ARMS:
         run_py(f"smoke-eval-{arm}", "apt_g1.rung1.to42_eval",
@@ -133,9 +148,11 @@ def stage_train() -> None:
     for seed in SEEDS:
         for arm in ARMS:
             run_py(f"train-{arm}-s{seed}", "apt_g1.isaac.train_apt_isaac",
-                   BASE_ARGS + ["--seed", str(seed), "--to42-sel", arm,
+                   BASE_ARGS + ["--iters", "2000", "--seed", str(seed),
+                                "--to42-sel", arm,
                                 "--out", f"output/to42/to42r1-{arm}-s{seed}"],
                    timeout=6 * 3600)
+            _require_train_outputs(RUNS_ROOT / f"to42r1-{arm}-s{seed}")
 
 
 def stage_select() -> None:
@@ -156,6 +173,10 @@ def stage_eval() -> None:
                         "--steps", "3000", "--eval-seeds", "0,1,2",
                         "--out-dir", str(EVAL_DIR), "--env-tag", "cloud"],
                        timeout=3600)
+                if not _receipt_path(arm, v, seed, smoke=False).exists():
+                    raise SystemExit(
+                        f"WAVE ABORT: receipt 缺失 {arm} v={v} s={seed}"
+                        "（eval 子进程实际失败，rc 被 Isaac atexit 吞掉）")
 
 
 def stage_check() -> None:

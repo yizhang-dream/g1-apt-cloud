@@ -342,6 +342,14 @@ def main() -> int:
         raise SystemExit("FAIL: --arm ∈ {lsel,fbkt}，--train-seed ∈ {0,1}")
     eval_seeds = [int(s) for s in args.eval_seeds.split(",")]
 
+    # preflight（Isaac 启动前——失败保留真实退出码；Isaac atexit 会把 rc 吞成 0）
+    if not Path(args.ckpt).exists():
+        raise SystemExit(f"FAIL: checkpoint 不存在: {args.ckpt}")
+    if not Path(args.vae_path).exists():
+        raise SystemExit(f"FAIL: vae 不存在: {args.vae_path}")
+    if not Path(args.ref_npz).exists():
+        raise SystemExit(f"FAIL: ref npz 不存在: {args.ref_npz}")
+
     base_dir = args.out_dir / "smoke" if args.smoke else args.out_dir
     receipts_dir = base_dir / "receipts"
     receipts_dir.mkdir(parents=True, exist_ok=True)
@@ -359,9 +367,19 @@ def main() -> int:
 
     print(f"[to42-eval] {args.arm} v={args.v} seed={args.train_seed} "
           f"× {len(eval_seeds)} eval seeds × {args.steps} steps", flush=True)
-    receipt = execute_eval_cell(
-        args.arm, float(args.v), args.train_seed, args.ckpt, args.vae_path,
-        args.ref_npz, args.steps, eval_seeds, args.hold_steps, args.smoke)
+    try:
+        receipt = execute_eval_cell(
+            args.arm, float(args.v), args.train_seed, args.ckpt, args.vae_path,
+            args.ref_npz, args.steps, eval_seeds, args.hold_steps, args.smoke)
+    except SystemExit:
+        raise
+    except Exception:
+        # 绕过 Isaac atexit 的 rc=0 吞没，保留失败退出码
+        import traceback
+
+        traceback.print_exc()
+        print("[to42-eval] FAILED（见上方 traceback）", flush=True)
+        os._exit(1)
     receipt_path.write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     eps = receipt["episodes"]
