@@ -155,7 +155,20 @@ def _save_bundle(summary: dict | None) -> Path:
     if summary is not None:
         payload["report"] = summary
     out = RUNS_ROOT / "to42_artifacts.pt"
-    torch.save(payload, out)
+    # 原子写（owner 裁定 2026-09-03）：write temp → flush → fsync → rename，
+    # 防 pod 死在写入中途把上一版好 bundle 撞成半写损坏——否则"最多丢最后
+    # 几分钟"不成立，而是最后一版整体损坏。
+    tmp = out.with_suffix(".pt.tmp")
+    with open(tmp, "wb") as f:
+        torch.save(payload, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, out)  # POSIX 原子
+    _dirfd = os.open(str(out.parent), os.O_DIRECTORY)
+    try:
+        os.fsync(_dirfd)
+    finally:
+        os.close(_dirfd)
     h = hashlib.sha256(out.read_bytes()).hexdigest()
     print(f"[bundle] partial={payload['partial']} receipts={len(payload.get('receipts', {}))} "
           f"runs={len(logs)} sha256={h[:16]}… size={out.stat().st_size}", flush=True)
