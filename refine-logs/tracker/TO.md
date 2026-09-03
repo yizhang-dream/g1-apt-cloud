@@ -1553,6 +1553,20 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   ~1.2h ≈ ¥5）**，同时压缩中途被平台终止的风险窗口。详文 =
   TO42_PLAN §9 执行身份修订 v2 + SCRIPT_MAP §8d。本机 `--stages selftest`
   已验证 pool 机制（launch/poll/on_done 全链）。
+- **执行身份修订 v3 = 动态流水线（09-04 owner「还不够极限」）**：v2 之上再
+  推——① **流水线**：任一 (arm,seed) 训练完成 → 增量机械选择（select_run
+  确定性；条目即时落 partial manifest，终版 formal 全量重算同规则同结果，
+  checker 对账一致）→ 动态注入该臂 7 评测格（mid-band 优先）→ **评测与训练
+  重叠**；② **显存自适应放行**：nvidia-smi free − 90s 内已放行任务预留量
+  （训练预留 9G/评测 4.5G），评测尾段全宽 6 并发；③ **冒烟零训练**：G0
+  wiring 与策略无关，随机 init ckpt（strict-load 验证过）直接验接线，砍掉
+  两段冒烟训练。两个不为：训练并发硬上限保持 2（3×128env 显存未证实，OOM
+  中断代价 > 收益；VRAM 遥测入 bundle 供下一轮）；report 不与 checker 重叠。
+  预期全程 **~2.2–2.4h**（串行 4.4h 的 ~1/2；对币估 ≈¥9–10）。实现 =
+  to42_cloud_wave.py v3（动态注入共享队列调度器；on_done 统一签名收
+  pending；bundle 写仍仅编排主线程）。本机已验证：pool 机制 / 随机 ckpt
+  strict-load / Windows 守卫触发时 pool 正确 fail-fast。**等 API 切换后以
+  v5 发车（冻结矩阵零变化）**。
 - **owner 正式状态定义（2026-09-03 深夜，v4 运行中下达；镜像入档）**：
   `TO42 R1: v3 = CLOSED / PILOT ONLY / Case C（execution completed, evidence
   recovery failed）；v4 = execution active / lineage = independent rerun /

@@ -241,3 +241,17 @@ practical-equivalence 口径，TO41 沿用）。
   约束 + 「同机同条件」冻结纪律——并发位设计保住后者。预期全程
   4.4h → ~2.8–3.2h（省 ~1.2h ≈ ¥5），同时压缩中途被平台终止的风险窗口。
   实现 = to42_cloud_wave.py worker-pool（SCRIPT_MAP §8d）。
+- **执行身份修订 v3（2026-09-04 owner「还不够极限」）**：在 v2 之上把编排推
+  到工程上限——**动态流水线**：任一 (arm, seed) 训练完成 → 增量机械选择
+  （select_run 确定性重算，条目即时落 partial manifest；终版 formal manifest
+  全量重算同规则同结果，checker 对账一致）→ 立即注入该臂 7 个评测格（
+  mid-band 优先）→ **评测与训练重叠**；**显存自适应放行**：nvidia-smi
+  free − 90s 内已放行任务预留量，训练预留 9GB / 评测 4.5GB（对未实测的单臂
+  显存足迹自整定；评测尾段全宽 6 并发）；**冒烟零训练**：G0 wiring 与策略
+  无关（fbkt 时间线 = 自然 bin 是 env 状态机性质、lsel 切换 ⊆ 边界同），
+  随机初始化 ckpt 直接验证接线（strict-load 验证），砍掉两段冒烟训练。
+  两个不为（如实声明）：**训练并发硬上限保持 2**——24G 上 3×128env 显存
+  未证实，一次 OOM 中断代价 > 并发收益（本轮 VRAM 遥测入 bundle 供下一轮
+  决策）；**report 不与 checker 重叠**（先审计后分析纪律）。预期全程
+  ~2.2–2.4h（串行 4.4h 的 ~1/2）。实现 = to42_cloud_wave.py v3（动态注入
+  共享队列调度器；bundle 写仍只在编排主线程）。
