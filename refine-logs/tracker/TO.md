@@ -1530,3 +1530,28 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
     进日志；checker np 兼容修复 a961a0d）。pod 冒烟即见 lsel selection 机制
     真实开火（300 步内 switches=[25] 恰在首个 2Hz 边界；fbkt 保持逐位静默
     ）。守望器挂 8h。
+- **owner 正式状态定义（2026-09-03 深夜，v4 运行中下达；镜像入档）**：
+  `TO42 R1: v3 = CLOSED / PILOT ONLY / Case C（execution completed, evidence
+  recovery failed）；v4 = execution active / lineage = independent rerun /
+  analysis BLOCKED until Recovery Gate A`。三条纪律钉死：① **v3 不进入任何
+  效应分析**（不得出现「v3 有趋势 / seed1 支持某方向 / v3+v4 合并提
+  power」——两轮 persistence/checker/artifact-capture 路径不同，
+  P(data|v3) ≠ P(data|v4)，证据生成机制非同一实验；v3 唯一科学身份 =
+  engineering recovery failure case + descriptive salvage）；② v4 smoke 的
+  lsel switches=[25] / fbkt 静默只记 **mechanism sanity observation**（
+  selection interface is operationally active），不得提前写「lsel 更优/
+  学会切换/fbkt 失败」；③ **pod filesystem 不是 source of truth**——以后
+  source of truth = atomic local bundle + log encoded evidence + hash
+  manifest；checker 升格为 **eval transaction finalization step**（关键路径
+  组件，非普通 sanity check——v3 证明 checker 失败 = 科学证据不存在）；
+  natural_vb bug 定性 = **execution boundary type contract failure**（训练
+  torch / 评测 numpy 跨层接口无显式约束，a961a0d 修复方向正确）。
+  **v4 唯一允许的观察顺序**：Gate 0 训练结束（4 arms + selection + lineage
+  manifest）→ Gate 1 artifact recovery（bundle exists / receipt count /
+  train log count / audit / sha256）→ Gate 2 scientific analysis。Gate 2
+  读出顺序按本 protocol 对齐表述：**第一张表 = selection-interface
+  contrast（err60s(lsel) − err60s(fbkt)，Rung 1 τ 恒 OFF）**，随后（1）
+  regime 是否存在（selection duty/行为学涌现，G2 语义）、（2）seed 方差
+  （停止规则 c）；**Δτ(r_sel) 属 Rung 2 post-selection estimand，本轮不测、
+  不预授权**。当前：不扩矩阵、不改 protocol、不预设计第三轮；下一合法状态
+  迁移 = Recovery Gate A PASS。
