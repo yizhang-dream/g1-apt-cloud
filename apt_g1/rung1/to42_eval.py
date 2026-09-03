@@ -382,6 +382,12 @@ def main() -> int:
         os._exit(1)
     receipt_path.write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # 数据保全（owner 指令 2026-09-03：云环境不稳，数据必须可下载保存）——
+    # receipt 全文 gz+b64 进任务日志：平台 ckpt 上传不可靠时，日志流即完整
+    # 数据通道（单 receipt gz+b64 ~10KB，28 cells ~300KB 日志增量，可接受）
+    import gzip
+    _b64 = base64.b64encode(gzip.compress(receipt_path.read_bytes(), 9)).decode("ascii")
+    print(f"TO42_RECEIPT_B64:{receipt_path.name}:{_b64}", flush=True)
     eps = receipt["episodes"]
     print(f"[to42-done] {receipt['cell_id']} "
           f"completed={[e['completed'] for e in eps]} "

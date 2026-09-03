@@ -108,6 +108,58 @@ def _require_train_outputs(run_dir: Path) -> None:
         if not p.exists():
             raise SystemExit(f"WAVE ABORT: 训练产物缺失 {p}（训练子进程实际失败，"
                              "rc 被 Isaac atexit 吞掉）")
+    # 数据保全（owner 指令 2026-09-03）：train_log 全文 gz+b64 进日志 +
+    # 立即增量打包——平台 ckpt 发现不可靠（v3 实测正训 ckpt 零上传），
+    # 日志流 + 分阶段 bundle 是双保险
+    import gzip
+
+    _b64 = base64.b64encode(gzip.compress((run_dir / "train_log.json").read_bytes(), 9)).decode("ascii")
+    print(f"TO42_GZ_B64:trainlog:{run_dir.name}:{_b64}", flush=True)
+    _save_bundle(None)
+
+
+def _save_bundle(summary: dict | None) -> Path:
+    """增量打包当前已有产物 → output/to42/to42_artifacts.pt（任意阶段重写，
+    pod 死掉最多丢最后一个 cell；summary 非空 = 终版）。"""
+    import hashlib
+
+    import torch
+
+    payload = {
+        "artifact": "to42-artifacts/v1",
+        "partial": summary is None,
+        "meta": {
+            "grid7": list(GRID7),
+            "mid_band": list(MID_BAND),
+            "base_args": BASE_ARGS,
+            "vae": VAE, "ref_npz": REF, "decoder": DECODER, "router": ROUTER,
+        },
+    }
+    sel_path = RUNS_ROOT / "ckpt_selection.json"
+    if sel_path.exists():
+        payload["ckpt_selection"] = json.loads(sel_path.read_text("utf-8"))
+    logs = {}
+    for a in ARMS:
+        for s in SEEDS:
+            p = RUNS_ROOT / f"to42r1-{a}-s{s}" / "train_log.json"
+            if p.exists():
+                logs[f"to42r1-{a}-s{s}"] = json.loads(p.read_text("utf-8"))
+    payload["train_logs"] = logs
+    rdir = EVAL_DIR / "receipts"
+    if rdir.exists():
+        payload["receipts"] = {p.name: json.loads(p.read_text("utf-8"))
+                               for p in sorted(rdir.glob("receipt_*.json"))}
+    audit_path = _REPO / "apt_g1/outputs/to42/to42_eval_audit.json"
+    if audit_path.exists():
+        payload["audit"] = json.loads(audit_path.read_text("utf-8"))
+    if summary is not None:
+        payload["report"] = summary
+    out = RUNS_ROOT / "to42_artifacts.pt"
+    torch.save(payload, out)
+    h = hashlib.sha256(out.read_bytes()).hexdigest()
+    print(f"[bundle] partial={payload['partial']} receipts={len(payload.get('receipts', {}))} "
+          f"runs={len(logs)} sha256={h[:16]}… size={out.stat().st_size}", flush=True)
+    return out
 
 
 def stage_smoke() -> None:
@@ -159,6 +211,7 @@ def stage_select() -> None:
     run_py("select", "apt_g1.rung1.to42_select",
            ["--runs-root", str(RUNS_ROOT),
             "--out", str(RUNS_ROOT / "ckpt_selection.json")], timeout=600)
+    _save_bundle(None)  # manifest 即刻入 bundle（数据保全）
 
 
 def stage_eval() -> None:
@@ -177,6 +230,7 @@ def stage_eval() -> None:
                     raise SystemExit(
                         f"WAVE ABORT: receipt 缺失 {arm} v={v} s={seed}"
                         "（eval 子进程实际失败，rc 被 Isaac atexit 吞掉）")
+                _save_bundle(None)  # 每 cell 增量打包（数据保全）
 
 
 def stage_check() -> None:
@@ -226,35 +280,27 @@ def stage_report() -> dict:
 
 
 def stage_bundle(summary: dict) -> None:
+    out = _save_bundle(summary)
     import hashlib
 
-    import torch
-
-    payload = {
-        "artifact": "to42-artifacts/v1",
-        "meta": {
-            "grid7": list(GRID7),
-            "mid_band": list(MID_BAND),
-            "base_args": BASE_ARGS,
-            "vae": VAE, "ref_npz": REF, "decoder": DECODER, "router": ROUTER,
-        },
-        "ckpt_selection": json.loads(
-            (RUNS_ROOT / "ckpt_selection.json").read_text("utf-8")),
-        "train_logs": {
-            f"to42r1-{a}-s{s}": json.loads(
-                (RUNS_ROOT / f"to42r1-{a}-s{s}" / "train_log.json").read_text("utf-8"))
-            for a in ARMS for s in SEEDS},
-        "receipts": {
-            p.name: json.loads(p.read_text("utf-8"))
-            for p in sorted((EVAL_DIR / "receipts").glob("receipt_*.json"))},
-        "audit": json.loads(
-            (_REPO / "apt_g1/outputs/to42/to42_eval_audit.json").read_text("utf-8")),
-        "report": summary,
-    }
-    out = RUNS_ROOT / "to42_artifacts.pt"
-    torch.save(payload, out)
     h = hashlib.sha256(out.read_bytes()).hexdigest()
-    print(f"[bundle] {out} sha256={h} size={out.stat().st_size}", flush=True)
+    print(f"[bundle] FINAL {out} sha256={h} size={out.stat().st_size}", flush=True)
+    audit_p = _REPO / "apt_g1/outputs/to42/to42_eval_audit.json"
+    verdict = (json.loads(audit_p.read_text("utf-8")).get("verdict")
+               if audit_p.exists() else "UNKNOWN")
+    sel_p = RUNS_ROOT / "ckpt_selection.json"
+    windows = {}
+    if sel_p.exists():
+        _m = json.loads(sel_p.read_text("utf-8"))
+        windows = {f"{a}-s{s}": _m["runs"][a][str(s)]["window_iters"]
+                   for a in ARMS for s in SEEDS}
+    result = {
+        "verdict_checker": verdict,
+        "ckpt_window": windows,
+        "mid_band_mean_contrast_by_seed": summary.get("mid_band_mean_contrast_by_seed"),
+        "artifacts_sha256": h,
+    }
+    print("TO42_RESULT_JSON:" + json.dumps(result, ensure_ascii=False), flush=True)
     result = {
         "verdict_checker": payload["audit"]["verdict"],
         "ckpt_window": {f"{a}-s{s}": payload["ckpt_selection"]["runs"][a][str(s)]["window_iters"]
