@@ -1411,3 +1411,46 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
       intervention, not seed expansion。转折定性：从「找一个 magic τ 让
       机器人更强」转向「识别 latent locomotion manifold，并在 manifold
       内估计控制变量效应」。
+
+## TO42：学习型 regime 选择（learned regime selection）（2026-09-03 文献调研改向 + protocol draft 定稿，未开跑）
+
+- **授权链与改向**：TO41 四十三轮初步方向（regime-controlled τ intervention，
+  A 臂固定 vb0 / B 臂固定 vb1，未立项）→ 09-03 owner 授权跳出已入档的 A/B
+  固定臂候选、按文献调研重新选方向 → 三条文献线核查（Walk These Ways 步态
+  参数命令条件化 / CALM 潜动作空间 / DeepPhase 相位流形 + Learned Gait
+  Transitions 与 Kim & Son 的速度依赖离散步态选择涌现）+ 论文 gait selector
+  配方确认（单 logit sigmoid 阈值 0.5 在 trot/bound 两解码器间二选一、2 Hz
+  gate + 0.5 s 锁定 + gate/当前选择回馈 obs）→ owner 确认改向 = **learned
+  regime selection on frozen decoder substrate**；A/B 固定臂设计不废弃，降级
+  Rung 2 post-selection。设计文档 = `refine-logs/TO42_PLAN.md`（协议冻结候选；
+  **零执行、零算力、无新 Run 行；开跑/compute 须 owner 另行授权**；与
+  maintenance baseline 记录「下次开发入口 = TO42 protocol draft only（非代码
+  改动）」一致）。
+- **改向依据（四条，详见 TO42_PLAN §1）**：① 论文唯一未复现成分且与
+  {vb0,vb1} 结构同构（`decft_policy.py:150` 冻结 bucketize vs 论文学习 logit，
+  移植 = 一个离散头 + 一条 obs 回馈，解码器/Mode A/τ 材料不动）；② 文献口径
+  一致——regime/步态接口应由学习器拥有而非环境冻结；③ 人形侧公开空白（论文
+  人形扩展仅 movie S4 claim 无跟进；本轮 = robot-agnostic claim 的人形版
+  检验）；④ TO41 收束文 §3c/3d 给出可测前沿：C1/C2（realized ~0.13/~0.61
+  m/s）夹住整个 cmd 网格，mid-band best-fixed OFF err {0.104/0.109/0.138/
+  0.198}，冻结底板上 regime 时间复用是族内唯一速度插值机制。
+- **protocol 要点（唯一权威 = TO42_PLAN.md）**：estimand = selection-interface
+  contrast（err60s(learned) − err60s(frozen-bucketize)，主对照 mid-band 四点；
+  配对基线 = 同 commit/seed 重训的 fbkt 臂，绝对前沿 = TO41 OFF 臂 per-v
+  best-fixed）；H1 = mid-band 相对 best-fixed 降 ≥0.02，机制内容预注册
+  （per-step 指标下纯混合算术上不可能超过 best-fixed，H1 唯一通路 = 训练期
+  可塑性使 realized speed 变 cmd 可响应——预注册 realized-speed vs cmd 斜率
+  描述性检验）；停止规则三支（选择器塌缩 / 无改善 / 改善但 seed 换向）全部
+  合格产出；设计 = 2×2 {lsel, fbkt} × {s0, s1} 同 seed 配对，E47 配方逐字 +
+  τ 恒 OFF（selection-only），fbkt 臂重训对齐 obs（TO41 ctrl ckpt 仅 legacy
+  锚点不进主对照）；门 = G0 wiring（fbkt 逐位复现 bucketize）→ G1 execution
+  （28 receipts + selection 时间线入 receipt）→ G2 behavioral（selection 随
+  cmd 变化）；冻结面 = decoder / Mode A / τ 材料 / eval protocol / speed grid
+  （vb2 不进 Rung 1）；预算 = 训练 4 runs ≈2.5 h + eval 28 receipts ≈1.6 h，
+  全 lab-ts 串行。
+- **Δτ(r) estimand 处置**：TO41「唯一提前锁死原则」（先固定 regime 再测 τ）
+  不作废、延后为 Rung 2 post-selection Δτ(r_sel)（policy 选定并锁定的 regime
+  稳态内 τ ON/OFF）；regime 锁定三候选（training-time / eval-time /
+  stratified）被改向取代（Rung 1 regime 归 policy 拥有，Rung 2 锁定 = 自选 +
+  lock 窗口，因果语义最接近候选 A）。TO41 九项冻结清单与 maintenance mode
+  不受影响。
