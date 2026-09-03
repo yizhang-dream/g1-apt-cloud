@@ -1530,6 +1530,17 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
     进日志；checker np 兼容修复 a961a0d）。pod 冒烟即见 lsel selection 机制
     真实开火（300 步内 switches=[25] 恰在首个 2Hz 边界；fbkt 保持逐位静默
     ）。守望器挂 8h。
+- **v4/v5 阻塞 = 云账户余额耗尽（2026-09-03 22:40 起）**：v4
+  （TASK_20260903_167）G0+冒烟全绿、train-lsel-s0 跑至 ~it300 于 22:40 被
+  平台终止（status 6，日志零错误）——**归因修正：非节点维护，是余额见底
+  后平台中途杀任务**（22:40:01 出现 archiving.sh 归档 = 收尾动作；随后 v5
+  （TASK_20260903_172，draft）run 报 `TASK_INSUFFICIENT_BALANCE`
+  retryable=false，与赠款 ¥50（08-30 时点）减 TO38/39 及今日 v3 4.42h
+  （≈¥17.7）+ v4 0.15h 的消耗曲线吻合）。**TO42 R1 当前 = BLOCKED ON
+  OWNER RECHARGE**；TASK_172 为零成本 draft，充值后可直接 run。v4 阶段
+  产物仅冒烟 2 ckpt（已上传平台，无科学内容）；重跑从零起（全链 ≈4.5–5h
+  ≈ ¥18–20）。数据保全链（原子 bundle/日志 b64/checker 修复）均已在仓
+  （commit 8fb8aee/3f6c665/a961a0d），充值后重发即用。
 - **owner 正式状态定义（2026-09-03 深夜，v4 运行中下达；镜像入档）**：
   `TO42 R1: v3 = CLOSED / PILOT ONLY / Case C（execution completed, evidence
   recovery failed）；v4 = execution active / lineage = independent rerun /
