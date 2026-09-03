@@ -1360,3 +1360,54 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
       pre-registered comparability criterion. Therefore the pooled
       cross-regime interaction is not identified; the valid scientific
       output is regime-specific τ_ff contrast."
+  - **四十三轮（09-03）：owner 终裁复核——TO41 全冻结维持 + 三问重分类
+    + 第三 seed 正式否决 + 方向裁定 = TO42 regime-controlled τ
+    intervention（未立项；零新增执行，云端算力消耗 0，无新 Run 行）**：
+    - **裁定总纲**：接受 scientific closure 并冻结 TO41 主线——项目已从
+      「实验执行」进入「实验解释边界管理」。合法科学结论固定为：frozen
+      Mode A execution 下 τ_ff intervention 确实改变 decoder-conditioned
+      locomotion regime，但其对 tracking error 的净效应不是跨训练 seed
+      稳定的主效应，而是 regime-dependent、seed-dependent contrast；
+      禁止压缩为「τ_ff 有效」/「τ_ff 无效」/「conditioning 导致性能
+      提升」三种过度解释。
+    - **隐变量判读（owner 判读层，不回写收束文）**：原假设遗漏 latent
+      variable——设想通路 cmd_v → policy → realized_v，实际通路 cmd_v →
+      condition override → decoder gait mode → realized_v；C1/C2 实为
+      两个 locomotion manifold（vb0/vb1），condition label 只是入口。
+      「decoder latent condition 比 command velocity 更强地控制运动
+      状态」为比 τ_ff 效应更基础的发现，统一解释四现象：OFF 巨大分离 /
+      target-speed 扫描不产生对应 realized-speed 扫描 / Δ_cond 大 /
+      pooled interaction 不成立（证据基础 = 收束文 realized-speed 附件
+      与 N/D 块，判读与既有记录一致）。
+    - **三问重分类**：Q1「τ_ff 是否改变 decoder behavior」= **YES**
+      （execution + behavioral 层：L1–L4 / G1–G10 全 PASS + C1/C2
+      realized speed 分离 + same τ material → different condition
+      outcome）；Q2「τ_ff 是否提升 locomotion tracking」= **NOT
+      IDENTIFIED**（效应 = f(training seed, decoder regime, training
+      phase) 而非常数 τ_ff gain；s0 退化 / s1 改善，不得宣称平均效应）；
+      Q3「conditioning 是否造成 τ_ff interaction」= **NOT IDENTIFIED**
+      （C1/C2 是不同步态流形而非 matched conditions，τ×condition 无共同
+      support）——与收束文 established / not identified 分段一致。
+    - **第三 seed 正式否决（信息增益论证）**：即使 s2 给出第三点，至多
+      得到「seed distribution 有偏」，仍无法回答 τ / regime / phase 何者
+      有效——estimand 已变，补 seed 解决不了 C1/C2 结构问题（与四十一
+      轮 D 块、四十二轮关线声明一致：seed 3 仅可能为未来独立 robustness
+      实验）。
+    - **方向裁定（未立项）**：下一步若继续 = **TO42 regime-controlled
+      τ intervention**：A 臂组固定 vb0（τ OFF vs ON → Δτ|vb0）、B 臂组
+      固定 vb1（→ Δτ|vb1），2×2 估计 τ effect conditional on gait
+      manifold——回答「τ_ff 是否优化某种 locomotion manifold」而非
+      「是否让整个机器人更好」。TO41 收束文的 regime-specific Δ_ff
+      contrast 即其观察版前身，TO42 = 把 regime 升级为受控因子的全新
+      实验线；未来开跑须新目录 `TO42/{protocol,train,eval,analysis}`，
+      不污染 TO41，立项需 owner 另行授权。
+    - **工程线 maintenance mode**：允许 = 保存模型 / receipt / audit /
+      manifest + 写论文材料；禁止 = 修改 eval protocol / 重跑挑 seed /
+      调 ckpt / 根据结果调 τ / 第三 seed 并入 TO41。
+    - **终态卡**：Execution CLOSED / Implementation CLOSED / Scientific
+      CLOSED with null/partial finding；main claim = decoder conditioning
+      creates distinct locomotion regimes；τ_ff claim = regime-dependent
+      effect only, global effect unresolved；next = regime-controlled
+      intervention, not seed expansion。转折定性：从「找一个 magic τ 让
+      机器人更强」转向「识别 latent locomotion manifold，并在 manifold
+      内估计控制变量效应」。
