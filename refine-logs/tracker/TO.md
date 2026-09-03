@@ -1275,3 +1275,49 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
       收束报告（不可判定也是可接受结果）；(c) 先补 eff/disp/full-
       battery 维度分析再判。**Scientific result = 首次非 NONE，但仍
       无机制级结论**（PASS-AS-CHANNEL 纪律与 gate≠机制 界限继续有效）。
+  - **四十一轮（09-03）：owner 裁定 (c)＋56-cell 现有产物三块诊断，落点
+    = 分支 (b)**（详文 = refine-logs/TO41_C_DIAGNOSIS.md；脚本 =
+    `rung1/eval_diagnose.py` 纯 stdlib 本机跑；产物 =
+    `sync/to41_eval/diagnosis_v1.{json,txt}`；**零新增训练/评测/protocol
+    变更，云端算力消耗 0**）：
+    - **owner 裁定**：选 (c) 先补维度再判——先做 variance +
+      natural/interventional + C1/C2 comparability 诊断；**第三训练 seed
+      不授权**；不新增 speed、不修改 protocol；checkpoint selection 保持
+      冻结；s0/s1 翻转不得解释为「随机」。
+    - **V 方差分解（口径 = effect_table per-eval-seed 配对差，主指标原生
+      粒度）**：eval-seed sd 中位 0.0018（max 0.0157）vs train-seed
+      |Δdff(s0−s1)| 中位 0.0518（14/28 超 0.02 边界）；F_like 中位 133
+      （min 43）——**训练 seed 方差压倒性主导**（量化版确认四十轮肉眼
+      判读）。
+    - **S eval seed identity 审计（owner 质疑的正面回答）**：seed 唯一
+      入口 = jitter rng(1000+seed) 三处初始扰动（root z ±5mm / joint pos
+      ±0.01rad / joint vel ±0.02rad/s），policy deterministic=True，
+      disturbance_prob=0；56/56 格 3 eval seeds **均非逐位相同** → 随机
+      性确实进入执行路径（死 RNG 假说否定）；真实图景 = **系统对初始扰动
+      强镇定**（行为 spread ~1e-3 vs train-seed 差 ~1e-1）。「eval 噪声
+      可忽略」继续成立且现在有机制性说明（强镇定，非随机未生效）。
+    - **N natural vs interventional（新结构事实）**：bucketize 边界 =
+      [0.267, 0.533] → v<0.267 时 natural=vb0（C1=no-op、C2=forced
+      vb0→vb1）；v≥0.267 时 natural=vb1（C2=no-op、C1=forced）——56/56
+      格验证，每 (v,C) 恰一臂 natural 一臂跨 bin 强制。推论①：**C1 ≡
+      vb0-regime / C2 ≡ vb1-regime（全 v）**；推论②：**Δ_cond 在 bin
+      边界两侧 contrast 内容互换（matched−forced ↔ forced−matched），
+      整条 v 轴非 homogeneous estimand**；推论③（7 格均值）：regime 差
+      |Δdff(C1−C2)| = +0.068(s0)/−0.064(s1) ≫ matched-ness 差
+      +0.001/+0.017——**Δ_ff 的 seed 依赖主结构 = decode-regime×τ_ff
+      交互（符号随 seed 换向），natural-matched-ness 调制 ≈ 0**。
+    - **D C1/C2 comparability**：OFF 臂（treatment-free 层）err 区间
+      **7/7 速度点分离**（最低间隙 0.040 @v0.325，仍 2× 决策边界；
+      C2/C1 均值比 10.8×→1.3× 单调收敛）；几何证据 = 两 condition 步态
+      速度由 decode regime 决定而几乎不由 cmd 决定（C2 OFF 恒 ~0.61 m/s
+      / disp ~31m，C1 OFF 蠕行 ~0.13 m/s；h_min 双臂 0.71–0.76 零倒地）。
+      **判定：OFF 层不可比，无 pooled interaction contrast 的共同
+      support**。
+    - **分叉落点**：按 owner 预注册树 → **分支 (b)：收束为
+      condition-specific contrast**（C1/C2 不可比时第三 seed 救不了
+      C1 vs C2 解释问题，第三 seed 与 seed 数无关地不可比）。若 owner
+      仍考虑 (a)，信息增益重述 = 检验 decode-regime(vb0/vb1)×τ_ff 交互
+      符号的 seed 稳定性（当前 s0/s1 恰换向），非笼统 Δ_ff 稳定性。
+      **Scientific result 维持：OBSERVED，无机制级结论**（gate≠机制、
+      PASS-AS-CHANNEL 纪律继续有效）；**第三训练 seed 仍 NOT
+      AUTHORIZED**（待 owner 对分支 b 裁定）。

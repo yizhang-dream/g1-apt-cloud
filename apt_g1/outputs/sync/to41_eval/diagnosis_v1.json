@@ -1,0 +1,1016 @@
+{
+ "block_V": {
+  "metric": "Δ_ff 配对差（ON−OFF，per-step |vx−cmd| 口径，effect_table_v1）",
+  "n_cells": 28,
+  "eval_seed_sd_within_cell": {
+   "median": 0.0018045956155590395,
+   "max": 0.01571623364550171,
+   "median_range": 0.0034999999999999996,
+   "max_range": 0.031
+  },
+  "train_seed_absdiff_of_dff_means": {
+   "median": 0.05183333333333333,
+   "min": 0.03066666666666667,
+   "max": 0.10966666666666666,
+   "n_over_decision_boundary": 14
+  },
+  "pooled_eval_var_within": 3.2999999999999996e-05,
+  "expected_noise_absdiff_if_no_train_effect": 0.004690415759823429,
+  "F_like_train_over_eval": {
+   "median": 133.0429292929293,
+   "min": 42.74747474747476,
+   "max": 546.6717171717172,
+   "note": "F_like = |dff_s0−dff_s1|² / (2σ²_eval/3)；df≈(1,2) 仅作量级参照"
+  },
+  "train_diffs": [
+   {
+    "v": 0.2,
+    "C": "C1",
+    "dff_s0": 0.08966666666666666,
+    "dff_s1": -0.008333333333333333,
+    "abs_diff": 0.09799999999999999
+   },
+   {
+    "v": 0.2,
+    "C": "C2",
+    "dff_s0": 0.008666666666666666,
+    "dff_s1": 0.043333333333333335,
+    "abs_diff": 0.034666666666666665
+   },
+   {
+    "v": 0.225,
+    "C": "C1",
+    "dff_s0": 0.08533333333333333,
+    "dff_s1": -0.017666666666666667,
+    "abs_diff": 0.103
+   },
+   {
+    "v": 0.225,
+    "C": "C2",
+    "dff_s0": 0.006,
+    "dff_s1": 0.042333333333333334,
+    "abs_diff": 0.036333333333333336
+   },
+   {
+    "v": 0.25,
+    "C": "C1",
+    "dff_s0": 0.08566666666666667,
+    "dff_s1": -0.01,
+    "abs_diff": 0.09566666666666666
+   },
+   {
+    "v": 0.25,
+    "C": "C2",
+    "dff_s0": 0.006666666666666667,
+    "dff_s1": 0.042666666666666665,
+    "abs_diff": 0.036
+   },
+   {
+    "v": 0.275,
+    "C": "C1",
+    "dff_s0": 0.08833333333333333,
+    "dff_s1": -0.015000000000000001,
+    "abs_diff": 0.10333333333333333
+   },
+   {
+    "v": 0.275,
+    "C": "C2",
+    "dff_s0": 0.007333333333333333,
+    "dff_s1": 0.041666666666666664,
+    "abs_diff": 0.034333333333333334
+   },
+   {
+    "v": 0.277,
+    "C": "C1",
+    "dff_s0": 0.08133333333333333,
+    "dff_s1": -0.020666666666666667,
+    "abs_diff": 0.102
+   },
+   {
+    "v": 0.277,
+    "C": "C2",
+    "dff_s0": 0.007666666666666667,
+    "dff_s1": 0.044,
+    "abs_diff": 0.03633333333333333
+   },
+   {
+    "v": 0.3,
+    "C": "C1",
+    "dff_s0": 0.077,
+    "dff_s1": -0.03266666666666666,
+    "abs_diff": 0.10966666666666666
+   },
+   {
+    "v": 0.3,
+    "C": "C2",
+    "dff_s0": 0.015333333333333332,
+    "dff_s1": 0.046,
+    "abs_diff": 0.03066666666666667
+   },
+   {
+    "v": 0.325,
+    "C": "C1",
+    "dff_s0": 0.018333333333333333,
+    "dff_s1": -0.049,
+    "abs_diff": 0.06733333333333333
+   },
+   {
+    "v": 0.325,
+    "C": "C2",
+    "dff_s0": 0.0013333333333333333,
+    "dff_s1": 0.035333333333333335,
+    "abs_diff": 0.034
+   }
+  ],
+  "within_cells": [
+   {
+    "v": 0.2,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.0005773502691896262,
+    "range": 0.0010000000000000009,
+    "pairs": [
+     0.09,
+     0.089,
+     0.09
+    ]
+   },
+   {
+    "v": 0.2,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.005507570547286102,
+    "range": 0.01,
+    "pairs": [
+     -0.011,
+     -0.002,
+     -0.012
+    ]
+   },
+   {
+    "v": 0.2,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.0015275252316519466,
+    "range": 0.003,
+    "pairs": [
+     0.01,
+     0.007,
+     0.009
+    ]
+   },
+   {
+    "v": 0.2,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.001527525231651945,
+    "range": 0.0029999999999999957,
+    "pairs": [
+     0.043,
+     0.045,
+     0.042
+    ]
+   },
+   {
+    "v": 0.225,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.0005773502691896183,
+    "range": 0.000999999999999987,
+    "pairs": [
+     0.085,
+     0.085,
+     0.086
+    ]
+   },
+   {
+    "v": 0.225,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.009073771725877465,
+    "range": 0.018,
+    "pairs": [
+     -0.026,
+     -0.008,
+     -0.019
+    ]
+   },
+   {
+    "v": 0.225,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.001,
+    "range": 0.002,
+    "pairs": [
+     0.005,
+     0.007,
+     0.006
+    ]
+   },
+   {
+    "v": 0.225,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.0025166114784235818,
+    "range": 0.0049999999999999975,
+    "pairs": [
+     0.042,
+     0.045,
+     0.04
+    ]
+   },
+   {
+    "v": 0.25,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.004163331998932262,
+    "range": 0.007999999999999993,
+    "pairs": [
+     0.087,
+     0.089,
+     0.081
+    ]
+   },
+   {
+    "v": 0.25,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.01571623364550171,
+    "range": 0.031,
+    "pairs": [
+     -0.013,
+     -0.024,
+     0.007
+    ]
+   },
+   {
+    "v": 0.25,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.0011547005383792516,
+    "range": 0.002,
+    "pairs": [
+     0.006,
+     0.006,
+     0.008
+    ]
+   },
+   {
+    "v": 0.25,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.0005773502691896222,
+    "range": 0.000999999999999994,
+    "pairs": [
+     0.043,
+     0.042,
+     0.043
+    ]
+   },
+   {
+    "v": 0.275,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.0015275252316519481,
+    "range": 0.0030000000000000027,
+    "pairs": [
+     0.087,
+     0.09,
+     0.088
+    ]
+   },
+   {
+    "v": 0.275,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.009539392014169458,
+    "range": 0.019000000000000003,
+    "pairs": [
+     -0.006,
+     -0.014,
+     -0.025
+    ]
+   },
+   {
+    "v": 0.275,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.0015275252316519462,
+    "range": 0.002999999999999999,
+    "pairs": [
+     0.007,
+     0.009,
+     0.006
+    ]
+   },
+   {
+    "v": 0.275,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.002081665999466131,
+    "range": 0.003999999999999997,
+    "pairs": [
+     0.04,
+     0.041,
+     0.044
+    ]
+   },
+   {
+    "v": 0.277,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.005131601439446881,
+    "range": 0.009999999999999995,
+    "pairs": [
+     0.087,
+     0.077,
+     0.08
+    ]
+   },
+   {
+    "v": 0.277,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.013316656236958786,
+    "range": 0.026000000000000002,
+    "pairs": [
+     -0.024,
+     -0.006,
+     -0.032
+    ]
+   },
+   {
+    "v": 0.277,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.0055075705472861025,
+    "range": 0.01,
+    "pairs": [
+     0.004,
+     0.005,
+     0.014
+    ]
+   },
+   {
+    "v": 0.277,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.0,
+    "range": 0.0,
+    "pairs": [
+     0.044,
+     0.044,
+     0.044
+    ]
+   },
+   {
+    "v": 0.3,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.0010000000000000009,
+    "range": 0.0020000000000000018,
+    "pairs": [
+     0.076,
+     0.078,
+     0.077
+    ]
+   },
+   {
+    "v": 0.3,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.009291573243177568,
+    "range": 0.017999999999999995,
+    "pairs": [
+     -0.025,
+     -0.043,
+     -0.03
+    ]
+   },
+   {
+    "v": 0.3,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.0005773502691896262,
+    "range": 0.0010000000000000009,
+    "pairs": [
+     0.015,
+     0.016,
+     0.015
+    ]
+   },
+   {
+    "v": 0.3,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.0010000000000000009,
+    "range": 0.0020000000000000018,
+    "pairs": [
+     0.047,
+     0.045,
+     0.046
+    ]
+   },
+   {
+    "v": 0.325,
+    "C": "C1",
+    "seed": 0,
+    "sd": 0.004725815626252608,
+    "range": 0.009,
+    "pairs": [
+     0.013,
+     0.022,
+     0.02
+    ]
+   },
+   {
+    "v": 0.325,
+    "C": "C1",
+    "seed": 1,
+    "sd": 0.008888194417315589,
+    "range": 0.017,
+    "pairs": [
+     -0.052,
+     -0.039,
+     -0.056
+    ]
+   },
+   {
+    "v": 0.325,
+    "C": "C2",
+    "seed": 0,
+    "sd": 0.0015275252316519466,
+    "range": 0.003,
+    "pairs": [
+     0.003,
+     0.001,
+     0.0
+    ]
+   },
+   {
+    "v": 0.325,
+    "C": "C2",
+    "seed": 1,
+    "sd": 0.0025166114784235818,
+    "range": 0.0049999999999999975,
+    "pairs": [
+     0.035,
+     0.038,
+     0.033
+    ]
+   }
+  ]
+ },
+ "block_S": {
+  "n_cells_bitwise_identical_across_3_eval_seeds": 0,
+  "spread_across_eval_seeds": {
+   "vx_mean": {
+    "median": 0.0019000000000000128,
+    "max": 0.031299999999999994
+   },
+   "v_speed_mean": {
+    "median": 0.001700000000000021,
+    "max": 0.014800000000000008
+   },
+   "h_min": {
+    "median": 0.009500000000000008,
+    "max": 0.04300000000000004
+   },
+   "disp": {
+    "median": 0.40849999999999986,
+    "max": 18.078999999999997
+   }
+  },
+  "code_facts": {
+   "seed_entry": "eval_cell.rollout_eval → jitter_and_reset(env, seed=eval_seed)",
+   "rng": "np.random.default_rng(1000 + seed)",
+   "perturbations": [
+    "root z: 0.76 + N(0, 0.005) m",
+    "29 body joint pos: sonic_default + N(0, 0.01) rad",
+    "all joint vel: N(0, 0.02) rad/s",
+    "obs history refilled from jittered state; router state reset"
+   ],
+   "policy_inference": "policy.act(..., deterministic=True)（推理无采样噪声）",
+   "first_obs_quirk": "jitter 后不刷新 _last_obs，首步沿用上轮末 obs（既有 harness 语义，三 seed 一致）",
+   "disturbance": "cfg disturbance_prob = 0，cmd 恒定每步重申"
+  },
+  "conclusion_template": null
+ },
+ "block_N": {
+  "vb_edges": [
+   0.26666666666666666,
+   0.5333333333333333
+  ],
+  "cells": [
+   {
+    "v": 0.2,
+    "C": "C1",
+    "natural_vb": 0,
+    "applied_vb": 0,
+    "natural_from_bucketize": 0,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.2,
+    "C": "C2",
+    "natural_vb": 0,
+    "applied_vb": 1,
+    "natural_from_bucketize": 0,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.225,
+    "C": "C1",
+    "natural_vb": 0,
+    "applied_vb": 0,
+    "natural_from_bucketize": 0,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.225,
+    "C": "C2",
+    "natural_vb": 0,
+    "applied_vb": 1,
+    "natural_from_bucketize": 0,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.25,
+    "C": "C1",
+    "natural_vb": 0,
+    "applied_vb": 0,
+    "natural_from_bucketize": 0,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.25,
+    "C": "C2",
+    "natural_vb": 0,
+    "applied_vb": 1,
+    "natural_from_bucketize": 0,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.275,
+    "C": "C1",
+    "natural_vb": 1,
+    "applied_vb": 0,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.275,
+    "C": "C2",
+    "natural_vb": 1,
+    "applied_vb": 1,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.277,
+    "C": "C1",
+    "natural_vb": 1,
+    "applied_vb": 0,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.277,
+    "C": "C2",
+    "natural_vb": 1,
+    "applied_vb": 1,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.3,
+    "C": "C1",
+    "natural_vb": 1,
+    "applied_vb": 0,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.3,
+    "C": "C2",
+    "natural_vb": 1,
+    "applied_vb": 1,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.325,
+    "C": "C1",
+    "natural_vb": 1,
+    "applied_vb": 0,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 9000,
+    "n_decode": 9000,
+    "role": "forced_cross_bin",
+    "matched": false,
+    "bucketize_agrees": true
+   },
+   {
+    "v": 0.325,
+    "C": "C2",
+    "natural_vb": 1,
+    "applied_vb": 1,
+    "natural_from_bucketize": 1,
+    "n_override_changed": 0,
+    "n_decode": 9000,
+    "role": "natural_noop",
+    "matched": true,
+    "bucketize_agrees": true
+   }
+  ],
+  "structure": {
+   "v<0.267": {
+    "C1": "natural_noop (decode vb0)",
+    "C2": "forced_cross_bin vb0→vb1"
+   },
+   "v>=0.267": {
+    "C1": "forced_cross_bin vb1→vb0",
+    "C2": "natural_noop (decode vb1)"
+   }
+  },
+  "estimand_note": "Δ_cond(v)=Δ_ff(v,C1)−Δ_ff(v,C2) 在 bin 边界两侧的 contrast 内容互换（matched−forced ↔ forced−matched），整条 v 轴不是一个 homogeneous estimand",
+  "decode_regime_identity": {
+   "C1": "全程 decode 输入 vb0（自然或强制）",
+   "C2": "全程 decode 输入 vb1（自然或强制）"
+  }
+ },
+ "block_D": {
+  "rule": "诊断性规则（非协议硬点）：err_off 跨 train-seed 区间分离且间隙 > 0.02 ⇒ 两 condition 不在同一可比 support；Δ_cond 只能读作 condition-specific contrast",
+  "n_v_with_err_overlap": 0,
+  "n_v_total": 7,
+  "rows": [
+   {
+    "v": 0.2,
+    "C1_off_err_range": [
+     0.028,
+     0.043
+    ],
+    "C2_off_err_range": [
+     0.382,
+     0.386
+    ],
+    "err_overlap": false,
+    "err_gap": 0.339,
+    "err_means_ratio": 10.82,
+    "geom_C1": {
+     "vx_mean": [
+      0.081,
+      0.168
+     ],
+     "h_min": [
+      0.707,
+      0.757
+     ],
+     "disp": [
+      0.084,
+      8.331
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.589,
+      0.63
+     ],
+     "h_min": [
+      0.734,
+      0.758
+     ],
+     "disp": [
+      30.798,
+      31.819
+     ]
+    }
+   },
+   {
+    "v": 0.225,
+    "C1_off_err_range": [
+     0.053,
+     0.065
+    ],
+    "C2_off_err_range": [
+     0.359,
+     0.362
+    ],
+    "err_overlap": false,
+    "err_gap": 0.294,
+    "err_means_ratio": 6.11,
+    "geom_C1": {
+     "vx_mean": [
+      0.087,
+      0.188
+     ],
+     "h_min": [
+      0.721,
+      0.758
+     ],
+     "disp": [
+      0.511,
+      9.494
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.59,
+      0.632
+     ],
+     "h_min": [
+      0.74,
+      0.751
+     ],
+     "disp": [
+      30.931,
+      31.61
+     ]
+    }
+   },
+   {
+    "v": 0.25,
+    "C1_off_err_range": [
+     0.08,
+     0.09
+    ],
+    "C2_off_err_range": [
+     0.333,
+     0.339
+    ],
+    "err_overlap": false,
+    "err_gap": 0.243,
+    "err_means_ratio": 3.95,
+    "geom_C1": {
+     "vx_mean": [
+      0.084,
+      0.185
+     ],
+     "h_min": [
+      0.72,
+      0.759
+     ],
+     "disp": [
+      0.587,
+      10.162
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.589,
+      0.632
+     ],
+     "h_min": [
+      0.735,
+      0.757
+     ],
+     "disp": [
+      30.885,
+      31.277
+     ]
+    }
+   },
+   {
+    "v": 0.275,
+    "C1_off_err_range": [
+     0.104,
+     0.115
+    ],
+    "C2_off_err_range": [
+     0.308,
+     0.313
+    ],
+    "err_overlap": false,
+    "err_gap": 0.193,
+    "err_means_ratio": 2.84,
+    "geom_C1": {
+     "vx_mean": [
+      0.082,
+      0.187
+     ],
+     "h_min": [
+      0.726,
+      0.757
+     ],
+     "disp": [
+      0.448,
+      9.442
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.59,
+      0.631
+     ],
+     "h_min": [
+      0.737,
+      0.752
+     ],
+     "disp": [
+      30.925,
+      31.479
+     ]
+    }
+   },
+   {
+    "v": 0.277,
+    "C1_off_err_range": [
+     0.109,
+     0.119
+    ],
+    "C2_off_err_range": [
+     0.306,
+     0.309
+    ],
+    "err_overlap": false,
+    "err_gap": 0.187,
+    "err_means_ratio": 2.7,
+    "geom_C1": {
+     "vx_mean": [
+      0.083,
+      0.181
+     ],
+     "h_min": [
+      0.712,
+      0.761
+     ],
+     "disp": [
+      0.356,
+      9.153
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.59,
+      0.63
+     ],
+     "h_min": [
+      0.737,
+      0.754
+     ],
+     "disp": [
+      30.737,
+      31.998
+     ]
+    }
+   },
+   {
+    "v": 0.3,
+    "C1_off_err_range": [
+     0.138,
+     0.15
+    ],
+    "C2_off_err_range": [
+     0.275,
+     0.283
+    ],
+    "err_overlap": false,
+    "err_gap": 0.125,
+    "err_means_ratio": 1.94,
+    "geom_C1": {
+     "vx_mean": [
+      0.085,
+      0.193
+     ],
+     "h_min": [
+      0.729,
+      0.759
+     ],
+     "disp": [
+      0.353,
+      10.441
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.59,
+      0.63
+     ],
+     "h_min": [
+      0.739,
+      0.747
+     ],
+     "disp": [
+      30.866,
+      31.26
+     ]
+    }
+   },
+   {
+    "v": 0.325,
+    "C1_off_err_range": [
+     0.198,
+     0.223
+    ],
+    "C2_off_err_range": [
+     0.263,
+     0.27
+    ],
+    "err_overlap": false,
+    "err_gap": 0.04,
+    "err_means_ratio": 1.27,
+    "geom_C1": {
+     "vx_mean": [
+      0.082,
+      0.185
+     ],
+     "h_min": [
+      0.719,
+      0.76
+     ],
+     "disp": [
+      0.368,
+      9.784
+     ]
+    },
+    "geom_C2": {
+     "vx_mean": [
+      0.589,
+      0.632
+     ],
+     "h_min": [
+      0.731,
+      0.754
+     ],
+     "disp": [
+      30.773,
+      31.231
+     ]
+    }
+   }
+  ]
+ },
+ "block_W": {
+  "verdicts": [
+   {
+    "q": "eval variance ≪ train variance ?",
+    "a": "是（eval-seed sd 中位 0.0018 vs train-seed |Δdff| 中位 0.052；F_like 中位 133）"
+   },
+   {
+    "q": "C1/C2 可比（OFF 臂共同 support）？",
+    "a": "否——全部 7 个速度点 err_off 区间分离，最低间隙 0.040 m/s"
+   },
+   {
+    "q": "Δ_cond estimand 身份",
+    "a": "bin 边界两侧 contrast 内容互换（N 块）；数值平滑但不是单一定义量；decode-regime(vb0/vb1) × train-seed 才是当前 56-cell 的主结构"
+   }
+  ],
+  "branch_suggestion": "b) 收束为 condition-specific contrast——按 owner 分叉树，C1/C2 明显不可比时第三训练 seed 救不了 C1 vs C2 的解释问题",
+  "third_train_seed": "NOT AUTHORIZED by this diagnosis（owner 分叉树 (b) 分支）；若 owner 改判走 (a)，其信息增益应重新表述为：检验 decode-regime(vb0/vb1)×τ_ff 交互符号的 seed 稳定性，而非笼统的 Δ_ff 稳定性",
+  "disclaimer": "本块为数据侧机械映射，最终裁定权在 owner"
+ },
+ "inputs": {
+  "receipts_dir": "apt_g1\\outputs\\sync\\to41_eval\\receipts",
+  "effect_table": "apt_g1\\outputs\\sync\\to41_eval\\effect_table_v1.txt",
+  "n_receipts": 56,
+  "n_table_rows": 28
+ }
+}

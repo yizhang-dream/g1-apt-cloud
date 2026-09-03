@@ -1,0 +1,55 @@
+=== TO41 (c) diagnosis_v1：56-cell 现有产物三块分解（零新增执行） ===
+口径：V 块 = effect_table_v1 主指标（per-step |vx−cmd| 配对差，per-eval-seed 粒度）；
+S/N/D 块 = receipts（注意 receipt 聚合字段 vx_mean 与 err60s 口径不同，仅作形态证据）。
+
+--- V. 方差分解（Δ_ff = ON−OFF 配对差） ---
+eval-seed sd（同 cell 内 3 pairs，df=2）：median=0.00180 max=0.01572；极差 median=0.00350 max=0.03100
+train-seed |dff_s0−dff_s1|：median=0.0518 min=0.0307 max=0.1097；超 0.02 边界 14/28
+F_like(train/eval)：median=133（min=42.7 max=546.7）——train-seed 方差主导
+若训练 seed 无差异，|dff_s0−dff_s1| 期望量级 ≈ 0.00469（实测中位 0.0518）
+
+--- S. eval seed identity 审计 ---
+随机路径：eval_cell.rollout_eval → jitter_and_reset(env, seed=eval_seed)；rng = np.random.default_rng(1000 + seed)；policy 推理 policy.act(..., deterministic=True)（推理无采样噪声）
+  · root z: 0.76 + N(0, 0.005) m
+  · 29 body joint pos: sonic_default + N(0, 0.01) rad
+  · all joint vel: N(0, 0.02) rad/s
+  · obs history refilled from jittered state; router state reset
+  · jitter 后不刷新 _last_obs，首步沿用上轮末 obs（既有 harness 语义，三 seed 一致）
+  · cfg disturbance_prob = 0，cmd 恒定每步重申
+数据侧：3 eval seeds 逐位全同的 cell = 0/56（≠56 ⇒ 随机性确实进入执行路径，非死 RNG）
+  spread[vx_mean] median=0.00190 max=0.03130
+  spread[v_speed_mean] median=0.00170 max=0.01480
+  spread[h_min] median=0.00950 max=0.04300
+  spread[disp] median=0.40850 max=18.07900
+结论：seed 进入初始条件且读数非逐位相同，但系统对初始扰动强镇定（spread ~1e-3 量级 vs train-seed 差 ~1e-1 量级）——eval 噪声可忽略是「强镇定」而非「随机未生效」。
+
+--- N. natural vs interventional ---
+每 (v,C) 恰好一臂 natural no-op、一臂跨 bin 强制（56/56 格验证，natural_vb 与 bucketize 复算全符）：
+  v<0.267: {'C1': 'natural_noop (decode vb0)', 'C2': 'forced_cross_bin vb0→vb1'}
+  v>=0.267: {'C1': 'forced_cross_bin vb1→vb0', 'C2': 'natural_noop (decode vb1)'}
+estimand 警示：Δ_cond(v)=Δ_ff(v,C1)−Δ_ff(v,C2) 在 bin 边界两侧的 contrast 内容互换（matched−forced ↔ forced−matched），整条 v 轴不是一个 homogeneous estimand
+decode-regime 恒等：C1 ≡ vb0-regime（全 v），C2 ≡ vb1-regime（全 v）；matched-ness 由 (v,C) 派生且与 regime 不混淆。
+
+--- D. C1/C2 comparability（OFF 臂 = treatment-free 层） ---
+诊断性规则（非协议硬点）：err_off 跨 train-seed 区间分离且间隙 > 0.02 ⇒ 两 condition 不在同一可比 support；Δ_cond 只能读作 condition-specific contrast
+err_off 区间分离的速度点：7/7
+v      C1_off(err s0,s1)        C2_off(err s0,s1)        gap     C2/C1 均值比 | vx_mean C1/C2            h_min C1/C2        disp C1/C2
+0.2    [0.028,0.043]          [0.382,0.386]          0.339   10.82   | [0.08,0.17]/[0.59,0.63]  [0.71,0.76]/[0.73,0.76]  [  0.1,  8.3]/[ 30.8, 31.8]
+0.225  [0.053,0.065]          [0.359,0.362]          0.294   6.11    | [0.09,0.19]/[0.59,0.63]  [0.72,0.76]/[0.74,0.75]  [  0.5,  9.5]/[ 30.9, 31.6]
+0.25   [0.080,0.090]          [0.333,0.339]          0.243   3.95    | [0.08,0.18]/[0.59,0.63]  [0.72,0.76]/[0.73,0.76]  [  0.6, 10.2]/[ 30.9, 31.3]
+0.275  [0.104,0.115]          [0.308,0.313]          0.193   2.84    | [0.08,0.19]/[0.59,0.63]  [0.73,0.76]/[0.74,0.75]  [  0.4,  9.4]/[ 30.9, 31.5]
+0.277  [0.109,0.119]          [0.306,0.309]          0.187   2.7     | [0.08,0.18]/[0.59,0.63]  [0.71,0.76]/[0.74,0.75]  [  0.4,  9.2]/[ 30.7, 32.0]
+0.3    [0.138,0.150]          [0.275,0.283]          0.125   1.94    | [0.09,0.19]/[0.59,0.63]  [0.73,0.76]/[0.74,0.75]  [  0.4, 10.4]/[ 30.9, 31.3]
+0.325  [0.198,0.223]          [0.263,0.270]          0.040   1.27    | [0.08,0.18]/[0.59,0.63]  [0.72,0.76]/[0.73,0.75]  [  0.4,  9.8]/[ 30.8, 31.2]
+
+--- W. 综合裁决（数据侧机械映射，最终决定权 owner） ---
+Q: eval variance ≪ train variance ?
+A: 是（eval-seed sd 中位 0.0018 vs train-seed |Δdff| 中位 0.052；F_like 中位 133）
+Q: C1/C2 可比（OFF 臂共同 support）？
+A: 否——全部 7 个速度点 err_off 区间分离，最低间隙 0.040 m/s
+Q: Δ_cond estimand 身份
+A: bin 边界两侧 contrast 内容互换（N 块）；数值平滑但不是单一定义量；decode-regime(vb0/vb1) × train-seed 才是当前 56-cell 的主结构
+分叉建议：b) 收束为 condition-specific contrast——按 owner 分叉树，C1/C2 明显不可比时第三训练 seed 救不了 C1 vs C2 的解释问题
+第三训练 seed：NOT AUTHORIZED by this diagnosis（owner 分叉树 (b) 分支）；若 owner 改判走 (a)，其信息增益应重新表述为：检验 decode-regime(vb0/vb1)×τ_ff 交互符号的 seed 稳定性，而非笼统的 Δ_ff 稳定性
+
+措辞纪律（owner 本轮要求）：execution conformance 已通过（G1–G10 全 PASS）；因此上述读数可信地反映当前 frozen system 的实际行为——「实际行为」是事实，不等于已有科学解释。
