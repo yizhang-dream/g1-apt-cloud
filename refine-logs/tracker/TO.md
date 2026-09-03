@@ -1209,3 +1209,28 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
     完整；buffer==LUT；3 episodes 无倒地 reset 簿记自洽；outcome 仅 record）；
     单 cell 墙钟 48s（Isaac 启动含内）→ 56 cell 正式 eval 估算 ~1h 级。
     **冒烟 = implementation 验证，非科学结果、不进 coverage**。
+
+- **四十轮（09-03 owner 裁定 GO）——三连执行：select_checkpoint → 56-cell
+  formal eval → independent eval_checker**：
+  - **裁定**：批准直接执行三连，不再做新的设计审查；t10-s1 窗口最优落在
+    it50 属预注册规则机械接受的对象，不人工纠偏（ckpt 选择结果 ≠ treatment
+    effect，二者不得混谈）。四条硬点：①manifest 先冻结再启动任何正式
+    eval，四 (arm,seed) 各一 ckpt 服务对应全部 14 cells；②正式 eval 仅
+    lab-ts frozen env；③56 coverage 精确闭合，缺失/重复/混 ckpt 由
+    checker 判 invalid，禁止补跑悄悄覆盖原 receipt（driver 覆盖保护开启）；
+    ④先审计后分析——eval_checker 全 PASS 前不读 reward/trajectory 形成
+    任何科学解释。
+  - **训练 wave 收官（工程监控线）**：4/4 rc=0（02:14–04:50，ctrl-s0
+    02:14→02:54 / t10-s0 02:54→03:40 / ctrl-s1 03:40→04:15 / t10-s1
+    04:15→04:50，单臂 25–46 min）。窗口最优（与 TO40C 同臂形态旁证）：
+    ctrl-s0 it350 rew 2.417 / t10-s0 it200 rew 2.410 / ctrl-s1 it1250
+    rew 2.408 / t10-s1 it50 rew 2.377；全程 fall ≤0.8%、无 NaN。t10-s1
+    early-best + final 衰减 = E45/47/TO40C 已知 KL 漂移形态的极端版本，
+    恰为主指标要求 2 训练 seed 的动机实例。
+  - **select_checkpoint 冻结（硬点①）**：manifest
+    `sync/to41_eval/ckpt_selection.json`，sha256 `8fab587f2d5e6bb1…`，
+    四臂各一 ckpt（= 上表窗口最优对应 policy_it_{N}.pt）；tie 规则未触发。
+  - **56-cell formal eval launch**：`/home/cvgluser/to41r1_eval_formal.sh`
+    （seed 外层 × cell-index 内层循环；无 `--force`；单格实测 ~3.3 min →
+    全程估 ~3.1 h；完成自动接 eval_checker 审计 G1–G10）。
+    **Scientific result 仍 = NONE**（审计全 PASS 前不产生任何判读）。
