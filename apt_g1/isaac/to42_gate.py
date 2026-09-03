@@ -33,10 +33,14 @@ def vae_speed_edges(vx_max: float, n_bins: int = 3) -> torch.Tensor:
     return torch.linspace(0.0, vx_max, n_bins + 1)[1:-1]
 
 
-def natural_vb(cmd_v: torch.Tensor, vx_max: float = 0.8, n_bins: int = 3) -> torch.Tensor:
-    """冻结自然条件分配（TO41 的 natural bucketize），不钳制——供核对/记录。"""
-    edges = vae_speed_edges(vx_max, n_bins).to(cmd_v.device)
-    return torch.bucketize(cmd_v, edges).clamp(0, n_bins - 1)
+def natural_vb(cmd_v, vx_max: float = 0.8, n_bins: int = 3):
+    """冻结自然条件分配（TO41 的 natural bucketize），不钳制——供核对/记录。
+
+    接受 torch tensor 或 numpy 数组（v3 教训：checker 传 np.array 时
+    `cmd_v.device` 直接 AttributeError，杀死了整个 checker 阶段）。"""
+    cmd_t = torch.as_tensor(cmd_v, dtype=torch.float32)
+    edges = vae_speed_edges(vx_max, n_bins).to(cmd_t.device)
+    return torch.bucketize(cmd_t, edges).clamp(0, n_bins - 1)
 
 
 class To42Gate:
