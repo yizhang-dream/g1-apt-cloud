@@ -1,0 +1,27 @@
+{
+  "artifact": "to42-log-salvage/v1",
+  "sources": [
+    "C:\\Users\\zyz\\Documents\\gr00t\\tmp\\to42_final_log.txt",
+    "C:\\Users\\zyz\\Documents\\gr00t\\tmp\\to42_v3_log_snapshot1.txt"
+  ],
+  "n_to42_done_lines": 14,
+  "lines": [
+    "[to42-done] to42-lsel-v0.200__s1 completed=[True, False, True] err60s=[0.2313, 0.4677, 0.2349] vx=[0.3019, -0.0712, 0.3439] switches=[35, 12, 32] wall=175.9s -> receipt_to42-lsel-v0.200__s1.json",
+    "[to42-done] to42-lsel-v0.225__s1 completed=[True, False, False] err60s=[0.2049, 0.22, 0.4478] vx=[0.3229, 0.2535, -0.0474] switches=[40, 16, 5] wall=133.4s -> receipt_to42-lsel-v0.225__s1.json",
+    "[to42-done] to42-lsel-v0.250__s1 completed=[True, False, False] err60s=[0.2111, 0.2598, 0.2518] vx=[0.3347, 0.2554, 0.2587] switches=[34, 30, 22] wall=204.7s -> receipt_to42-lsel-v0.250__s1.json",
+    "[to42-done] to42-lsel-v0.275__s1 completed=[True, False, True] err60s=[0.1873, 0.426, 0.2045] vx=[0.3745, 0.0197, 0.2761] switches=[27, 16, 32] wall=194.5s -> receipt_to42-lsel-v0.275__s1.json",
+    "[to42-done] to42-lsel-v0.277__s1 completed=[True, True, False] err60s=[0.1842, 0.1996, 0.7711] vx=[0.3237, 0.292, -0.4394] switches=[33, 41, 2] wall=166.7s -> receipt_to42-lsel-v0.277__s1.json",
+    "[to42-done] to42-lsel-v0.300__s1 completed=[True, True, True] err60s=[0.206, 0.1894, 0.2194] vx=[0.3049, 0.3547, 0.3197] switches=[31, 28, 36] wall=242.4s -> receipt_to42-lsel-v0.300__s1.json",
+    "[to42-done] to42-lsel-v0.325__s1 completed=[True, True, True] err60s=[0.1872, 0.2523, 0.2439] vx=[0.2971, 0.2337, 0.216] switches=[29, 28, 38] wall=241.0s -> receipt_to42-lsel-v0.325__s1.json",
+    "[to42-done] to42-fbkt-v0.200__s1 completed=[True, True, True] err60s=[0.1262, 0.1257, 0.1267] vx=[0.115, 0.1157, 0.1135] switches=[0, 0, 0] wall=244.9s -> receipt_to42-fbkt-v0.200__s1.json",
+    "[to42-done] to42-fbkt-v0.225__s1 completed=[True, True, True] err60s=[0.1359, 0.1358, 0.1358] vx=[0.1146, 0.1159, 0.1149] switches=[0, 0, 0] wall=244.3s -> receipt_to42-fbkt-v0.225__s1.json",
+    "[to42-done] to42-fbkt-v0.250__s1 completed=[True, True, True] err60s=[0.1492, 0.1498, 0.1484] vx=[0.1152, 0.1144, 0.1173] switches=[0, 0, 0] wall=245.0s -> receipt_to42-fbkt-v0.250__s1.json",
+    "[to42-done] to42-fbkt-v0.275__s1 completed=[True, True, True] err60s=[0.3423, 0.3424, 0.3416] vx=[0.616, 0.6152, 0.6145] switches=[0, 0, 0] wall=237.4s -> receipt_to42-fbkt-v0.275__s1.json",
+    "[to42-done] to42-fbkt-v0.277__s1 completed=[True, True, True] err60s=[0.3402, 0.34, 0.3403] vx=[0.6154, 0.6151, 0.6142] switches=[0, 0, 0] wall=240.4s -> receipt_to42-fbkt-v0.277__s1.json",
+    "[to42-done] to42-fbkt-v0.300__s1 completed=[True, True, True] err60s=[0.3172, 0.3178, 0.3171] vx=[0.6153, 0.6166, 0.6134] switches=[0, 0, 0] wall=239.2s -> receipt_to42-fbkt-v0.300__s1.json",
+    "[to42-done] to42-fbkt-v0.325__s1 completed=[True, True, True] err60s=[0.2923, 0.2929, 0.2938] vx=[0.6146, 0.6156, 0.6163] switches=[0, 0, 0] wall=238.6s -> receipt_to42-fbkt-v0.325__s1.json",
+    "[select] lsel-s1: it800 rew=2.198978 -> policy_it_800.pt",
+    "[select] fbkt-s0: it100 rew=2.422128 -> policy_it_100.pt",
+    "[select] fbkt-s1: it450 rew=2.436296 -> policy_it_450.pt"
+  ]
+}

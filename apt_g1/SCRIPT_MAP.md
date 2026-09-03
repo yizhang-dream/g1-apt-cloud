@@ -119,7 +119,7 @@
 | `token_window_vae.py` | MODULE | token VAE 三件：**E27 PhaseTokenVAE + E31 SpeedPhaseTokenVAE（+速度条件）+ E35 DirSpeedPhaseTokenVAE（+方向条件）**，冻结解码器供 RL |
 | `decft_policy.py` | MODULE | **E44 解码器微调策略**：E39 z头 → 冻结 VAE → token → **可训练 SONIC 解码器** → 29-d 关节目标动作（PPO 评分梯度直达解码器 + 官方解码器漂移正则） |
 | `ppo_core.py` | MODULE | 向量化 PPO（含论文式训练附加项；E44 增加 `decoder_ft` 分支与 `decoder_reg_coef`） |
-| `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略 |
+| `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略；TO42 修订 v4 增 `--ppo-minibatch`（默认 512 = 既有行为不变；2048envs 操作点用 4096） |
 | `eval_apt_isaac.py` | 入口 | A/B/C/D 评测 |
 | `rollout_log_joints.py` | 入口 | **无相机 rollout → npz**（base 位姿 + 29 关节角，SONIC order，供 `replay_render_mujoco.py` 渲染） |
 | `eval_fast.py` | 入口 | 守护式评测（只跑请求的 A/B/C/D 段） |
@@ -240,7 +240,8 @@ l_checker 不 import launch_sanity/env_wiring（audit 独立性同 D §9）。
 | `rung1/to42_eval.py` | 入口（**state-changing**） | 单 (arm×v×train_seed) cell 正式评测（per-cell 进程 + receipt 落盘后 os._exit）：harness 逐字继承 TO41（jitter rng(1000+seed) / 恒定 cmd 每步重申 / 确定性策略 / episode_length_s=120 → 60s 无 auto-reset / eval seeds {0,1,2}）；cfg = TO41 ctrl 臂形状 + `to42_sel`；receipt = to42-eval-receipt/v1（err60s / vx / disp / h_min + **selection 时间线 b64** + 切换步 + 策略选择头 p(vb1) 均值）；`--smoke` 隔离目录 | TO42 R1 |
 | `rung1/to42_select.py` | 分析（**read-only**） | ckpt 机械选择：50-iter 窗口 argmax 规则逐字复用 `select_checkpoint.select_run`，臂集合 {lsel,fbkt}×{s0,s1}；manifest = to42-ckpt-selection/v1（同一 (arm,seed) 全 7 v-cells 共用同一 ckpt） | TO42 R1 |
 | `rung1/to42_checker.py` | 审计（**read-only**） | eval receipts 独立审计（**先审计后分析，不读行为指标**）：C1 28-receipt 覆盖精确 / C2 84 episodes completed 零 fall / C3 每 (arm,seed) 单 ckpt == manifest / C4 env 源哈希 + vae sha + to42 cfg 跨 receipt 一致 / G0a fbkt 时间线逐位 == 自然 bin 且 gate 恒静 / G0b lsel 切换 ⊆ 2Hz 边界（t%25==0）。verdict 唯一出自本文件 | TO42 R1 |
-| `to42_cloud_wave.py`（仓根） | 入口（**state-changing**） | 云端 wave 编排（flux gm-run 入口；单 A10 pod 内全链 fail-fast，`--stages` 可子集重入）：G0 自检 → 双臂冒烟训练（30it）+ Isaac 级 G0 冒烟 eval（行内断言）→ 4 runs 全训（E47 配方 + ctrl 旗标 + τ 恒 OFF）→ ckpt 选择 → 28-receipt eval → checker → err60s 效应表（descriptive）→ 产物打包 `output/to42/to42_artifacts.pt`（平台 ckpt 发现通道）+ `TO42_RESULT_JSON` stdout 摘要。**v3 = 动态流水线（owner 09-04「还不够极限」）：训练 2 并发同 seed 成对 + 完成即增量选择并动态注入该臂 7 评测格（评测与训练重叠，mid-band 优先）/ 显存自适应放行（nvidia-smi free − 90s 预留，训练 9G/评测 4.5G）/ 冒烟零训练（随机 init ckpt 验 wiring）/ bundle 原子写仅主线程；训练并发硬上限 2（3×128env 显存未证实，VRAM 遥测入 bundle）；全程 4.4h → ~2.2–2.4h** | TO42 R1 |
+| `to42_vram_probe.py`（仓根） | DEV | **L20 2048envs 显存/速度探针**（修订 v4 entry gate）：真实配方跑 3 iters + nvidia-smi 2s 采样，判据 peak ≤ 46G 且 rc=0 → `TO42_VRAM_PROBE` JSON 行；PASS 才发全链（防 OOM 中断） | TO42 R1 修订 v4 |
+| `to42_cloud_wave.py`（仓根） | 入口（**state-changing**） | 云端 wave 编排（flux gm-run 入口；单 A10 pod 内全链 fail-fast，`--stages` 可子集重入）：G0 自检 → 双臂冒烟训练（30it）+ Isaac 级 G0 冒烟 eval（行内断言）→ 4 runs 全训（E47 配方 + ctrl 旗标 + τ 恒 OFF）→ ckpt 选择 → 28-receipt eval → checker → err60s 效应表（descriptive）→ 产物打包 `output/to42/to42_artifacts.pt`（平台 ckpt 发现通道）+ `TO42_RESULT_JSON` stdout 摘要。**v3 = 动态流水线（owner 09-04「还不够极限」）：训练完成即增量选择并动态注入该臂 7 评测格（评测与训练重叠，mid-band 优先）/ 显存自适应放行（nvidia-smi free − 90s 预留）/ 冒烟零训练（随机 init ckpt 验 wiring）/ bundle 原子写仅主线程**。**修订 v4 操作点（owner 09-04 规模指令）：2048 envs × 500it × minibatch 4096（论文式大并行，样本预算 4×）@ L20 48G（ESKU000005），训练并发 1（36G/臂），全程估 ~3.5–4.5h；发全链前置 = to42_vram_probe PASS** | TO42 R1 |
 
 > **canonical 文件的 TO42 增量**（cfg 门控、默认 `"off"` = 行为与 TO41 逐位一致）：
 > `apt_flat_env.py`（`to42_sel/to42_hold_steps/to42_n_sel` cfg + To42Gate 状态机 +

@@ -109,6 +109,9 @@ def build_args():
     ap.add_argument("--phase-warmstart-iters", type=int, default=0)
     ap.add_argument("--phase-warmstart-coef", type=float, default=10.0)
     ap.add_argument("--entropy", type=float, default=0.001)
+    # TO42 修订 v4（论文式大并行操作点）：2048 envs × 500it 配 minibatch 4096
+    # （24×2048/4096 = 12 minibatch/epoch，整除）；默认 512 = 既有行为逐字不变
+    ap.add_argument("--ppo-minibatch", type=int, default=512)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="outputs/isaac_apt_aux")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
@@ -312,6 +315,7 @@ def main():
         decoder_reg_coef=cli.decoder_reg if cli.decft else 0.0,
         decoder_lr=cli.decoder_lr if cli.decft else None,
         decoder_wreg_coef=cli.decoder_wreg if cli.decft else 0.0,
+        minibatch_size=cli.ppo_minibatch,
     )
     start_it = 0
     if cli.resume:

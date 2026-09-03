@@ -1567,6 +1567,20 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   pending；bundle 写仍仅编排主线程）。本机已验证：pool 机制 / 随机 ckpt
   strict-load / Windows 守卫触发时 pool 正确 fail-fast。**等 API 切换后以
   v5 发车（冻结矩阵零变化）**。
+- **执行身份修订 v4 = 训练规模升级（09-04 owner 规模指令「最起码几千个
+  env，论文里也是这样的，显存不够换更大套餐」；操作点 owner 选定
+  2048×500it）**：① 操作点 = `--num-envs 2048 --iters 500 --ppo-minibatch
+  4096`（24×2048/4096=12 minibatch/epoch 整除；样本预算 = 128×2000 的 4×；
+  论文式大并行；4096 envs 估 ~66G 超平台最大 48G 套餐 → 2048 = 平台上限）；
+  其余配方逐字不动。② 套餐 = L20 48G（ESKU000005），训练并发 1（~36G/臂
+  串行配对），流水线评测与训练重叠（48−36=12G 供 2 评测 worker，尾段 6 并
+  发）。③ **判据重述（预注册修订）**：主对照 = 配对 selection-interface
+  contrast 不变；TO41 best-fixed 前沿降 descriptive 跨规模参照（128-env
+  非同分布）；停止规则 (b) 改为 vs 配对 fbkt ≥0.02 判据；机制检验（速度
+  斜率）不变。④ 发全链前置 = `to42_vram_probe.py` PASS（真实配方 3 iters
+  + nvidia-smi 峰值 ≤46G，entry gate 防 OOM）。⑤ 预算 ~¥25–45（L20 单价
+  待核）。详文 = TO42_PLAN §9 修订 v4 + SCRIPT_MAP §8d/§3。**状态 = 等
+  API/充值后：探针任务 → PASS → 全链 wave**。
 - **owner 正式状态定义（2026-09-03 深夜，v4 运行中下达；镜像入档）**：
   `TO42 R1: v3 = CLOSED / PILOT ONLY / Case C（execution completed, evidence
   recovery failed）；v4 = execution active / lineage = independent rerun /

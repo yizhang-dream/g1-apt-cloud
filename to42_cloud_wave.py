@@ -62,10 +62,14 @@ REF = "apt_g1/outputs/sync/to38_ref.npz"
 DECODER = "gear_sonic_deploy/policy/release/model_decoder.onnx"
 ROUTER = "apt_g1/outputs/distill_final"
 
-# 并发上限与显存预留（自适应放行的参数；训练 2 = 24G 已证配置，3 未证实不做）
-TRAIN_CAP, EVAL_CAP, TOTAL_CAP = 2, 6, 6
-TRAIN_VRAM_GB, EVAL_VRAM_GB = 9.0, 4.5
+# 并发上限与显存预留（自适应放行的参数）
+# 操作点 = TO42_PLAN §9 修订 v4（owner 09-04：2048 envs × 500it × mb4096，
+# 论文式大并行；L20 48G 单臂估 ~36G → 训练并发 1（串行配对），流水线评测仍
+# 与训练重叠：48−36=12G 余量供 2 个评测 worker）
+TRAIN_CAP, EVAL_CAP, TOTAL_CAP = 1, 6, 6
+TRAIN_VRAM_GB, EVAL_VRAM_GB = 36.0, 4.5
 VRAM_RESERVE_WINDOW_S = 90  # 刚放行的任务显存爬坡期，按预留量扣减
+NUM_ENVS, ITERS, PPO_MINIBATCH = 2048, 500, 4096
 
 BASE_ARGS = [
     "--latent-mode",
@@ -77,7 +81,8 @@ BASE_ARGS = [
     # 显式仓相对路径——train 入口默认值是 lab-ts 绝对路径（云 pod 不存在）
     "--router-model-dir", ROUTER,
     "--decoder-path", DECODER,
-    "--num-envs", "128",
+    "--num-envs", str(NUM_ENVS),
+    "--ppo-minibatch", str(PPO_MINIBATCH),
 ]
 
 
@@ -369,7 +374,7 @@ def stage_train_and_eval(pending: list) -> None:
             jobs.append({
                 "tag": f"train-{arm}-s{seed}",
                 "cmd": [sys.executable, "-m", "apt_g1.isaac.train_apt_isaac",
-                        *BASE_ARGS, "--iters", "2000", "--seed", str(seed),
+                        *BASE_ARGS, "--iters", str(ITERS), "--seed", str(seed),
                         "--to42-sel", arm, "--out", f"output/to42/{run}"],
                 "kind": "train", "vram_gb": TRAIN_VRAM_GB, "ready": None,
                 "on_done": make_on_done(arm, seed, pending),

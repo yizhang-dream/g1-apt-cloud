@@ -1,0 +1,42 @@
+{
+  "artifact": "to42-recovery-gate/v1",
+  "task_id": "TASK_20260903_138",
+  "steps": {
+    "1_list": {
+      "n_artifacts": 0,
+      "names": []
+    },
+    "2_download": {
+      "n_ok": 0
+    },
+    "3_bundle": {
+      "found": false,
+      "partial": null
+    },
+    "4_log_fallback": {
+      "logs": [
+        "C:\\Users\\zyz\\Documents\\gr00t\\tmp\\to42_final_log.txt",
+        "C:\\Users\\zyz\\Documents\\gr00t\\tmp\\to42_v3_log_snapshot1.txt"
+      ],
+      "n_receipt_from_b64": 0,
+      "n_cell_summary_lines": 14
+    },
+    "5_sha256": {
+      "ckpt": {
+        "manifest_entries": 0,
+        "file_matched": 0,
+        "missing": []
+      },
+      "n_receipts": 0,
+      "receipt_vs_manifest": null
+    },
+    "6_verdict": {
+      "verdict": "C: DESCRIPTIVE SALVAGE ONLY",
+      "n_receipts": 0,
+      "expected_receipts": 28,
+      "n_train_logs": 0,
+      "audit_verdict": null
+    }
+  },
+  "problems": []
+}

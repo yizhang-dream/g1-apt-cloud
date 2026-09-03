@@ -255,3 +255,26 @@ practical-equivalence 口径，TO41 沿用）。
   决策）；**report 不与 checker 重叠**（先审计后分析纪律）。预期全程
   ~2.2–2.4h（串行 4.4h 的 ~1/2）。实现 = to42_cloud_wave.py v3（动态注入
   共享队列调度器；bundle 写仍只在编排主线程）。
+- **执行身份修订 v4（2026-09-04 owner 规模指令「最起码几千个 env，论文里
+  也是这样的，显存不够换更大套餐」+ 操作点选定 2048×500it）**：
+  - **训练操作点替换**：`--num-envs 2048 --iters 500 --ppo-minibatch 4096`
+    （24×2048/4096 = 12 minibatch/epoch 整除；样本预算 = 128×2000 的 4 倍；
+    论文式大并行范式）。其余配方逐字不动（E47 基座 + ctrl 旗标 + τ 恒 OFF
+    + cmd U(0,0.8) + entropy/KL 系数）。4096 envs 平台最大 48G 套餐装不下
+    （估 ~66G），2048 = 平台上限，「几千」的实际答案。
+  - **套餐与并发**：L20 48G（ESKU000005；显存估 ~36G/臂）→ 训练并发 1
+    （串行配对；2×36G 超容量），流水线评测仍与训练重叠（48−36=12G 供 2 个
+    评测 worker，尾段全宽 6）。发全链前先跑 **20min 显存探针**
+    （`to42_vram_probe.py`：真实配方 3 iters + nvidia-smi 2s 采样，判据
+    peak ≤ 46G 且 rc=0），PASS 才发 wave（entry gate，防全链 OOM）。
+  - **判据重述（预注册修订，随操作点替换必需）**：主对照不变 = 配对的
+    selection-interface contrast（err60s(lsel) − err60s(fbkt)，同 N 同
+    seed，mid-band）；**TO41 best-fixed 前沿降为 descriptive 跨规模参照**
+    （128-env 训练分布，与 2048 不同分布，不再作 H1 判据）；停止规则
+    (b) 判据同步改写 = 「mid-band 配对 contrast 无 ≥0.02 改善（vs fbkt）」
+    （原 vs-best-fixed 版本保留为 descriptive 参考）；机制预注册检验不变
+    （realized-speed vs cmd 斜率）。
+  - **可比性声明**：2048-env 策略与 TO41 128-env 策略非同分布——与 TO41
+    的任何对照只作描述性；TO42 内部（同 N 配对）推断不受影响。
+  - 预算估：探针 ~¥0.5 + 全链（4×500it 串行 + 流水评测）~3.5–4.5h ≈
+    ¥25–45（L20 单价待资源单核实）。
