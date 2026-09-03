@@ -1454,3 +1454,31 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   stratified）被改向取代（Rung 1 regime 归 policy 拥有，Rung 2 锁定 = 自选 +
   lock 窗口，因果语义最接近候选 A）。TO41 九项冻结清单与 maintenance mode
   不受影响。
+
+### TO42-R1 训练/评测 wave（2026-09-03 owner 授权「使用云算力，开始实验」；venue 云化留痕 = TO42_PLAN §9）
+
+| Run | 描述 | 配方 | 判据/产物 | 状态 | 执行身份 |
+|---|---|---|---|---|---|
+| TO42-R1-LSEL-S0 | Rung 1 训练臂 lsel seed 0（learned regime selection） | E47 精确配方 + ctrl 臂旗标（to38_ref 中性脚手架 obs 置零 w=0）+ `--to42-sel lsel`（策略 Categorical(2) 选择头 gate_k=2 + env 2Hz 门控状态机；action 16→17、obs +2 [sel_state, gate_bool]），**τ 恒 OFF**，128envs×2000it | train_log + 每 50it ckpt（平台 output/**.pt 自动发现）；窗口最优规则同 TO41（50-iter argmax，tie 取最小窗序） | RUNNING（云任务 TASK_20260903_138） | github main@ebf0d93 pod clone；镜像 BJX00000002/V000125（IsaacSim4.5/IsaacLab2.0.0/torch2.5.1）；单 A10 pod 串行 = 同机配对 |
+| TO42-R1-LSEL-S1 | Rung 1 训练臂 lsel seed 1 | 同 LSEL-S0，`--seed 1` | 同上 | RUNNING（同任务串行队列第 3） | 同上 |
+| TO42-R1-FBKT-S0 | Rung 1 基线臂 fbkt seed 0（frozen bucketize 配对基线，selection 槽位 = clamp(bucketize(cmd),0,1)、gate 恒 0、策略位被忽略；eval 网格上与冻结自然分配逐位一致） | 同 LSEL-S0，`--to42-sel fbkt`，`--seed 0` | 同上 | RUNNING（同任务串行队列第 2） | 同上 |
+| TO42-R1-FBKT-S1 | Rung 1 基线臂 fbkt seed 1 | 同 FBKT-S0，`--seed 1` | 同上 | RUNNING（同任务串行队列第 4） | 同上 |
+
+- **开跑前 G0（全 PASS）**：① 纯 torch 自检 `to42_selftest`（负例先行：边界
+  错位可察觉 / fbkt 偏离即失败 / 非边界切换的坏实现可被抓到 / 冻结公式对照 /
+  lsel 边界-锁存-布尔语义 / gate_k=2 头 + PPO gate 分支梯度可达）本机 + pod
+  双绿；② pod Isaac 级冒烟（双臂 30it 训练 + 300 步 eval）：fbkt 时间线逐位
+  == 自然 bin 且 gate 恒静、lsel 切换 ⊆ 2Hz 边界，receipt 时间线通道验证。
+- **排障记录（v1/v2 任务即弃，零科学产出）**：TASK_20260903_136 = wave 子进程
+  覆写 PYTHONPATH 丢 gm-run 的 isaacsim 解析路径（修：不碰 PYTHONPATH，仓根靠
+  `python -m` cwd 语义）；TASK_20260903_137 = train 入口 `--decoder-path` 默认
+  值是 lab-ts 绝对路径云 pod 不存在（修：BASE_ARGS 显式仓相对 router/decoder
+  路径）+ 发现 Isaac atexit 把失败 rc 吞成 0（修：wave 对训练产物/receipt 做
+  存在性断言 + to42_eval preflight 前置 + 异常 os._exit(1)）。两坑均入
+  SCRIPT_MAP §8d 备注与 commit 711f84f/ebf0d93。
+- **评测与判读计划（预注册，TO42_PLAN §2/§5）**：28 receipts（2 臂 × 2 seed × 7 v
+  × 3 eval seeds）→ to42_checker（C1 覆盖/C2 完成/C3 单 ckpt/C4 身份/G0a
+  fbkt 逐位/G0b lsel 边界）全 PASS 后才读行为指标；主对照 = mid-band
+  {0.275,0.277,0.300,0.325} selection-interface contrast（err60s(lsel) −
+  err60s(fbkt)），绝对前沿 = TO41 OFF 臂 per-v best-fixed（本地分析阶段对照）；
+  停止规则三支（塌缩/无改善/seed 换向）。
