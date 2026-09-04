@@ -21,16 +21,17 @@ Loss: rec + beta*kl - adv_dir*CE(dir_head(z), db) - adv_spd*CE(speed_head(z), vb
 Saved: vae.pt (state_dict only), pca.npz, z_walk.npy, vbin_meta.json,
 dbin_meta.json, meta.json (adds dir_head_acc + speed_head_acc + adv weights).
 
-【2026-09-05 性能补丁】训练语义严格不变（batch 组成 / 90-10 切分 / 对抗头 3 步
-循环 / 损失与指标计算式 / 随机种子 / epoch 数 / 模型结构 / 保存路径均未改动），
-仅加速小 kernel 发射路径：
-  1) 全显存数据：数据集整体常驻 GPU，DataLoader 改 num_workers=0、pin_memory=False
-     （GPU 张量不能进 worker 子进程；shuffle 随机序列与种子不变 → batch 索引不变）
-  2) torch.compile：VAE 主模型 + 两个对抗头（--compile-mode none 关闭）
-  3) fused 优化器：AdamW/Adam 加 fused kernel（--no-fused-opt 关闭）
-旧行为逃生旗标：`--cpu-data --compile-mode none --no-fused-opt`
-测试安全旗标：`--epochs`（缩短训期）/ `--out-dir`（输出重定向沙箱，避免覆盖生产
-vae.pt），默认值与原硬编码一致。
+【2026-09-05 性能旗标（D039 实测后：默认=原始行为，三项优化全部 opt-in）】
+D039 实测（lab-ts 3060，10ep）：原始路径 52-54k samples/s > 全显存+fused 47.4k
+> compile 42k（0.3M 小模型上 guard 开销 > 融合收益）；reduce-overhead 首迭代
+即崩（CUDA Graph 与训练循环跨 step 持有 compiled 输出不兼容）。等价性 PASS
+（逐 epoch 曲线对齐，末 ep va_mse 相对差 ~2%；对抗头终态为 RNG 流敏感的混沌
+诊断量，不作判据）。更大模型（VAE-L 量级）时再评估这三项：
+  --data-on-gpu                数据集常驻显存（默认关 = CPU，同原始）
+  --compile-mode {none,default,reduce-overhead}（默认 none = 不编译）
+  --fused-opt                  fused 优化器（默认关）
+测试安全旗标：--epochs（默认 30）/ --out-dir（默认 outputs/token_vae_e39，
+测试重定向沙箱，避免覆盖生产 vae.pt）。
 另增 [SPEED] 每 epoch 墙钟/吞吐日志与训练结束总结行，不影响任何数值。
 """
 
@@ -139,16 +140,15 @@ def _build_optimizer(cls, params, use_fused: bool, **kw):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="E39 dual-disentangled token VAE (perf patch 2026-09-05)")
-    g = ap.add_mutually_exclusive_group()
-    g.add_argument("--data-on-gpu", dest="data_on_gpu", action="store_true",
-                   default=True, help="数据集常驻显存（默认开启）")
-    g.add_argument("--cpu-data", dest="data_on_gpu", action="store_false",
-                   help="数据留在 CPU（旧行为逃生旗标）")
+        description="E39 dual-disentangled token VAE (perf flags 2026-09-05, D039-measured)")
+    # D039 实测：三项优化在本模型量级全部中性偏负 → 默认关（=原始行为），opt-in
+    ap.add_argument("--data-on-gpu", action="store_true", default=False,
+                    help="数据集常驻显存（默认关 = CPU 数据，同原始行为）")
     ap.add_argument("--compile-mode", choices=["none", "default", "reduce-overhead"],
-                    default="default", help="torch.compile 模式；none 关闭编译")
-    ap.add_argument("--no-fused-opt", action="store_true",
-                    help="关闭 fused 优化器（旧行为逃生旗标）")
+                    default="none", help="torch.compile 模式（默认 none 不编译；"
+                    "reduce-overhead 与本训练循环不兼容会崩，D039 实测）")
+    ap.add_argument("--fused-opt", action="store_true", default=False,
+                    help="启用 fused 优化器（默认关，同原始行为）")
     ap.add_argument("--epochs", type=int, default=30,
                     help="训练 epoch 数（默认 30，与原硬编码一致）")
     ap.add_argument("--out-dir", type=str, default="outputs/token_vae_e39",
@@ -236,12 +236,12 @@ def main():
         fwd_speed_head = torch.compile(speed_head, **_ckw)
         print(f"[SPEED] torch.compile enabled (mode={args.compile_mode})", flush=True)
     opt = _build_optimizer(torch.optim.AdamW, model.parameters(),
-                           use_fused=not args.no_fused_opt, lr=1e-3, weight_decay=1e-5)
+                           use_fused=args.fused_opt, lr=1e-3, weight_decay=1e-5)
     dir_opt = _build_optimizer(torch.optim.Adam, dir_head.parameters(),
-                               use_fused=not args.no_fused_opt, lr=1e-3)
+                               use_fused=args.fused_opt, lr=1e-3)
     speed_opt = _build_optimizer(torch.optim.Adam, speed_head.parameters(),
-                                 use_fused=not args.no_fused_opt, lr=1e-3)
-    if not args.no_fused_opt and torch.cuda.is_available():
+                                 use_fused=args.fused_opt, lr=1e-3)
+    if args.fused_opt and torch.cuda.is_available():
         print("[SPEED] fused optimizers enabled (AdamW/Adam fused=True)", flush=True)
     # class-balanced adversarial CE for both heads (bin 4 = 70% of dir data;
     # speed bins ~1/3 each but weights keep the head honest if skewed)
