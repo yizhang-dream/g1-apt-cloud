@@ -62,14 +62,20 @@ REF = "apt_g1/outputs/sync/to38_ref.npz"
 DECODER = "gear_sonic_deploy/policy/release/model_decoder.onnx"
 ROUTER = "apt_g1/outputs/distill_final"
 
-# 并发上限与显存预留（自适应放行的参数）
-# 操作点 = TO42_PLAN §9 修订 v4（owner 09-04：2048 envs × 500it × mb4096，
-# 论文式大并行；L20 48G 单臂估 ~36G → 训练并发 1（串行配对），流水线评测仍
-# 与训练重叠：48−36=12G 余量供 2 个评测 worker）
-TRAIN_CAP, EVAL_CAP, TOTAL_CAP = 1, 6, 6
-TRAIN_VRAM_GB, EVAL_VRAM_GB = 36.0, 4.5
+# 操作点 profile（TO42_PLAN §9 修订 v4 = l20-2048 默认；修订 v4b = labts128
+# 回退线——L20 新账号排队 8h 零调度的资源现实下，128×2000 原冻结点在 lab-ts
+# 先行，lineage 独立标注，永不与 2048 合并）
+PROFILES = {
+    "l20": dict(num_envs=2048, iters=500, ppo_minibatch=4096,
+                train_cap=1, train_vram=36.0, eval_cap=6, eval_vram=4.5),
+    "labts128": dict(num_envs=128, iters=2000, ppo_minibatch=512,
+                     train_cap=1, train_vram=8.0, eval_cap=3, eval_vram=3.0),
+}
+_P = PROFILES[os.environ.get("TO42_PROFILE", "l20")]
+TRAIN_CAP, EVAL_CAP, TOTAL_CAP = _P["train_cap"], _P["eval_cap"], 6
+TRAIN_VRAM_GB, EVAL_VRAM_GB = _P["train_vram"], _P["eval_vram"]
 VRAM_RESERVE_WINDOW_S = 90  # 刚放行的任务显存爬坡期，按预留量扣减
-NUM_ENVS, ITERS, PPO_MINIBATCH = 2048, 500, 4096
+NUM_ENVS, ITERS, PPO_MINIBATCH = _P["num_envs"], _P["iters"], _P["ppo_minibatch"]
 
 BASE_ARGS = [
     "--latent-mode",
