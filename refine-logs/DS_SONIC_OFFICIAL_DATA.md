@@ -118,3 +118,24 @@
 - SONIC 论文：arXiv 2511.07820 = Science Robotics 11(117) eaed4592 (2026)
 - 仓内前史：`docs/apt-rl-g1-gr00t-roadmap.md`（里程碑 3）、
   `docs/apt-rl-flat-ground-g1-repro.md`、`refine-logs/HUMAN_READABLE_COMPLETE_REPORT.md:859`
+
+## 7. 修订记录（append-only）
+
+- **09-04/05 夜 B1-lite + B2 执行回写（D036/D037，详见 tracker）**：
+  ①**连通性**：huggingface.co 服务器直连不通，`hf-mirror.com` 可达（B 线下载一律走
+  镜像 resolve URL）；服务器无 hf CLI，curl 直下可用。②**模型件零下载需求坐实**：
+  HF root 的 `model_encoder.onnx`/`observation_config.yaml` 与服务器 deploy release
+  **md5 逐字节全等**。③**license 门确认**：`bones-studio/seed` gated(auto)——需
+  owner HF 账号在数据集页接受 bones-seed-license 并提供 read token 后方可下载；
+  G1 格式为单体 `g1.tar.gz`（全量 142k csv 打包，无法部分下载），Locomotion 大类
+  74,488 条（52%）。④**B2 冒烟三检验**：lattice 0 违例（encoder 内置 FSQ）；
+  std 与官方一致但 mean-L2 3.16；回环 MAE 0.564 vs 官方 token 同 harness 0.136
+  → **判别出编码路径真 bug**：锚定朝向块沿用 planner_sonic 的 apply_delta，样例
+  初始 yaw −87° 时全部锚定向量被注入 ~90° 常量偏移（planner_sonic 站立起点
+  apply_delta≈identity 掩盖了缺陷）；正确离线语义 = `btr = conj(bq[t])·bq[idx]`。
+  ⑤**B3 预演 v1**：链路机械全通，2 seed ~1s 侧倒（yaw 类失败形态与 bug 三重
+  印证）；新坑 = 本机 Isaac `sim_app.close()` 挂死，daemon 线程模式已回移
+  canonical `oracle_token_replay_isaac.py`。⑥修复验证（ref-rel 锚定重编码 +
+  回环 + Isaac 重跑）= **D038**，因 lab-ts 网络中断（Tailscale 直连断、hkg
+  中继劣化）暂挂，恢复后执行。⑦新脚本登记：`encode_bones_smoke.py` /
+  `roundtrip_official_control.py` / `isaac/replay_bones_tokens_isaac.py`。

@@ -314,8 +314,21 @@ def main():
     print(json.dumps(out, indent=1), flush=True)
     print("saved", cli.out)
 
-    # Isaac sometimes hangs on interpreter exit (server gotcha) -- hard exit
-    sim_app.close()
+    # Isaac sometimes hangs on interpreter exit (server gotcha). On this box
+    # (D036/D037 session, 2026-09-04) even sim_app.close() itself hung after
+    # the JSON was written -- bound close() to a daemon thread with a timeout
+    # and hard-exit regardless (results are already on disk at this point).
+    import threading
+
+    def _close():
+        try:
+            sim_app.close()
+        except Exception:
+            pass
+
+    closer = threading.Thread(target=_close, daemon=True)
+    closer.start()
+    closer.join(timeout=30)
     os._exit(0)
 
 
