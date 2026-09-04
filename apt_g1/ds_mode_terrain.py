@@ -40,6 +40,8 @@ TERRAIN_SPAWN = {  # name -> (spawn_x, spawn_z)
     "stairs_mid": (-6.0, 0.85), "stones_mid": (-6.0, 0.95),
     "discrete_mid": (-6.0, 0.95), "highstep_mid": (-6.0, 0.85),
     "hurdle_mid": (-6.0, 0.85), "gap_mid": (-6.0, 0.85),
+    "hurdle_h10": (-6.0, 0.85), "hurdle_h20": (-6.0, 0.85),
+    "hurdle_h30": (-6.0, 0.85),
 }
 
 
@@ -126,10 +128,16 @@ def build_model(terrain: str, seed: int):
             tb.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.15, 4.0, 0.2],
                         pos=[-5.0 + 1.5 * i, 0.0, 0.2], rgba=[0.4, 0.5, 0.6, 1.0])
     elif terrain == "gap_mid":  # self-built (paper params): 0.8m chasm at x=0
+        # slabs leave a true 0.8m gap: [-(9.6+0.4), -0.4] and [0.4, +9.6]
         tb.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[4.8, 20.0, 0.25],
-                    pos=[-4.8, 0.0, -0.25], rgba=[0.5, 0.45, 0.4, 1.0])
+                    pos=[-5.2, 0.0, -0.25], rgba=[0.5, 0.45, 0.4, 1.0])
         tb.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[4.8, 20.0, 0.25],
-                    pos=[4.8, 0.0, -0.25], rgba=[0.5, 0.45, 0.4, 1.0])
+                    pos=[5.2, 0.0, -0.25], rgba=[0.5, 0.45, 0.4, 1.0])
+    elif terrain.startswith("hurdle_h"):  # height sweep: h10/h20/h30 = 0.1/0.2/0.3m
+        hz = float(terrain[len("hurdle_h"):]) / 100.0
+        for i in range(8):
+            tb.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.15, 4.0, hz],
+                        pos=[-5.0 + 1.5 * i, 0.0, hz], rgba=[0.4, 0.5, 0.6, 1.0])
     else:
         raise ValueError(f"unknown terrain {terrain}")
     return spec.compile()
