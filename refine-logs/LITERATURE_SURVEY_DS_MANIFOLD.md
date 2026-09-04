@@ -172,18 +172,78 @@ APT 的 transformer 预训练数据也是**采样自已训练好的策略**（�
 **不动底座重采数据扩流形（DS 计划 = 此臂）**。卖点句式："第三方冻结先验
 的泛化边界学 + 流形内扩容"，不是"基于预训练动作泛化"。
 
-### SONIC 的谱系定位
+### SONIC 的谱系定位（⚠️ 本小节首句判断已勘误，见下节精读）
 
 SONIC = NVIDIA GEAR **GR00T-WholeBodyControl**：64 维 latent motion token、
 50Hz 解码到全身 29 关节、planner ONNX 10Hz 重规划 + C++ deploy 栈 + 500Hz
-WBC。仓内从未引用配套论文——它是**工程化开源资产**，非研究首发。"先训
-动作大模型→冻结/复用→下游适配"的正源更早：Radosavovic sensorimotor
-pre-training（2023，2306.10007，950h 人形真机轨迹 BERT 预训练）为人形
-标志性先例；动画线 MVAE（2020）→VQ-token（T2M-GPT/MotionGPT 2023）；APT
-本身即同范式；VLA 线 token 接口 + 冻结底座已是标配。SONIC 的特殊之处不在
-方法学新，而在**打包**：层级部署栈 + 真机验证 + 第三方可得但**不给训练
-数据**——最后这条对别人是使用限制，对我们恰好制造了"第三方冻结先验"这个
-研究对象本身。
+命令流。~~仓内从未引用配套论文——它是工程化开源资产，非研究首发~~
+**【勘误 09-04】SONIC 有正式配套论文且发表于 Science Robotics**（见下节），
+"工程资产非研究首发"判断错误；仓内文档确未引用它（本项目文档缺口，本次补）。
+"先训动作大模型→冻结/复用→下游适配"的更早正源仍成立：Radosavovic
+sensorimotor pre-training（2023，2306.10007）、动画线 MVAE→VQ-token；VLA 线
+token 接口 + 冻结底座已是标配。SONIC 对我们的特殊性：第三方可得但**不给
+端到端重训通道**——制造了"第三方冻结先验"这个研究对象。
+
+### SONIC 配套论文精读（09-04 补；owner 指令"仔细研读引用"）
+
+**Luo et al., "SONIC: Supersizing Motion Tracking for Natural Humanoid
+Whole-Body Control"，Science Robotics 11(117) eaed4592 (2026) = arXiv
+2511.07820**（v1 2025-11-11；NVIDIA GEAR，28 作者）。**与 APT-RL
+（Science Robotics 11(116) eadz7397）是同刊相邻两卷的姊妹篇**——本项目
+"跨先验迁移"的两侧因此都是 SR 2026 正式论文：APT-RL 的 RL 机制 × SONIC
+的动作先验。
+
+方法要点（带原文数字）：
+- **架构**：三个 MLP encoder（robot=关节 pos+vel / human=SMPL 3D 关节 /
+  hybrid=上身稀疏关键点+下身机器人运动）→ **FSQ 量化**（明确弃用 VQ-VAE
+  防 codebook collapse；FSQ 比 VQ-VAE MPJPE 好 8.7mm）→ **2 token ×
+  FSQ-32-32 = 64 维 universal token**；10 未来帧；输出 29 维关节目标 + PD。
+  多速率：策略 50Hz / 命令流 500Hz / 运动规划 10Hz（与我方工程事实逐一吻合：
+  planner ONNX 10Hz 重规划、真机 LowCmd 500Hz、decoder 50Hz）。
+- **训练**：PPO + 非对称 actor-critic，总损失 = L_ppo+L_recon+L_token+L_cycle，
+  straight-through 穿 FSQ；Isaac Lab **每 GPU 4096 envs**，16/32/128 GPU
+  扩展实验 = 2K/9K/**21K GPU 小时**，50k iters，1.2M→42M 参数。
+- **数据**：700h 原始动捕 → GMR+PyRoki 重定向 G1 → 611h / **100M+ 帧
+  @50Hz** / 317,189 段 / 8,447 子类 / 33 大类；公开子集 **BONES-SEED
+  142,220 条 288h（522 演员，HuggingFace）**；外部测试 PHUMA 68k 动作；
+  自适应采样按 1s 分 bin（β=200, α=0.1）。
+- **kinematic planner** = 潜空间自回归 masked token 预测，0.8–2.4s 片段、
+  最快 100ms 重规划、25+ 技能/风格、命令速度 **0–6.0 m/s**、蹲/跪骨盆
+  0.3–0.8m、爬行 0–0.5 m/s。（README 侧另有 MotionBricks=VQVAE 实时潜空间
+  合成子项目；论文正文用 FSQ+GEM，无 MotionBricks。）
+- **结果**：test-content 99.6% 成功 / MPJPE-L 23.8mm（vs BeyondMimic 81.6%）；
+  vs OpenHomie 0–5 m/s 存活 98.5% vs 43.0%，**稳定跟踪至 ~4 m/s**；真机 G1
+  123 条 99.2% 成功、25.7mm。**全文无崎岖地形评测**（"In-the-Wild
+  Navigation"是导航不是地形通行）；limitation 自认极端/高动态下可能失稳。
+- **下游复用是其设计意图**：VLA（GR00T N1.5）预测 78 维 = 64 维 token +
+  14 维手关节；FSQ token 接口 vs 直接回归 SMPL = 68% vs 27% 成功率；
+  5 项 loco-manip 平均 75%。L_token+L_cycle 保证三编码器在共享潜空间对齐
+  （去掉散度 ×8）。
+
+对我方主张的影响：
+1. **定位升级**：我方"第三方冻结先验"不是无名资产，是 SR 2026 正式论文的
+   42M 参数行为基础模型。HANDOFF §1 问题①（论文 RL 机制搬到第三方冻结
+   先验上是否成立）因此更锐利——他们自己展示了 VLA→token 下游，**无人展示
+   任务 RL→token（带流形检验）下游**；我方占的正是这个空位。
+2. **地形空隙确认**：SONIC 论文无地形评测/课程，且训练数据是纯动捕（无
+   物理地形交互）——D030 正障碍零通过、Gate0 0.06/0.08 边界是**先验数据域
+   的必然**，且该先验的地形覆盖域**官方论文从未声明也从未测量**。我方 G2
+   覆盖性主张填补的是官方空白，非与官方竞争。
+3. **速度声明对照**：论文命令域 0–6 m/s、跟踪稳至 ~4 m/s，远高于我方
+   D033 planner 2.12 / 回路 1.0 / harness 0.37——支持"RUN 族材料在先验中
+   为真，衰减在执行栈"（D034 已证 Isaac 79.8%）。G3 1.5–3.0 目标有论文级
+   上界背书。
+4. **流形最近邻其实在官方栈内**：他们的 FSQ token 空间 + 潜空间 planner
+   （masked token 预测）+ MotionBricks（VQVAE 合成）已经是"动作流形"三件套
+   ——我方 token VAE 的 delta 必须对它们表述：连续速度/regime 条件化 +
+   RL 消费 + held-out 族检验协议，官方三件套均无。
+5. **⚠️ 新数据选项（未立项，owner 裁定）**：BONES-SEED 公开子集（142k 条
+   G1 重定向动捕）+ 官方 encoder（ONNX 已发布）→ **可批量离线编码出 token
+   数据**，绕开我方 2.5h 官方回路采集瓶颈；物理有效性有代理背书（decoder
+   本就是在物理仿真中 PPO 训出来跟踪这些 token 的，真机 99.2%）。与 D033
+   数据卫生学（防 planner 开环漂移）不冲突——那是"未检验的命令→token 路径"
+   问题，而"编码器输出 + Phase 0 oracle 回放抽检门"可复用现成质检机制。
+   风险：动捕重定向非动态可行解的比例未知，需 Phase 2 门先行抽检。
 
 ## 检索留痕
 
@@ -195,3 +255,6 @@ pre-training（2023，2306.10007，950h 人形真机轨迹 BERT 预训练）为�
   fine-tune humanoid；multi-gait humanoid VAE latent switching 2025。
 - 未检索到同路线工作（冻结部署级 token 解码器 + VAE 流形 + held-out 族
   检验）；未发现 DS 计划必须搁置的撞车证据。
+- SONIC 配套论文（09-04 补）：GR00T-WholeBodyControl README Citation 块 +
+  [arXiv 2511.07820](https://arxiv.org/abs/2511.07820) 摘要页 + v3 HTML
+  全文精读；正文 FSQ/GEM，MotionBricks 仅 README 侧子项目。
