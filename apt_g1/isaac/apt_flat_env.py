@@ -569,10 +569,19 @@ class AptFlatG1Env(DirectRLEnv):
             self.robot.data.root_quat_w, vec_w.reshape(-1, 3)
         )
 
-    def _decoder_obs_parts(self, tokens_np: np.ndarray) -> tuple[torch.Tensor, ...]:
-        """History tensors in the layout the torch decoder expects."""
+    def _decoder_obs_parts(self, tokens) -> tuple[torch.Tensor, ...]:
+        """History tensors in the layout the torch decoder expects.
+
+        tokens 接受 numpy 数组（router/phase 路径，维持原 from_numpy 搬运）
+        或已在 GPU 上的 tensor（latent 路径，零拷贝直通，消除每控制步
+        GPU->CPU->GPU 往返；dtype/数值逐位不变）。
+        """
+        if isinstance(tokens, torch.Tensor):
+            tok = tokens.detach().to(self.device)
+        else:
+            tok = torch.from_numpy(tokens).to(self.device)
         return (
-            torch.from_numpy(tokens_np).to(self.device),
+            tok,
             self._hist_ang_vel,
             self._hist_joint_pos,
             self._hist_joint_vel,
@@ -596,7 +605,10 @@ class AptFlatG1Env(DirectRLEnv):
     ) -> torch.Tensor:
         """Decode token prior + aux (+ optional full-joint residual) into (N, 29) targets."""
         cmds = self._build_commands_list()
-        proprio = self._proprio_np()
+        # 热循环去同步：930 维 proprio 历史要经过一次 GPU->CPU 搬运，只在真正
+        # 消费它的分支里计算——latent 分支只吃策略 z + walk clock（VAE 不看
+        # proprio），phase 分支仅 anchor 子分支经 phase_raw_batch（numpy API）
+        # 消费，router 分支经 encode_batch（numpy API）消费。
         if self.cfg.latent_mode:
             # E27/E28: the policy's latent z (passed as "phase") is decoded by
             # the frozen phase-conditioned VAE at the current walk-clock phase.
@@ -615,7 +627,9 @@ class AptFlatG1Env(DirectRLEnv):
                         vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
                     ang = torch.atan2(self._commands[:, 1], self._commands[:, 0])
                     db = torch.floor((ang + math.pi) / (2.0 * math.pi) * 8).long() % 8
-                    tokens = self._vae.decode(phase, sc, vb, db).detach().cpu().numpy()
+                    # decode 结果保持 GPU tensor 直送 _decoder_obs_parts，
+                    # 去掉 .cpu().numpy() + from_numpy 的每步往返（数值逐位不变）
+                    tokens = self._vae.decode(phase, sc, vb, db).detach()
                 elif self.cfg.latent_speed_bins:
                     # E31: pick the speed bin from the commanded vx (bins
                     # trained on walk phase-rate thirds: slow/mid/fast).
@@ -626,9 +640,9 @@ class AptFlatG1Env(DirectRLEnv):
                         vb = self._to42.state  # TO42: 锁存的 selector 状态
                     else:
                         vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
-                    tokens = self._vae.decode(phase, sc, vb).detach().cpu().numpy()
+                    tokens = self._vae.decode(phase, sc, vb).detach()
                 else:
-                    tokens = self._vae.decode(phase, sc).detach().cpu().numpy()
+                    tokens = self._vae.decode(phase, sc).detach()
                 if self.cfg.latent_cmd_phase_rate:
                     # E28: advance the clock per-env scaled by commanded vx so
                     # the gait cadence can track the speed command (the policy
@@ -660,6 +674,7 @@ class AptFlatG1Env(DirectRLEnv):
                 # the policy only nudge a bounded offset (phase = normalize(clock
                 # + scale * offset)). This preserves full walk-cadence rotation
                 # that free-phase RL (E23/E24) failed to reproduce.
+                proprio = self._proprio_np()  # phase_raw_batch 为 numpy API
                 sc_r, _ = self._router.phase_raw_batch(
                     proprio, cmds, force_groups=groups
                 )
@@ -698,6 +713,7 @@ class AptFlatG1Env(DirectRLEnv):
                 protos_t = self._router.protos[gi]
                 tokens[mask] = (1.0 - frac) * protos_t[b0] + frac * protos_t[b1]
         else:
+            proprio = self._proprio_np()  # encode_batch 为 numpy API
             tokens, self._router_state = self._router.encode_batch(
                 proprio, cmds, state=self._router_state, ema=0.3,
                 force_groups=self._router_groups(cmds),

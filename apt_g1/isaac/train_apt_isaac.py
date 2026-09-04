@@ -130,6 +130,10 @@ def build_args():
     # E44v3: penalty on yaw-rate (omega_z^2) to suppress the spin gait
     ap.add_argument("--yaw-rate-penalty", type=float, default=0.0)
     ap.add_argument("--resume", default=None)
+    # 热循环去同步：fused Adam（CUDA 融合实现）；默认 False 保持 E 系列历史 run 可比
+    ap.add_argument("--fused-adam", action="store_true")
+    # 每 N iter 打一行 [SPEED] 墙钟日志；0 = 关闭
+    ap.add_argument("--speed-log-interval", type=int, default=50)
     ap.add_argument(
         "--router-model-dir",
         default="/home/cvgluser/ros2_data/apt_g1/outputs/distill_final",
@@ -316,6 +320,7 @@ def main():
         decoder_lr=cli.decoder_lr if cli.decft else None,
         decoder_wreg_coef=cli.decoder_wreg if cli.decft else 0.0,
         minibatch_size=cli.ppo_minibatch,
+        fused=cli.fused_adam,
     )
     start_it = 0
     if cli.resume:
@@ -392,7 +397,10 @@ def main():
                 cli.disturbance_prob,
                 cli.disturbance_prob * (it + 1) / cli.disturbance_ramp_iters,
             )
-        ep_rewards = []
+        # 奖励统计改为 GPU 张量累积（原先每控制步 rew.mean().item() 同步一次）；
+        # 统计窗口不变：仍是本 iter 全部 T*N 个 reward 的算术均值，只在 iter 末
+        # 的日志边界换算打印
+        rew_sum = torch.zeros((), device="cuda:0")
         for t in range(T):
             act, logp, ent, val, _ = policy.act(obs)
             buf["obs"][t] = obs
@@ -432,7 +440,7 @@ def main():
             buf["done"][t] = term
             buf["trunc"][t] = trunc
             obs = obs_dict["policy"]
-            ep_rewards.append(rew.mean().item())
+            rew_sum += rew.sum()
             if (
                 phase_labels_buf is not None
                 and it < (
@@ -466,7 +474,8 @@ def main():
             )
         stats = trainer.update(buf, phase_labels=phase_labels_buf, phase_warm_coef=warm_coef)
         it_time = time.time() - t0
-        mean_rew = float(np.mean(ep_rewards))
+        # iter 末（日志边界）一次 .item()；数值含义 = 本 iter 全部 reward 的均值
+        mean_rew = (rew_sum / (T * N)).item()
         fall_rate = float(buf["done"].float().mean().item())
         hist["rewards"].append(mean_rew)
         hist["fall_rate"].append(fall_rate)
@@ -477,6 +486,15 @@ def main():
             )
         )
         hist["vx"].append(vx)
+        if cli.speed_log_interval > 0 and (
+            it % cli.speed_log_interval == 0 or it == cli.iters - 1
+        ):
+            # 墙钟速度日志（单 iter 瞬时口径，与下方 dt 一致）
+            print(
+                f"[SPEED] iter={it} elapsed={it_time:.1f}s "
+                f"it_per_s={1.0 / max(it_time, 1e-9):.3f}",
+                flush=True,
+            )
         if it % 10 == 0 or it == cli.iters - 1:
             dec_dw = 0.0
             if cli.decft:

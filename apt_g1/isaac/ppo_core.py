@@ -150,6 +150,7 @@ class PPOTrainer:
         decoder_lr: "float | None" = None,  # E44: separate (smaller) decoder LR
         decoder_wreg_coef: float = 0.0,  # E44v2: weight-space anchor to official
         skip_nan: bool = True,  # E44: skip optimizer step if any grad is NaN
+        fused: bool = False,  # fused Adam（CUDA 融合实现）；默认 False 保持 E 系列历史 run 可比
     ):
         self.policy = policy.to(device)
         self.device = device
@@ -170,9 +171,10 @@ class PPOTrainer:
                     {"params": dec_params, "lr": decoder_lr},
                 ],
                 lr=lr,
+                fused=fused,
             )
         else:
-            self.optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
+            self.optimizer = torch.optim.Adam(policy.parameters(), lr=lr, fused=fused)
         self.skip_nan = skip_nan
         self.gamma = gamma
         self.lam = lam
@@ -213,6 +215,22 @@ class PPOTrainer:
             gae = delta + self.gamma * self.lam * cont * gae
             adv[t] = gae
         return adv
+
+    def _grads_nonfinite(self) -> bool:
+        """E44 NaN guard 的批量版：任何参数梯度含 NaN/Inf 则返回 True。
+
+        原实现对全部参数逐个 ``torch.isfinite(p.grad).all()``（N 次小 kernel +
+        N 次隐式同步）；改用 ``torch._foreach_norm`` 一次算出各参数梯度的 L2
+        范数（NaN/Inf 任一元素都会让范数非有限，检出语义不变），再
+        ``isfinite(...).all().item()`` —— 每 minibatch 仅一次同步。数值上无假
+        阳性：guard 在 clip_grad_norm_ 之后执行，有限梯度已被缩放到总范数
+        max_grad_norm 内，逐元素平方求和不会溢出。
+        """
+        grads = [p.grad for p in self.policy.parameters() if p.grad is not None]
+        if not grads:
+            return False
+        norms = torch.stack(torch._foreach_norm(grads))
+        return not bool(torch.isfinite(norms).all().item())
 
     def update(
         self,
@@ -319,26 +337,25 @@ class PPOTrainer:
             loss.backward()
             nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             nan_skip = 0.0
-            if self.skip_nan and any(
-                p.grad is not None and not torch.isfinite(p.grad).all()
-                for p in self.policy.parameters()
-            ):
+            if self.skip_nan and self._grads_nonfinite():
                 # E44: NaN guard -- drop this minibatch's update (keeps the
                 # fine-tuned decoder from exploding the run)
                 self.optimizer.zero_grad()
                 nan_skip = 1.0
             else:
                 self.optimizer.step()
+            # 统计张量先 detach 存 GPU（切断 autograd 图，不占显存），epoch 末
+            # 统一 .item() —— 原先每 minibatch ~6 次同步；各 key 的均值口径不变
             losses.append(
                 {
-                    "loss": loss.item(),
-                    "ploss": ploss.item(),
-                    "vloss": vloss.item(),
-                    "ent": ent.mean().item(),
-                    "kl": kl.mean().item() if phase is not None else 0.0,
+                    "loss": loss.detach(),
+                    "ploss": ploss.detach(),
+                    "vloss": vloss.detach(),
+                    "ent": ent.detach().mean(),
+                    "kl": kl.detach().mean() if phase is not None else 0.0,
                     "expl": expl_coef,
                     "dreg": (
-                        dec_reg.item()
+                        dec_reg.detach()
                         if getattr(self.policy, "decoder_ft", False)
                         else 0.0
                     ),
@@ -348,5 +365,13 @@ class PPOTrainer:
         self.it += 1
         for d in losses:
             d.setdefault("kl", 0.0)
-        agg = {k: float(np.mean([d[k] for d in losses])) for k in losses[0]}
+        # 张量 key 在 GPU 上 stack+mean 后每 key 只做一次 .item()；标量 key
+        # （expl/nan_skip 等）仍走原 np.mean
+        agg = {}
+        for k in losses[0]:
+            vals = [d[k] for d in losses]
+            if isinstance(vals[0], torch.Tensor):
+                agg[k] = float(torch.stack(vals).mean().item())
+            else:
+                agg[k] = float(np.mean(vals))
         return agg
