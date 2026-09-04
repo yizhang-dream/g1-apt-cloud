@@ -68,10 +68,20 @@ ROUTER = "apt_g1/outputs/distill_final"
 PROFILES = {
     "l20": dict(num_envs=2048, iters=500, ppo_minibatch=4096,
                 train_cap=1, train_vram=36.0, eval_cap=6, eval_vram=4.5),
+    "a10_1024": dict(num_envs=1024, iters=500, ppo_minibatch=4096,
+                     train_cap=1, train_vram=18.0, eval_cap=6, eval_vram=3.5),
     "labts128": dict(num_envs=128, iters=2000, ppo_minibatch=512,
                      train_cap=1, train_vram=8.0, eval_cap=3, eval_vram=3.0),
 }
-_P = PROFILES[os.environ.get("TO42_PROFILE", "l20")]
+
+
+def _pick_profile() -> str:
+    if "--profile" in sys.argv:
+        return sys.argv[sys.argv.index("--profile") + 1]
+    return os.environ.get("TO42_PROFILE", "l20")
+
+
+_P = PROFILES[_pick_profile()]
 TRAIN_CAP, EVAL_CAP, TOTAL_CAP = _P["train_cap"], _P["eval_cap"], 6
 TRAIN_VRAM_GB, EVAL_VRAM_GB = _P["train_vram"], _P["eval_vram"]
 VRAM_RESERVE_WINDOW_S = 90  # 刚放行的任务显存爬坡期，按预留量扣减

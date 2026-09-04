@@ -24,9 +24,16 @@ os.environ.setdefault("OMNI_KIT_ACCEPT_EULA", "YES")
 os.environ.setdefault("ACCEPT_EULA", "Y")
 os.environ.setdefault("PRIVACY_CONSENT", "Y")
 
-NUM_ENVS = 2048
-CUSHION_MB = 2000
-LIMIT_MB = 48000 - CUSHION_MB
+import argparse
+
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--num-envs", type=int,
+                 default=int(os.environ.get("TO42_PROBE_ENVS", "2048")))
+_ap.add_argument("--cushion-mb", type=int, default=2000)
+_ap.add_argument("--limit-mb", type=int, default=48000)
+_args = _ap.parse_args()
+NUM_ENVS = _args.num_envs
+LIMIT_MB = _args.limit_mb - _args.cushion_mb
 
 BASE_ARGS = [
     "--latent-mode",
