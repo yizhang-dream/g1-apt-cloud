@@ -69,7 +69,7 @@ PROFILES = {
     "l20": dict(num_envs=2048, iters=500, ppo_minibatch=4096,
                 train_cap=1, train_vram=36.0, eval_cap=6, eval_vram=4.5),
     "a10_1024": dict(num_envs=1024, iters=500, ppo_minibatch=4096,
-                     train_cap=1, train_vram=18.0, eval_cap=6, eval_vram=3.5),
+                     train_cap=4, train_vram=3.5, eval_cap=6, eval_vram=3.5),
     "labts128": dict(num_envs=128, iters=2000, ppo_minibatch=512,
                      train_cap=1, train_vram=8.0, eval_cap=3, eval_vram=3.0),
 }
