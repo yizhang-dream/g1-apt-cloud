@@ -1,0 +1,239 @@
+"""Phase 0 Isaac oracle-token replay calibration (DS_GAIT_MANIFOLD_PLAN §2).
+
+Before any collection/training, verify the Isaac substrate can EXECUTE the
+official-loop RUN gait. Replays the token stream recorded from the official
+deploy loop (drive_run_probe -> policy_input.csv, D033) inside AptFlatG1Env
+with the policy/VAE bypassed: recorded token -> frozen SonicTorchDecoder ->
+q_des (D002 protocol, Isaac version). The env keeps its own closed-loop
+10-frame decoder history, so this tests the Isaac execution stack (PD,
+control frequency, decoder consumption path) -- not open-loop playback.
+
+Gate (plan §2): mean realized vx over seeds / official-loop vx >= 0.9 => PASS.
+< 0.9 => align execution params (<= 3 iterations); still < 0.9 => G3 speed
+target downgrades to the measured Isaac ceiling (recorded, non-blocking).
+
+Run on lab-ts (realization ~2 min Isaac startup + seeds x 60 s):
+  cd /home/cvgluser/ros2_data && nohup bash /tmp/run_apt_isaac.sh \
+    /home/cvgluser/ros2_data/apt_g1/isaac/oracle_token_replay_isaac.py \
+    --out /home/cvgluser/ros2_data/apt_g1/outputs/ds_phase0/oracle_replay_isaac.json \
+    > /home/cvgluser/ros2_data/apt_g1/outputs/ds_phase0/replay.log 2>&1 \
+    < /dev/null & disown; echo OK
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+
+import numpy as np
+import torch
+
+
+def build_args():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument(
+        "--tokens-csv",
+        default="/tmp/ds_smoke/policy_input.csv",
+        help="official-loop recording; col 0-63 = 64-d token, 50 Hz rows",
+    )
+    ap.add_argument(
+        "--motion-csv",
+        default="/tmp/ds_smoke/target_motion.csv",
+        help="official-loop recording; col 0 = root x (deploy frame)",
+    )
+    ap.add_argument("--run-rows", type=int, default=3000, help="60 s @ 50 Hz")
+    ap.add_argument(
+        "--min-run-vx",
+        type=float,
+        default=0.7,
+        help="1 s-window displacement threshold that marks the RUN onset row",
+    )
+    ap.add_argument("--seeds", default="0,1,2")
+    ap.add_argument(
+        "--router-model-dir",
+        default="/home/cvgluser/ros2_data/apt_g1/outputs/distill_final",
+    )
+    ap.add_argument(
+        "--out",
+        default="/home/cvgluser/ros2_data/apt_g1/outputs/ds_phase0/oracle_replay_isaac.json",
+    )
+    ap.add_argument(
+        "--save-tokens",
+        default="/home/cvgluser/ros2_data/apt_g1/data/ds_phase0/run_tokens.npz",
+    )
+    return ap
+
+
+def extract_run_window(cli):
+    """Locate the RUN onset in the recording and slice tokens + official vx.
+
+    Row i of tokens_csv/motion_csv are the same 50 Hz control tick (deploy
+    logs both at the policy rate; row counts must match). RUN onset = first
+    row whose trailing 1 s forward displacement clears --min-run-vx while the
+    following 20 s averages >= 0.8 m/s (idle/stand rows sit at ~0).
+    """
+    tokens_all = np.loadtxt(cli.tokens_csv, delimiter=",", dtype=np.float32)
+    x = np.loadtxt(cli.motion_csv, delimiter=",", dtype=np.float32, usecols=(0,))
+    n = min(len(x), len(tokens_all))
+    if len(x) != len(tokens_all):
+        print(f"[extract] WARN row mismatch tokens={len(tokens_all)} motion={len(x)} -> {n}")
+    tokens_all, x = tokens_all[:n], x[:n]
+    vx1 = x[50:] - x[:-50]  # m per 1 s trailing window (>= 0 fwd)
+    run_start = None
+    for i in range(0, n - 50 - cli.run_rows):
+        if vx1[i] > cli.min_run_vx and i + 1000 < len(vx1) and vx1[i : i + 1000].mean() > 0.8:
+            run_start = i
+            break
+    if run_start is None:
+        raise SystemExit(
+            f"[extract] FAIL: no RUN onset found in {cli.tokens_csv} "
+            f"(rows={n}, max 1 s disp={vx1.max():.2f} m)"
+        )
+    end = run_start + cli.run_rows
+    if end > n:
+        raise SystemExit(
+            f"[extract] FAIL: recording too short for {cli.run_rows} rows "
+            f"from onset {run_start} (have {n})"
+        )
+    tokens = tokens_all[run_start:end, :64]
+    lat = tokens * 16.0
+    lattice_viol = int(np.sum(np.abs(lat - np.round(lat)) > 0.05))
+    official_disp = float(x[end - 1] - x[run_start])
+    official_vx = official_disp / (cli.run_rows / 50.0)
+    window_vx1 = vx1[run_start : end - 50]
+    print(
+        f"[extract] rows={n} onset={run_start} window=[{run_start},{end}) "
+        f"official_disp={official_disp:.2f} m official_vx={official_vx:.3f} m/s "
+        f"(window 1s-vx mean={window_vx1.mean():.3f} min={window_vx1.min():.3f}) "
+        f"lattice_viol={lattice_viol}",
+        flush=True,
+    )
+    return tokens, run_start, official_disp, official_vx, lattice_viol
+
+
+def main():
+    from isaaclab.app import AppLauncher
+
+    ap = build_args()
+    AppLauncher.add_app_launcher_args(ap)
+    cli = ap.parse_args()
+    seeds = [int(s) for s in cli.seeds.split(",")]
+
+    # fail fast on extraction before paying the Isaac startup
+    tokens, run_start, official_disp, official_vx, lattice_viol = extract_run_window(cli)
+    Path(cli.save_tokens).parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        cli.save_tokens,
+        tokens=tokens,
+        run_start=run_start,
+        official_disp=official_disp,
+        official_vx=official_vx,
+        tokens_csv=cli.tokens_csv,
+    )
+    print(f"[extract] tokens saved -> {cli.save_tokens}", flush=True)
+
+    app_launcher = AppLauncher(cli)
+    sim_app = app_launcher.app
+
+    from apt_g1.isaac.apt_flat_env import AptFlatG1Env, AptFlatG1EnvCfg
+    from apt_g1.isaac.eval_apt_isaac import jitter_and_reset
+
+    class OracleReplayEnv(AptFlatG1Env):
+        """Token oracle: _compute_q_des bypasses policy/VAE/router entirely and
+        decodes the recorded official-loop token stream (env-owned history).
+        Deliberately a subclass -- canonical apt_flat_env.py stays untouched."""
+
+        _oracle_tokens: torch.Tensor | None = None
+        _oracle_idx: int = 0
+
+        def _compute_q_des(self, phase, aux, res=None):
+            i = min(self._oracle_idx, self._oracle_tokens.shape[0] - 1)
+            tokens = self._oracle_tokens[i].unsqueeze(0).expand(self.num_envs, -1)
+            self._oracle_idx += 1
+            action_t = self._decoder.decode(*self._decoder_obs_parts(tokens))
+            return self._sonic_default_t + action_t * self._sonic_scale_t
+
+        def _reset_idx(self, env_ids):
+            super()._reset_idx(env_ids)
+            self._oracle_idx = 0
+
+    cfg = AptFlatG1EnvCfg()
+    cfg.scene.num_envs = 1
+    cfg.episode_length_s = cli.run_rows / 50.0 + 30.0
+    cfg.router_model_dir = cli.router_model_dir
+    env = OracleReplayEnv(cfg)
+    env._oracle_tokens = torch.from_numpy(tokens).to(env.device)
+
+    results = {}
+    for seed in seeds:
+        jitter_and_reset(env, seed)
+        env._oracle_idx = 0
+        xy0 = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy().copy()
+        h_min = float("inf")
+        fall_step = None
+        steps_done = 0
+        for t in range(cli.run_rows):
+            action = torch.zeros(
+                env.num_envs, env.cfg.action_space, dtype=torch.float32, device=env.device
+            )
+            obs, reward, term, trunc, _ = env.step(action)
+            steps_done = t + 1
+            h = float(env.robot.data.root_pos_w[0, 2].item())
+            h_min = min(h_min, h)
+            if bool(term[0]):
+                fall_step = t
+                break
+            if bool(trunc[0]):
+                break
+        xy1 = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy()
+        disp_x = float(xy1[0] - xy0[0])
+        disp_norm = float(np.linalg.norm(xy1 - xy0))
+        r = {
+            "steps": steps_done,
+            "completed": fall_step is None and steps_done >= cli.run_rows,
+            "fall_step": fall_step,
+            "h_min": round(h_min, 3),
+            "disp_x": round(disp_x, 2),
+            "disp_norm": round(disp_norm, 2),
+            "vx_x": round(disp_x / (cli.run_rows / 50.0), 3),
+        }
+        results[f"seed{seed}"] = r
+        print(
+            f"seed{seed} completed={r['completed']} fall_step={fall_step} "
+            f"h_min={r['h_min']} disp_x={r['disp_x']} vx={r['vx_x']}",
+            flush=True,
+        )
+
+    mean_vx = float(np.mean([r["vx_x"] for r in results.values()]))
+    ratio = mean_vx / official_vx if official_vx > 1e-6 else 0.0
+    n_falls = sum(1 for r in results.values() if r["fall_step"] is not None)
+    out = {
+        "phase": "DS_GAIT_MANIFOLD_PLAN Phase 0 (Isaac oracle-token replay)",
+        "tokens_csv": cli.tokens_csv,
+        "run_start_row": int(run_start),
+        "run_rows": cli.run_rows,
+        "lattice_violations": lattice_viol,
+        "official_disp_m": round(official_disp, 2),
+        "official_vx": round(official_vx, 4),
+        "seeds": results,
+        "n_falls": n_falls,
+        "mean_vx_x": round(mean_vx, 4),
+        "realization_ratio": round(ratio, 4),
+        "gate": "PASS" if ratio >= 0.9 else "FAIL",
+        "gate_rule": "mean realized vx / official-loop vx >= 0.9 (plan §2)",
+    }
+    Path(cli.out).parent.mkdir(parents=True, exist_ok=True)
+    with open(cli.out, "w") as f:
+        json.dump(out, f, indent=1)
+    print(json.dumps(out, indent=1), flush=True)
+    print("saved", cli.out)
+
+    # Isaac sometimes hangs on interpreter exit (server gotcha) -- hard exit
+    sim_app.close()
+    os._exit(0)
+
+
+if __name__ == "__main__":
+    main()

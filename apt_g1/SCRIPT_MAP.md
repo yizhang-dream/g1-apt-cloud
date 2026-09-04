@@ -251,3 +251,9 @@ l_checker 不 import launch_sanity/env_wiring（audit 独立性同 D §9）。
 > `train_apt_isaac.py`（`--to42-sel/--to42-hold-steps` 旗标 + action 16→17 +
 > policy gate_k=2 + buf["gate"] 槽位，PPO gate 分支原样复用）。
 > **TO41 九项冻结清单不受影响**（TO41 复现路径全部走 off 默认值）。
+
+## 9. DS 步态流形线（2026-09-04 登记；计划 = `refine-logs/DS_GAIT_MANIFOLD_PLAN.md`）
+
+| 脚本 | 角色 | 用途 | 实验号 |
+|---|---|---|---|
+| `isaac/oracle_token_replay_isaac.py` | 入口 | **Phase 0 Isaac 执行保真度校准**：官方回路 RUN 录音（`/tmp/ds_smoke/policy_input.csv` 前 64 列 token，D033 录音复用不重采）→ `AptFlatG1Env` 子类旁路 policy/VAE/router，token 直进冻结 `SonicTorchDecoder`→q_des（D002 协议 Isaac 版；env 自持 10 帧闭环 history，canonical env 零改动）；自动定位 RUN 起始行（1s 窗位移 >0.7m 且后 20s 均速 >0.8）+ lattice 合法性抽检 + official_vx 自算；3 seed × 60s 回放，门判据 mean realized vx / official vx ≥ 0.9 → PASS（<0.9 对齐执行参数 ≤3 轮，仍不达降级 G3）；token npz 落 `data/ds_phase0/`，JSON 落 `outputs/ds_phase0/` | D034 / Phase 0 |
