@@ -63,6 +63,9 @@ refine-logs/README.md…………………………………………………�
 │   ├── APT_PROJECT_SUMMARY.md………………… 收束：08-13 时点总结（最终口径以 FINAL_REPORT 为准）
 │   ├── HUMAN_READABLE_COMPLETE_REPORT.md 收束：08-12 人话版全时间线复盘
 │   ├── LITERATURE_SURVEY_FROZEN_DECODER.md 调研：冻结解码器 + 位置 RL 地形泛化综述
+│   ├── LITERATURE_SURVEY_DS_MANIFOLD.md… 调研：DS 步态流形计划近邻地图与创新点
+│   │   ……………………………………………………………评估（同题/同方法/同模式三层 + 借鉴清单，
+│   │   ……………………………………………………………09-04）
 │   ├── RESEARCHCLAWBENCH_SURVEY.md……… 调研：RCBench agent 选型（08-20）
 │   ├── PAPER_TERRAIN_SPEC.md…………………… 对照：论文地形定义（结论已被 gate0 修订）
 │   ├── LEG_LEVEL_TO_PLAN.md…………………… 计划：TO36+ 腿级 TO（Drake dircol）
