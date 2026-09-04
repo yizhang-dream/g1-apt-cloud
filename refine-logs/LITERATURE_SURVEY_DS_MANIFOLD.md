@@ -237,7 +237,7 @@ Whole-Body Control"，Science Robotics 11(117) eaed4592 (2026) = arXiv
    （masked token 预测）+ MotionBricks（VQVAE 合成）已经是"动作流形"三件套
    ——我方 token VAE 的 delta 必须对它们表述：连续速度/regime 条件化 +
    RL 消费 + held-out 族检验协议，官方三件套均无。
-5. **⚠️ 新数据选项（未立项，owner 裁定）**：BONES-SEED 公开子集（142k 条
+5. **⚠️ 新数据选项（09-04 owner 提权，见 `DS_SONIC_OFFICIAL_DATA.md`）**：BONES-SEED 公开子集（142k 条
    G1 重定向动捕）+ 官方 encoder（ONNX 已发布）→ **可批量离线编码出 token
    数据**，绕开我方 2.5h 官方回路采集瓶颈；物理有效性有代理背书（decoder
    本就是在物理仿真中 PPO 训出来跟踪这些 token 的，真机 99.2%）。与 D033
