@@ -200,12 +200,16 @@ A 线独占；一切以 **B3 门通过率为第一前提**（即使 10% 通过�
   ③过渡段 token 连续性（切换点前后 token 距离 ≤ 族内稳态 P95）。
 - **预算 ~0.5 天**。产物：`data/ds_manifold/ds_manifold.npz` + 质检报告。
 
-## 5. Phase 3：流形 VAE 训练 + held-out 验证（A/B 双源汇合点）
+## 5. Phase 3（v2 双轨）：流形 VAE 训练 + held-out 验证（A/B 双源汇合点）
 
-- **数据组成（B4 裁定后生效）**：A 线 `ds_manifold.npz`（必选主料：稳态/方向/
-  过渡段/命令标注速度）+ B 线 `ds_bones/` npz（按 B4 策略：①对照臂 = bones-only
-  重训看 held-out 差异；②合并加权 = bones 作速度段补充、A 线作主料加权；③探针 =
-  仅作流形内插验证材料不入训练）。**裁定前置条件 = Phase 2 与 B3 双门全绿**。
+- **双轨设计（§0.5v2；原 B4 三选一降级为 VAE-L 内部实现细节）**：
+  - **VAE-S 轨（必做，金标准小流形）**：A 线 `ds_manifold.npz` only——原判据
+    全部不变，与 E39 底板直接可比；
+  - **VAE-L 轨（B3 通过量 ≥ 10 万帧即启动）**：A 锚定 + B 放大（过门大类全量
+    + A 全量；首轮 A 线 ×10 上采样保命令语义占比，可调）。两轨同判据对比 =
+    双流形对照实验（L 优 = 数据规模瓶颈 / S≈L = token 空间容量天花板，预注册
+    不预设赢家，两向皆硬结论）。
+- **裁定前置 = Phase 2 与 B3 双门全绿**；owner 只裁 VAE-L 启动与否与最终底板。
 - 新脚本 `train_token_vae_ds.py`（`train_token_vae_e39.py` 架构扩展，登记）：
   条件轴 = **vb 连续速度（A 线命令标注优先；B 线段落用参考轨迹速度代理标注，
   来源列区分）+ regime one-hot（4 + bones 来源类）+ db 8bin**；z 16d；dir/speed
@@ -219,6 +223,9 @@ A 线独占；一切以 **B3 门通过率为第一前提**（即使 10% 通过�
 
 ## 6. Phase 4：RL 底板重训 + 判读门
 
+- **底板候选 = 双流形对照胜者**（四件判据：val MAE / held-out 重建 / 内插
+  lattice 合法率 / G3 速度谱响应；平手则 VAE-S 上场保 E39 可比性，VAE-L 记
+  descriptive）。
 - 配方：E46/E47 口径 `--latent-mode --latent-vae-path ds_manifold/vae.pt
   --latent-speed-bins(连续 vb) --latent-dir-bins --latent-kl-prior zero
   --progress-scale 1.0 --heading-scale 0.4`，128 envs × 2000 iters，seed 0，
@@ -256,7 +263,10 @@ A 线独占；一切以 **B3 门通过率为第一前提**（即使 10% 通过�
   （observation_config ↔ `planner_sonic.py` encoder 输入逐字段对齐；
   sample_data encode→token→decoder 回环 sanity）→ **B3 抽检门（不设门不入集）**：
   每大类 ≥10 段 ×500 步 Isaac oracle 回放（复用 D034 机制），类级存活 ≥95%
-  准入 → B4 全量编码 npz（`apt_g1/data/ds_bones/`，gitignored）。
+  准入 → B4 全量编码 npz（`apt_g1/data/ds_bones/`，gitignored）。〔v2〕B3 同批
+  加**自然过渡段切分试点**：抽 10 条跨动作 recording 按速度/姿态变化点切出
+  walk→run / 舞→走 转换段做 oracle 回放——验证「288h 连续动作流 = 海量过渡
+  材料」假设（§0.5v2 红利项）。
 - **判据**：B3 类级存活 ≥95%（首轮抽检后可校准阈值）；token 先过 D001
   lattice 检验 + 与官方回路 token 分布对照（mode 匹配段）。
 - **B4 合并策略三选一（Phase 3 VAE 训练前 owner 裁定，预注册）**：
@@ -273,7 +283,8 @@ A 线独占；一切以 **B3 门通过率为第一前提**（即使 10% 通过�
 | 0 校准 | 0.5d | <1h | ~~Isaac 实现率 ≥0.9~~ **已完成 D034 PASS(1.61)+D035 打滑 HONEST** |
 | 1 采集 | 1d | ~1.7–2h | fall 率 <5%/段、events 完整 |
 | 2 数据集 | 0.5d | — | oracle 回放门 + lattice 门 |
-| 3 VAE | 1d | 1h | G1 三件 |
+| 3 VAE-S（必做） | 1d | 1h | G1 三件 |
+| 3L VAE-L（B3≥10万帧启动） | +1d | +3h（量大走云 A10） | G1 三件 + 连续速度谱 + 大类留出 |
 | 4 RL 底板 | 0.5d+4h | 4h | 对照 E39 门 |
 | 5 切换 | 1d | 4h | 两臂矩阵 + 停止规则 |
 | **B 线数据源（§0.5/§7B，与 Phase 1 并行）** | ~1d | <1h GPU | B2 回环 sanity；B3 类级存活 ≥95%；B4 合并策略 owner 裁定 |
@@ -337,3 +348,10 @@ A 线独占；一切以 **B3 门通过率为第一前提**（即使 10% 通过�
   B 参考轨迹代理）；Run 行编号修正 D036 起；上游文档链补
   `DS_SONIC_OFFICIAL_DATA.md`（B 线规范）与 `LITERATURE_SURVEY_DS_MANIFOLD.md`
   （出处）。A 线全部 Phase 内容与判据零改动（append-only 纪律维持）。
+
+- **09-04 v2 三层架构二次重构（owner 研讨「官方数据能否大幅增长进度/能力/期望」；
+  分两次落盘 = 7c23bd9（§0 判据升级 + §0.5v2）+ 本条（Phase 3 双轨 / Phase 4
+  底板候选 / 预算 VAE-L 行 / B3 过渡切分试点））**：核心 = 双流形对照
+  VAE-S/VAE-L + 双层架构（厚底座 × 4 族接口）+ 升维判据（G1 大类留出、G3 连续
+  速度谱回归）+ B3 过渡试点；不变量 = 地形/命令语义归 A 线、B3 通过率第一前提
+  （≥10 万帧即启 VAE-L）。
