@@ -54,6 +54,12 @@
 5. **采集回路全资产在位**：MuJoCo sim（`run_sim_loop.py --interface sim
    --wbc-version sonic_model12_inspire`，`.venv_sim`）+ deploy（`g1_deploy_onnx_ref`
    + planner V2）+ pty 键盘驱动（exp1/2/3 模式）。
+6. **步态×地形维度有既有实证但只测过 3/27**（MQ08/11/12）：开环下 stealth
+   在 rough 0.08 存活而 walk 停摆（MQ08）；amp 0.14 上 crawl 3/3 不倒 vs
+   walk 0/3 全塌（MQ11，不倒边界 ≥0.28）；触发式运行中切换 transition
+   脆弱（MQ12，指向 ADAPTING 状态机 / 学习型选择）。**LEDGE_WALKING(20)
+   等其余 mode 的地形表现从未测过**——harness（`planner_closed_loop.py`
+   + rough heightfield）现成可扩。
 
 **对既有结论的修正**：第一层边界（此前表述「SONIC 数据分布 vx 0–1.0」）作废——
 那是采集子集的事实。材料上限修正为 planner 支持的 0.1–7.5 m/s（注释值，RUN 上
@@ -67,20 +73,35 @@ SLOW_WALK 阶梯贴 0.8 上限。数据落 `lab-ts:~/ros2_data/apt_g1/data/ds_sm
 （commands 42k 行 / policy_input 21k 行 / target_motion 21k 行 + deploy.log +
 events.json）。**结论：RUN 模式与速度轴链路完全可用，当年只是没采。**
 
-## 3. 下一步：采集网格设计（待 owner 过目后执行）
+## 3. 下一步：采集网格设计（待 owner 过目后执行；09-04 修订：步态×地形轴升级为主轴）
 
 - **轴 1（速度主轴，最高优先）**：SLOW_WALK {0.2…0.8 步长 0.1} × 前进；RUN
   {1.5…3.0 步长 0.15–0.3} × 前进。每点 ≥60s，段间 idle 10s + fall 计数。
 - **轴 2（WALK 默认速度点加密）**：WALK 速度不可调，但「WALK 默认」本身是
   C1/C2 regime 的材料来源；按 exp3 方向网格（8 bin）在默认速度下补方向覆盖。
-- **轴 3（未采 mode 探索）**：INJURED_WALK(19)、CRAWLING(8) 等按 standing set
-  键位逐个 30s 探针，稳定者纳入正式网格。
+- **轴 3（步态×地形交叉探针，09-04 owner 输入后升级为主轴）**：不是「顺带
+  探针」而是地形材料筛选主实验。**依据 = MQ 线既有证据链**：MQ11 在 walk
+  盲重规划全灭的 amp 0.14 上 crawl 3/3 不倒（不倒边界 ≥0.28）、stealth 1/3——
+  步态本身改变地形边界已被实证；当年结论即「缺按地形选模式的 gait selector
+  （= APT 论文机制）」；MQ12 证明触发检测可行但**运行中切换 transition 脆弱**
+  （切换后 1/3 存活 vs 从头 3/3）→ 学习型选择器（训练期拥有接口、从始适应
+  切换）是 transition 问题的候选解——与 TO42 H1 可塑性论证同构。**未测空白
+  = 27 mode 只测过 {walk, stealth, crawl} 三个**；LEDGE_WALKING(20)（名字
+  即台阶行走）、STEALTH_WALK_2(22)、INJURED_WALK(19)、FORWARD_JUMP(17)
+  的地形档全未扫。执行 = `planner_closed_loop.py`（MODE dict 扩键 + amp
+  扫档 {0.08/0.12/0.14/0.20} × seed 3）+ 台阶地形（make_rough_xml 换
+  heightfield 档位）× mode {crawl/ledge/stealth/stealth2/injured/jump}，
+  产出 = per-(mode, terrain) 存活/前进矩阵 → 地形档位上的最优步态族即为
+  VAE 步态条件轴的材料清单。
 - **预算估计**：单机 MuJoCo 闭环实时比 1:1（D029 全程 ~10 分钟）；轴 1+2 全网格
-  约 2–3 小时机时。
+  约 2–3 小时机时；轴 3 交叉矩阵（6 mode × 4–5 地形档 × 3 seed × 60s）约
+  1–1.5 小时。
 - **VAE 重训管线**：`train_token_vae_e39.py` 模式（数据目录换新采集合并集），
-  vb 速度轴改为跨 mode 派生（SLOW_WALK+RUN 连续速度 bin），db 方向轴沿用。
+  vb 速度轴改为跨 mode 派生（SLOW_WALK+RUN 连续速度 bin），db 方向轴沿用；
+  **若轴 3 筛出地形步态族，增设 mode/步态条件轴（结构待轴 3 结果定）**。
 - **判读门**：新 VAE 训成后先复跑 E46 口径从零 RL（`--latent-mode` 128 envs）
-  对照 E39 底板（vx 0.418 / 直行 0.86），再谈「快且直」天花板是否被推移。
+  对照 E39 底板（vx 0.418 / 直行 0.86），再谈「快且直」天花板是否被推移；
+  地形侧对照 = MQ11 per-mode 存活矩阵。
 
 ## 4. TO42 R1 封存记录（2026-09-04）
 
