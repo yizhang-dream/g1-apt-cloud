@@ -1,0 +1,44 @@
+{
+ "phase": "DS_GAIT_MANIFOLD_PLAN Phase 0 (Isaac oracle-token replay)",
+ "tokens_csv": "/tmp/ds_smoke/policy_input.csv",
+ "run_start_row": 1048,
+ "run_rows": 3000,
+ "lattice_violations": 0,
+ "planner_ref_vx": 2.0856,
+ "official_vx": 1.033,
+ "official_vx_source": "D033 base_sim probe: 62 m / 60 s RUN on official WBC sim loop",
+ "seeds": {
+  "seed0": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "disp_x": 99.8,
+   "disp_norm": 99.96,
+   "vx_x": 1.663
+  },
+  "seed1": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "disp_x": 100.01,
+   "disp_norm": 100.04,
+   "vx_x": 1.667
+  },
+  "seed2": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "disp_x": 100.02,
+   "disp_norm": 100.07,
+   "vx_x": 1.667
+  }
+ },
+ "n_falls": 0,
+ "mean_vx_x": 1.6657,
+ "realization_ratio": 1.6125,
+ "gate": "PASS",
+ "gate_rule": "mean realized vx / official-loop realized vx >= 0.9 (plan \u00a72)"
+}

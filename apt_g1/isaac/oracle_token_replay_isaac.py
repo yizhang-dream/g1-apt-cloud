@@ -45,6 +45,14 @@ def build_args():
     )
     ap.add_argument("--run-rows", type=int, default=3000, help="60 s @ 50 Hz")
     ap.add_argument(
+        "--official-vx",
+        type=float,
+        default=1.033,
+        help="official-loop REALIZED vx for the gate ratio (D033 probe: "
+        "62 m / 60 s RUN on the WBC sim loop; target_motion.csv is the "
+        "planner reference ~2.1 m/s, not realized)",
+    )
+    ap.add_argument(
         "--min-run-vx",
         type=float,
         default=0.7,
@@ -67,23 +75,33 @@ def build_args():
 
 
 def extract_run_window(cli):
-    """Locate the RUN onset in the recording and slice tokens + official vx.
+    """Locate the RUN onset in the recording and slice the token window.
 
     Row i of tokens_csv/motion_csv are the same 50 Hz control tick (deploy
-    logs both at the policy rate; row counts must match). RUN onset = first
-    row whose trailing 1 s forward displacement clears --min-run-vx while the
-    following 20 s averages >= 0.8 m/s (idle/stand rows sit at ~0).
+    logs both at the policy rate; row counts must match). NOTE (D033):
+    target_motion col 0 is the PLANNER reference root x (~2.1 m/s steady for
+    RUN), NOT the realized WBC motion -- it is used only to find the motion
+    onset; the official-loop REALIZED vx is the D033 probe measurement
+    (--official-vx, 62 m / 60 s). RUN onset = first row whose trailing 1 s
+    reference displacement clears --min-run-vx (idle/stand rows sit at ~0).
     """
-    tokens_all = np.loadtxt(cli.tokens_csv, delimiter=",", dtype=np.float32)
-    x = np.loadtxt(cli.motion_csv, delimiter=",", dtype=np.float32, usecols=(0,))
+    # deploy csv rows end with a trailing comma (995th field empty) ->
+    # genfromtxt + filling_values tolerates it; token cols are 0-63 either way
+    tokens_all = np.genfromtxt(
+        cli.tokens_csv, delimiter=",", dtype=np.float32, filling_values=0.0
+    )
+    x = np.genfromtxt(
+        cli.motion_csv, delimiter=",", dtype=np.float32, filling_values=0.0,
+        usecols=(0,),
+    )
     n = min(len(x), len(tokens_all))
     if len(x) != len(tokens_all):
         print(f"[extract] WARN row mismatch tokens={len(tokens_all)} motion={len(x)} -> {n}")
     tokens_all, x = tokens_all[:n], x[:n]
-    vx1 = x[50:] - x[:-50]  # m per 1 s trailing window (>= 0 fwd)
+    vx1 = x[50:] - x[:-50]  # reference m per 1 s trailing window
     run_start = None
-    for i in range(0, n - 50 - cli.run_rows):
-        if vx1[i] > cli.min_run_vx and i + 1000 < len(vx1) and vx1[i : i + 1000].mean() > 0.8:
+    for i in range(len(vx1)):
+        if vx1[i] > cli.min_run_vx:
             run_start = i
             break
     if run_start is None:
@@ -91,26 +109,27 @@ def extract_run_window(cli):
             f"[extract] FAIL: no RUN onset found in {cli.tokens_csv} "
             f"(rows={n}, max 1 s disp={vx1.max():.2f} m)"
         )
-    end = run_start + cli.run_rows
-    if end > n:
+    end = min(run_start + cli.run_rows, n)
+    if end - run_start < 2000:
         raise SystemExit(
-            f"[extract] FAIL: recording too short for {cli.run_rows} rows "
-            f"from onset {run_start} (have {n})"
+            f"[extract] FAIL: motion segment too short from onset {run_start} "
+            f"(have {end - run_start} rows, need >= 2000)"
         )
     tokens = tokens_all[run_start:end, :64]
     lat = tokens * 16.0
     lattice_viol = int(np.sum(np.abs(lat - np.round(lat)) > 0.05))
-    official_disp = float(x[end - 1] - x[run_start])
-    official_vx = official_disp / (cli.run_rows / 50.0)
+    planner_ref_disp = float(x[end - 1] - x[run_start])
+    planner_ref_vx = planner_ref_disp / ((end - run_start) / 50.0)
     window_vx1 = vx1[run_start : end - 50]
     print(
         f"[extract] rows={n} onset={run_start} window=[{run_start},{end}) "
-        f"official_disp={official_disp:.2f} m official_vx={official_vx:.3f} m/s "
-        f"(window 1s-vx mean={window_vx1.mean():.3f} min={window_vx1.min():.3f}) "
+        f"planner_ref_disp={planner_ref_disp:.1f} m ref_vx={planner_ref_vx:.3f} m/s "
+        f"(NOT realized; official realized vx={cli.official_vx:.3f} from D033 probe) "
+        f"window ref-vx mean={window_vx1.mean():.3f} min={window_vx1.min():.3f} "
         f"lattice_viol={lattice_viol}",
         flush=True,
     )
-    return tokens, run_start, official_disp, official_vx, lattice_viol
+    return tokens, run_start, end - run_start, planner_ref_vx, lattice_viol
 
 
 def main():
@@ -118,18 +137,22 @@ def main():
 
     ap = build_args()
     AppLauncher.add_app_launcher_args(ap)
+    # server has no display: viewport/hydra init segfaults (repo gotcha),
+    # so headless must be the default; kit/experience flags still passable
+    ap.set_defaults(headless=True)
     cli = ap.parse_args()
     seeds = [int(s) for s in cli.seeds.split(",")]
 
     # fail fast on extraction before paying the Isaac startup
-    tokens, run_start, official_disp, official_vx, lattice_viol = extract_run_window(cli)
+    tokens, run_start, n_rows, planner_ref_vx, lattice_viol = extract_run_window(cli)
     Path(cli.save_tokens).parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         cli.save_tokens,
         tokens=tokens,
         run_start=run_start,
-        official_disp=official_disp,
-        official_vx=official_vx,
+        n_rows=n_rows,
+        official_vx=cli.official_vx,
+        planner_ref_vx=planner_ref_vx,
         tokens_csv=cli.tokens_csv,
     )
     print(f"[extract] tokens saved -> {cli.save_tokens}", flush=True)
@@ -152,7 +175,16 @@ def main():
             i = min(self._oracle_idx, self._oracle_tokens.shape[0] - 1)
             tokens = self._oracle_tokens[i].unsqueeze(0).expand(self.num_envs, -1)
             self._oracle_idx += 1
-            action_t = self._decoder.decode(*self._decoder_obs_parts(tokens))
+            # _decoder_obs_parts expects a numpy token array (torch.from_numpy);
+            # oracle tokens are already a device tensor -> pass parts directly
+            action_t = self._decoder.decode(
+                tokens,
+                self._hist_ang_vel,
+                self._hist_joint_pos,
+                self._hist_joint_vel,
+                self._hist_last_actions,
+                self._hist_gravity,
+            )
             return self._sonic_default_t + action_t * self._sonic_scale_t
 
         def _reset_idx(self, env_ids):
@@ -161,7 +193,7 @@ def main():
 
     cfg = AptFlatG1EnvCfg()
     cfg.scene.num_envs = 1
-    cfg.episode_length_s = cli.run_rows / 50.0 + 30.0
+    cfg.episode_length_s = n_rows / 50.0 + 30.0
     cfg.router_model_dir = cli.router_model_dir
     env = OracleReplayEnv(cfg)
     env._oracle_tokens = torch.from_numpy(tokens).to(env.device)
@@ -174,7 +206,7 @@ def main():
         h_min = float("inf")
         fall_step = None
         steps_done = 0
-        for t in range(cli.run_rows):
+        for t in range(n_rows):
             action = torch.zeros(
                 env.num_envs, env.cfg.action_space, dtype=torch.float32, device=env.device
             )
@@ -192,12 +224,12 @@ def main():
         disp_norm = float(np.linalg.norm(xy1 - xy0))
         r = {
             "steps": steps_done,
-            "completed": fall_step is None and steps_done >= cli.run_rows,
+            "completed": fall_step is None and steps_done >= n_rows,
             "fall_step": fall_step,
             "h_min": round(h_min, 3),
             "disp_x": round(disp_x, 2),
             "disp_norm": round(disp_norm, 2),
-            "vx_x": round(disp_x / (cli.run_rows / 50.0), 3),
+            "vx_x": round(disp_x / (n_rows / 50.0), 3),
         }
         results[f"seed{seed}"] = r
         print(
@@ -207,22 +239,23 @@ def main():
         )
 
     mean_vx = float(np.mean([r["vx_x"] for r in results.values()]))
-    ratio = mean_vx / official_vx if official_vx > 1e-6 else 0.0
+    ratio = mean_vx / cli.official_vx if cli.official_vx > 1e-6 else 0.0
     n_falls = sum(1 for r in results.values() if r["fall_step"] is not None)
     out = {
         "phase": "DS_GAIT_MANIFOLD_PLAN Phase 0 (Isaac oracle-token replay)",
         "tokens_csv": cli.tokens_csv,
         "run_start_row": int(run_start),
-        "run_rows": cli.run_rows,
+        "run_rows": int(n_rows),
         "lattice_violations": lattice_viol,
-        "official_disp_m": round(official_disp, 2),
-        "official_vx": round(official_vx, 4),
+        "planner_ref_vx": round(float(planner_ref_vx), 4),
+        "official_vx": cli.official_vx,
+        "official_vx_source": "D033 base_sim probe: 62 m / 60 s RUN on official WBC sim loop",
         "seeds": results,
         "n_falls": n_falls,
         "mean_vx_x": round(mean_vx, 4),
         "realization_ratio": round(ratio, 4),
         "gate": "PASS" if ratio >= 0.9 else "FAIL",
-        "gate_rule": "mean realized vx / official-loop vx >= 0.9 (plan §2)",
+        "gate_rule": "mean realized vx / official-loop realized vx >= 0.9 (plan §2)",
     }
     Path(cli.out).parent.mkdir(parents=True, exist_ok=True)
     with open(cli.out, "w") as f:

@@ -16,6 +16,11 @@
 > 原因：校准结果决定 G3 全速度段目标是否成立、Phase 4 的 cmd 采样上限、
 > RUN 族在流形中的档位；先采集再校准会在错误的执行假设上烧掉 2.5h 机时。
 > 若 Phase 0 无法执行（如 Isaac 环境故障），停下向 owner 汇报，不得跳过。
+>
+> **✅ 判定已完成（2026-09-04，D034）：PASS（第 1 轮，零对齐迭代）——
+> Isaac oracle 回放实现率 1.61（1.6657 / 1.033，3 seed 零摔）≥ 0.9；
+> Phase 1 解禁，G3 维持，Phase 4 U(0,1.5) 第二臂解锁。详见 §2 末修订
+> 记录、`tracker/D.md` D034、`apt_g1/outputs/sync/ds_phase0_calibration.md`。**
 
 ## 0. 北极星与目标分解
 
@@ -78,6 +83,17 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
   Isaac 实测上限并记录（不阻塞后续 Phase）。
 - **产物**：校准报告（sync 目录）+（若改）`apt_flat_env.py` 参数 diff +
   tracker D 行。**预算 ~0.5 天**。
+
+> **修订 09-04（D034，门判定回写）**：**PASS（第 1 轮，零对齐迭代）**——
+> D033 drive_run_probe 录音复用（零采集机时），token 窗 [1048,4048) 3000 行
+> lattice 违例 0；AptFlatG1Env 子类 oracle 回放（canonical env 零改动）
+> 3 seed 零摔，realized vx 均值 1.6657 m/s ÷ 官方 1.033 = **实现率 1.61**。
+> 执行层衰减排序修正（对 planner 参考 2.086 m/s）：**Isaac 79.8% > 官方
+> WBC 48.7% > 我方 harness 17.5%**——harness 0.37 的归因收窄到 harness 自身
+> 执行配置，与 token/decoder 无关。**caveat（gate≠机制）：Isaac 比官方快
+> 61%，两套 realized 互不外推**；足底接触真实性列 P2 抽检不阻塞。
+> G3 维持；Phase 4 U(0,1.5) 第二臂解锁；Phase 1 解禁。
+> 报告 = `apt_g1/outputs/sync/ds_phase0_calibration.md`。
 
 ## 3. Phase 1：采集（官方回路；稳态 + 速度梯度 + 过渡段）
 
@@ -178,3 +194,12 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
   执行中的设计变更须回写本文（append 修订记录，不删原文）。
 - 每完成一个 Phase：commit + tracker 行 + 若干判读摘要；全计划完成后回到
   owner 讨论感知线（G5，高度图→相位对齐，另立计划）。
+
+## 11. 修订记录（append-only）
+
+- **09-04 D034**：Phase 0 前置门判定 **PASS**（第 1 轮，实现率 1.61 ≥ 0.9，
+  3 seed 零摔，零对齐迭代）。要点：D033 录音复用零采集；canonical env 零
+  改动（oracle 回放走 SCRIPT_MAP §9 子类入口）；执行层衰减排序修正
+  Isaac 79.8% > 官方 WBC 48.7% > harness 17.5%（两套 realized 互不外推，
+  引用须注明执行栈）；G3 维持、Phase 4 第二臂解锁、Phase 1 解禁。
+  详见 §2 修订块与 `sync/ds_phase0_calibration.md`。
