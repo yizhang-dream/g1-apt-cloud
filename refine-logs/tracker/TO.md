@@ -1606,3 +1606,17 @@ c 臂 it150/it200/it2000 ckpt、三臂 93 行原始 rollout 记录、c 臂采样
   （停止规则 c）；**Δτ(r_sel) 属 Rung 2 post-selection estimand，本轮不测、
   不预授权**。当前：不扩矩阵、不改 protocol、不预设计第三轮；下一合法状态
   迁移 = Recovery Gate A PASS。
+- **〔2026-09-04 转向封存〕TO42 R1 全线封存（owner 指令「完全停掉其他所有，
+  完全主攻数据重采」）**：云端 wave 终态 = v5（TASK_20260904_025，11:00–11:30
+  archiving signature 终止）→ v6（TASK_20260904_032，9 分钟即死）→ v7
+  （TASK_20260904_035，on_done 修复 6f030a0 + 4 并发；11:43–13:19 跑 1.6h
+  再次 archiving signature 终止 = 余额杀；死前进度 = 训练 4/4 臂完成、评测
+  28 格跑完 8 格；storage 空、无 bundle/ckpt 可下载；日志通道抢救 8 条
+  [to42-done] 行 + 全量日志快照入档
+  `outputs/sync/to42_r1/pause_20260904/`——**仅描述性参考（快照观察：
+  fbkt-s0 大规模重训后 realized vx ≈0.17 偏离 TO41 的 0.13；lsel-s1 塌向
+  单一 regime，switches≈0、realized vx ≈0.736、err60s 0.41–0.54），
+  不进入正式判读**）。R1 判读材料不足：selection-interface
+  contrast 保持 OPEN 不销案、不再投入。后继方向 = D 系列重采线
+  （DS_RECOLLECT_PLAN.md，owner 09-04 转向）；learned-selection 议题若在新
+  VAE 底板上重启，按 TO42_PLAN §3 配方移植、不重开本轮旧账。

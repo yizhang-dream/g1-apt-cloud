@@ -46,3 +46,9 @@
 | D024 | Command-switch marathon | 68s mixed schedule x 3 seeds | 68s x3 | survival | DONE | 0/3; falls at jump (2 seeds) / walk_back (1 seed); earlier 58s pass was a 20s episode-length artifact |
 | D025 | Isolation | walk_back 60s; walk40->idle->jump | - | survival | DONE | walk_back 3/3 standalone; jump-after-40s 2/3 (h_min~0.21) -> jump under prolonged running is the residual fragility |
 
+
+## Recollect line (2026-09-04, DS_RECOLLECT_PLAN.md; owner 方向转向：停 TO 线主攻数据重采)
+
+| Run ID | Purpose | Variant | Data | Metric | Status | Result |
+|--------|---------|---------|------|--------|--------|--------|
+| D029 | SONIC 全动作组核查 + RUN/速度轴冒烟 | deploy LocomotionMode 枚举考古（27 mode）+ pty 键盘驱动 9 段：WALK 基线 60s / RUN(3) 默认 60s / RUN '0' 阶梯 ×2/×4/×6 各 30s / SLOW_WALK 阶梯 ×2/×4/×6 各 30s | ds_smoke: commands 42,020 行 + policy_input 21,015 行 + target_motion 21,015 行（lab-ts apt_g1/data/ds_smoke/） | falls=0 全段; target_vel 阶梯实测 | DONE | **RUN mode 从未采过（exp1/2/3 只按过 1/2/4/5）但完全可用**：默认 60s 零摔（target_vel 1.5），速度阶梯 1.5→1.7→2.1→2.7 全部站住；SLOW_WALK 阶梯贴 0.8 上限；WALK 键盘路径速度恒 -1 不可调。deploy 枚举：SLOW_WALK 0.1–0.8 / WALK 0.8–2.5 / RUN 2.5–7.5（键盘钳 1.5–3.0），三段相接 = 论文 trot/bound 结构同构物。材料上限修正：vx 0–1.0 是采集子集事实，非 SONIC 系统上限 |
