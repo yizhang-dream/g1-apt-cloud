@@ -156,3 +156,14 @@
   （`data/ds_bones/b1_smpl/`，断点续传后台）。④下一步 = SMPL 模式 obs
   布局逆向（对照 g1 路径同法：官方样例字段 → 1762 维布局 introspection →
   冒烟三检验）→ B3 正式门（先 metadata 类目抽样、每大类 ≥10 段）。
+
+- **09-05 03:30 B1-SMPL 收口**：7/7 分卷逐字节对齐官方权威大小后合并解压
+  （37s）——`smpl_filtered/` **131,455 个 pkl**（全量 142,220 的 92%），字段
+  与 `sample_data/smpl_filtered` 官方样例逐字段一致（pose_aa 72d + transl +
+  smpl_joints 24×3 + **fps=50.0 encoder 原生率零重采样** + original 30Hz 副本）。
+  文件名 = 描述性动点名 + 演员号 + 镜像标记（无目录层级；gated 仓的 metadata
+  parquet 含正式 33 类标注——未拿到前用文件名关键词初分：walk 系 22,478 /
+  jump 13,461 / dance 10,752 / run 758——run 稀少但存在，与方向偏斜记录一致）。
+  磁盘 61GB（分卷 32GB 未删，B3 稳定后可清理）。下载事故记录：蹲守代理
+  pgrep 判活误报引发并发写坏两卷，HEAD Content-Length 判坏重下修复——后续
+  判活用精确进程名匹配。
