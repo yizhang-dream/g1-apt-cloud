@@ -139,3 +139,20 @@
   回环 + Isaac 重跑）= **D038**，因 lab-ts 网络中断（Tailscale 直连断、hkg
   中继劣化）暂挂，恢复后执行。⑦新脚本登记：`encode_bones_smoke.py` /
   `roundtrip_official_control.py` / `isaac/replay_bones_tokens_isaac.py`。
+
+- **09-05 凌晨 D038 修复证实 + 数据源改道 SMPL**：
+  ①ref-rel 修复全指标逆转（详见 tracker D038）：回环 MAE 0.1094（优于官方
+  token 0.136）、mean-L2 0.869、Isaac 2/2 全程零摔物理量复现 97%——
+  **B2 编码路径关闭，B 线链路全通**。②**gated 通道受阻**：owner HF 登录
+  失败；实测 hf-mirror 对 gated 仓库仅放行 README（200），实质文件 403——
+  门禁在 HF 服务端执行，镜像无法绕过；OpenDataLab/ModelScope 查证均无
+  主数据集镜像（ModelScope 仅 nv-community 衍生时长标注）。③**改道
+  SMPL 官方镜像（零门禁）**：`nvidia/GEAR-SONIC/bones_seed_smpl/` 7 分卷
+  32.3GB = BONES-SEED 的 SMPL 格式官方拷贝，encoder 原生 smpl 模式
+  （observation_config encoder_modes[2]；`sample_data/smpl_filtered` 样例
+  已在手：pose_aa 72 维 + transl + smpl_joints 24×3 @50Hz），编码产物同
+  为 token，下游 decoder/Isaac 检验链路零改动——**G1 格式门禁不再是 B 线
+  阻塞项**（owner 登录成功后可补 G1 通道作对照）。下载 09-05 启动
+  （`data/ds_bones/b1_smpl/`，断点续传后台）。④下一步 = SMPL 模式 obs
+  布局逆向（对照 g1 路径同法：官方样例字段 → 1762 维布局 introspection →
+  冒烟三检验）→ B3 正式门（先 metadata 类目抽样、每大类 ≥10 段）。
