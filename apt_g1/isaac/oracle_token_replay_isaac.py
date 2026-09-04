@@ -198,6 +198,23 @@ def main():
     env = OracleReplayEnv(cfg)
     env._oracle_tokens = torch.from_numpy(tokens).to(env.device)
 
+    # D035 slip audit: G1 ankle-roll links terminate at the feet; contact is
+    # proxied by foot-frame world height (plane terrain at z=0), calibrated to
+    # the per-run minimum. Honest gait => contact-phase foot speed ~ 0; skating
+    # => fast feet while "in contact". Pre-registered verdict: worse-foot
+    # median contact-phase horizontal speed < 0.15 m/s => honest.
+    foot_ids = []
+    all_bodies = env.robot.body_names
+    for pat in ("left_ankle_roll.*", "right_ankle_roll.*"):
+        try:
+            ids, names = env.robot.find_bodies(pat)
+        except ValueError:
+            raise SystemExit(
+                f"[slip] FAIL: pattern {pat!r} matched none of {all_bodies}"
+            )
+        foot_ids.append(int(ids[0]))
+        print(f"[slip] foot body: {names[0]}", flush=True)
+
     results = {}
     for seed in seeds:
         jitter_and_reset(env, seed)
@@ -206,6 +223,7 @@ def main():
         h_min = float("inf")
         fall_step = None
         steps_done = 0
+        foot_z, foot_v, q_err = [], [], []
         for t in range(n_rows):
             action = torch.zeros(
                 env.num_envs, env.cfg.action_space, dtype=torch.float32, device=env.device
@@ -214,6 +232,13 @@ def main():
             steps_done = t + 1
             h = float(env.robot.data.root_pos_w[0, 2].item())
             h_min = min(h_min, h)
+            bp = env.robot.data.body_pos_w[0, foot_ids, 2].detach().cpu().numpy()
+            bv = env.robot.data.body_lin_vel_w[0, foot_ids, :2].detach().cpu().numpy()
+            foot_z.append(bp.copy())
+            foot_v.append(np.linalg.norm(bv, axis=1))
+            q_des_s = env._q_des[0].detach().cpu().numpy()
+            q_act_s = env.robot.data.joint_pos[0, env._body_idx].detach().cpu().numpy()
+            q_err.append(float(np.abs(q_act_s - q_des_s).mean()))
             if bool(term[0]):
                 fall_step = t
                 break
@@ -222,6 +247,16 @@ def main():
         xy1 = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy()
         disp_x = float(xy1[0] - xy0[0])
         disp_norm = float(np.linalg.norm(xy1 - xy0))
+        fz = np.asarray(foot_z)          # (T, 2)
+        fv = np.asarray(foot_v)          # (T, 2) horizontal |v|
+        min_z = float(fz.min())
+        stance = fz < min_z + 0.02       # (T, 2) contact proxy
+        contact_speed = np.where(stance, fv, np.nan)
+        med = np.nanmedian(contact_speed, axis=0)
+        p90 = np.nanpercentile(contact_speed, 90, axis=0)
+        slip_frac = np.nanmean(contact_speed > 0.2, axis=0)
+        onsets = (stance[1:] & ~stance[:-1]).sum(axis=0)
+        worse = int(np.argmax(med))
         r = {
             "steps": steps_done,
             "completed": fall_step is None and steps_done >= n_rows,
@@ -230,11 +265,26 @@ def main():
             "disp_x": round(disp_x, 2),
             "disp_norm": round(disp_norm, 2),
             "vx_x": round(disp_x / (n_rows / 50.0), 3),
+            "foot_min_z": round(min_z, 4),
+            "stance_frac": [round(float(v), 3) for v in stance.mean(axis=0)],
+            "contact_speed_median": round(float(med[worse]), 4),
+            "contact_speed_p90": round(float(p90[worse]), 4),
+            "slip_frac_gt02": round(float(slip_frac[worse]), 4),
+            "steps_per_sec": round(float(onsets[worse]) / (n_rows / 50.0), 2),
+            "q_track_mae_rad": round(float(np.mean(q_err)), 4),
+            "slip_verdict": (
+                "HONEST" if med[worse] < 0.15 else
+                "PARTIAL_SLIP" if med[worse] < 0.4 else "SKATING"
+            ),
+            "slip_verdict_rule": "worse-foot median contact-phase speed: <0.15 honest / <0.4 partial / >=0.4 skating",
         }
         results[f"seed{seed}"] = r
         print(
             f"seed{seed} completed={r['completed']} fall_step={fall_step} "
-            f"h_min={r['h_min']} disp_x={r['disp_x']} vx={r['vx_x']}",
+            f"h_min={r['h_min']} disp_x={r['disp_x']} vx={r['vx_x']} "
+            f"slip={r['slip_verdict']} (med={r['contact_speed_median']} "
+            f"p90={r['contact_speed_p90']} stance={r['stance_frac']} "
+            f"step/s={r['steps_per_sec']} qMAE={r['q_track_mae_rad']})",
             flush=True,
         )
 
@@ -243,6 +293,7 @@ def main():
     n_falls = sum(1 for r in results.values() if r["fall_step"] is not None)
     out = {
         "phase": "DS_GAIT_MANIFOLD_PLAN Phase 0 (Isaac oracle-token replay)",
+        "slip_audit": "D035: contact-phase horizontal foot speed per seed (HONEST <0.15 < PARTIAL <0.4 <= SKATING m/s)",
         "tokens_csv": cli.tokens_csv,
         "run_start_row": int(run_start),
         "run_rows": int(n_rows),

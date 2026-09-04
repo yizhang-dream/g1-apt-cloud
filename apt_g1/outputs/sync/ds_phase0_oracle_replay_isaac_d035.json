@@ -1,0 +1,81 @@
+{
+ "phase": "DS_GAIT_MANIFOLD_PLAN Phase 0 (Isaac oracle-token replay)",
+ "slip_audit": "D035: contact-phase horizontal foot speed per seed (HONEST <0.15 < PARTIAL <0.4 <= SKATING m/s)",
+ "tokens_csv": "/tmp/ds_smoke/policy_input.csv",
+ "run_start_row": 1048,
+ "run_rows": 3000,
+ "lattice_violations": 0,
+ "planner_ref_vx": 2.0856,
+ "official_vx": 1.033,
+ "official_vx_source": "D033 base_sim probe: 62 m / 60 s RUN on official WBC sim loop",
+ "seeds": {
+  "seed0": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "disp_x": 99.8,
+   "disp_norm": 99.96,
+   "vx_x": 1.663,
+   "foot_min_z": 0.0349,
+   "stance_frac": [
+    0.383,
+    0.424
+   ],
+   "contact_speed_median": 0.0377,
+   "contact_speed_p90": 0.9183,
+   "slip_frac_gt02": 0.0593,
+   "steps_per_sec": 1.35,
+   "q_track_mae_rad": 0.1714,
+   "slip_verdict": "HONEST",
+   "slip_verdict_rule": "worse-foot median contact-phase speed: <0.15 honest / <0.4 partial / >=0.4 skating"
+  },
+  "seed1": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "disp_x": 100.01,
+   "disp_norm": 100.04,
+   "vx_x": 1.667,
+   "foot_min_z": 0.0349,
+   "stance_frac": [
+    0.383,
+    0.424
+   ],
+   "contact_speed_median": 0.0381,
+   "contact_speed_p90": 0.9639,
+   "slip_frac_gt02": 0.06,
+   "steps_per_sec": 1.35,
+   "q_track_mae_rad": 0.1713,
+   "slip_verdict": "HONEST",
+   "slip_verdict_rule": "worse-foot median contact-phase speed: <0.15 honest / <0.4 partial / >=0.4 skating"
+  },
+  "seed2": {
+   "steps": 3000,
+   "completed": true,
+   "fall_step": null,
+   "h_min": 0.691,
+   "disp_x": 100.02,
+   "disp_norm": 100.07,
+   "vx_x": 1.667,
+   "foot_min_z": 0.0349,
+   "stance_frac": [
+    0.384,
+    0.424
+   ],
+   "contact_speed_median": 0.0379,
+   "contact_speed_p90": 1.0299,
+   "slip_frac_gt02": 0.0597,
+   "steps_per_sec": 1.35,
+   "q_track_mae_rad": 0.1714,
+   "slip_verdict": "HONEST",
+   "slip_verdict_rule": "worse-foot median contact-phase speed: <0.15 honest / <0.4 partial / >=0.4 skating"
+  }
+ },
+ "n_falls": 0,
+ "mean_vx_x": 1.6657,
+ "realization_ratio": 1.6125,
+ "gate": "PASS",
+ "gate_rule": "mean realized vx / official-loop realized vx >= 0.9 (plan \u00a72)"
+}
