@@ -350,50 +350,64 @@ def stage_smoke() -> None:
 
 
 def stage_train_and_eval(pending: list) -> None:
-    """流水线主体：训练 4 runs（2 并发，s0 对先发）+ 每臂完成 → 增量机械选择
-    → on_done 向共享队列动态注入该臂 7 个评测格（mid-band 优先）。"""
-    def make_on_done(arm: str, seed: int, pending: list):
-        run = f"to42r1-{arm}-s{seed}"
+    """流水线主体：训练 4 runs（并发上限 TRAIN_CAP）+ 每臂完成 → 增量机械选择
+    → 向共享队列动态注入该臂 7 个评测格（mid-band 优先）。断点续跑：训练产物
+    齐全的臂跳过重训、已有 receipt 的格跳过重评。"""
 
-        def _done(_pending: list):
+    def _inject_cells(arm: str, seed: int, entry: dict, _pending: list) -> None:
+        ckpt = entry["ckpt_file"]
+        vs = list(MID_BAND) + [v for v in GRID7 if v not in MID_BAND]
+        for i, v in enumerate(vs):
+            if _receipt_path(arm, v, seed).exists():
+                print(f"[resume] cell {arm} v={v} s={seed}: receipt 已存在，跳过",
+                      flush=True)
+                continue
+
+            def on_done(_pending, arm=arm, seed=seed, v=v):
+                if not _receipt_path(arm, v, seed).exists():
+                    raise SystemExit(
+                        f"receipt 缺失 {arm} v={v} s={seed}"
+                        "（rc 被 Isaac atexit 吞掉）")
+                _save_bundle(None)
+
+            _pending.append({
+                "tag": f"eval-{arm}-v{v:.3f}-s{seed}",
+                "cmd": [sys.executable, "-m", "apt_g1.rung1.to42_eval",
+                        "--mode", "execute", "--arm", arm,
+                        "--v", f"{v:.3f}", "--train-seed", str(seed),
+                        "--ckpt", ckpt,
+                        "--steps", "3000", "--eval-seeds", "0,1,2",
+                        "--out-dir", str(EVAL_DIR), "--env-tag", "cloud",
+                        "--worker-tag", f"w{seed}{i % 3}"],
+                "kind": "eval", "vram_gb": EVAL_VRAM_GB, "ready": None,
+                "on_done": on_done, "timeout": 3600})
+
+    def make_on_done(arm: str, seed: int, run: str):
+        def _done(_pending: list) -> None:
             _require_train_outputs(RUNS_ROOT / run)
             entry = _select_one(arm, seed)
-            ckpt = entry["ckpt_file"]
-            vs = list(MID_BAND) + [v for v in GRID7 if v not in MID_BAND]
-            for i, v in enumerate(vs):
-                def on_done(arm=arm, seed=seed, v=v):
-                    if not _receipt_path(arm, v, seed).exists():
-                        raise SystemExit(
-                            f"receipt 缺失 {arm} v={v} s={seed}"
-                            "（rc 被 Isaac atexit 吞掉）")
-                    _save_bundle(None)
-
-                _pending.append({
-                    "tag": f"eval-{arm}-v{v:.3f}-s{seed}",
-                    "cmd": [sys.executable, "-m", "apt_g1.rung1.to42_eval",
-                            "--mode", "execute", "--arm", arm,
-                            "--v", f"{v:.3f}", "--train-seed", str(seed),
-                            "--ckpt", ckpt,
-                            "--steps", "3000", "--eval-seeds", "0,1,2",
-                            "--out-dir", str(EVAL_DIR), "--env-tag", "cloud",
-                            "--worker-tag", f"w{seed}{i % 3}"],
-                    "kind": "eval", "vram_gb": EVAL_VRAM_GB, "ready": None,
-                    "on_done": on_done, "timeout": 3600})
+            _inject_cells(arm, seed, entry, _pending)
             _save_bundle(None)
-
         return _done
 
     jobs = []
     for seed in SEEDS:  # s0 对先发（第一批评测来自 s0）
         for arm in ARMS:
             run = f"to42r1-{arm}-s{seed}"
+            rd = RUNS_ROOT / run
+            if (rd / "policy_final.pt").exists() and                     (rd / "train_log.json").exists():
+                # 断点续跑：产物齐全 → 跳过重训，直接选择 + 注入评测格
+                print(f"[resume] {run}: 训练产物已存在，跳过重训", flush=True)
+                entry = _select_one(arm, seed)
+                _inject_cells(arm, seed, entry, pending)
+                continue
             jobs.append({
                 "tag": f"train-{arm}-s{seed}",
                 "cmd": [sys.executable, "-m", "apt_g1.isaac.train_apt_isaac",
                         *BASE_ARGS, "--iters", str(ITERS), "--seed", str(seed),
                         "--to42-sel", arm, "--out", f"output/to42/{run}"],
                 "kind": "train", "vram_gb": TRAIN_VRAM_GB, "ready": None,
-                "on_done": make_on_done(arm, seed, pending),
+                "on_done": make_on_done(arm, seed, run),
                 "timeout": 6 * 3600})
     _scheduler(jobs)
 
