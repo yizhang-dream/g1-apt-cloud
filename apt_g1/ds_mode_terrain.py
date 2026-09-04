@@ -149,7 +149,7 @@ def build_model(terrain: str, seed: int):
 
 
 def run(mode_id: int, terrain: str, spawn_x: float, spawn_z: float,
-        n_steps: int, seed: int):
+        n_steps: int, seed: int, target_vel: float = -1.0):
     sys.path.insert(0, "/home/cvgluser/ros2_data")
     sys.path.insert(0, "/home/cvgluser/ros2_data/apt_g1")
     sys.path.insert(0, REPO)
@@ -205,7 +205,7 @@ def run(mode_id: int, terrain: str, spawn_x: float, spawn_z: float,
     def plan():
         ctx = np.tile(live_q36()[None, None], (1, 4, 1)).astype(np.float32)
         inp = {"context_mujoco_qpos": ctx,
-               "target_vel": np.array([-1.0], dtype=np.float32),
+               "target_vel": np.array([target_vel], dtype=np.float32),
                "mode": np.array([mode_id], dtype=np.int64),
                "movement_direction": np.array([[1.0, 0, 0]], dtype=np.float32),
                "facing_direction": np.array([[1.0, 0, 0]], dtype=np.float32),
@@ -275,12 +275,15 @@ if __name__ == "__main__":
     ap.add_argument("--spawn-x", type=float, default=None,
                     help="override terrain default spawn")
     ap.add_argument("--spawn-z", type=float, default=None)
+    ap.add_argument("--target-vel", type=float, default=-1.0,
+                    help="planner target_vel (-1 = mode default sentinel)")
     ap.add_argument("--n-steps", type=int, default=2250)  # 45 s @ 50 Hz
     args = ap.parse_args()
     mode_id = int(args.mode) if args.mode.isdigit() else MODES[args.mode]
     sx, sz = TERRAIN_SPAWN[args.terrain]
     if args.spawn_x is not None: sx = args.spawn_x
     if args.spawn_z is not None: sz = args.spawn_z
-    r = run(mode_id, args.terrain, sx, sz, args.n_steps, args.seed)
-    r.update(mode=mode_id, terrain=args.terrain, seed=args.seed, spawn_x=sx)
+    r = run(mode_id, args.terrain, sx, sz, args.n_steps, args.seed, args.target_vel)
+    r.update(mode=mode_id, terrain=args.terrain, seed=args.seed, spawn_x=sx,
+             target_vel=args.target_vel)
     print("DSMT " + json.dumps(r))
