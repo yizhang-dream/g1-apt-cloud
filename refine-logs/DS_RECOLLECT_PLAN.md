@@ -103,6 +103,26 @@ events.json）。**结论：RUN 模式与速度轴链路完全可用，当年只
   对照 E39 底板（vx 0.418 / 直行 0.86），再谈「快且直」天花板是否被推移；
   地形侧对照 = MQ11 per-mode 存活矩阵。
 
+## 3.5 地形 benchmark 选型（2026-09-04 调研落盘，owner 采纳）
+
+- **论文原生 benchmark 不可得**：项目页（skillquadsr.github.io）无代码/地形配置/
+  benchmark 下载，18 万轨迹数据集亦无公开链接（需联系作者）；GitHub 同名仓库
+  均为无关项目。复刻参数只能取自论文 Supplementary（PAPER_TERRAIN_SPEC.md
+  已拆解七地形 + 10 级 curriculum 全参数表）。
+- **主基准 = mjlab 地形库**（github.com/mujocolab/mjlab 开源；Isaac Lab 地形
+  curriculum 同源移植，Cfg 命名逐一同名；服务器 .venv_mjlab 现成）。论文七种
+  的映射：rough→HfRandomUniform（对称化 + downsampled_scale=0.2 论文粗格）、
+  stair→BoxPyramidStairs、stepping stones→BoxSteppingStones、discrete→
+  HfDiscreteObstacles、high step→Box 大台阶档；**hurdle/gap 无原生对应，
+  按论文参数自建并显式标注**（self-built-paper-params）。备选交叉源 =
+  HumanoidBench（H1，标准 MuJoCo，hurdle/stairs/crawl 任务）与 MuJoCo
+  Playground（DeepMind 官方，G1 29-DoF rough 任务）。
+- **实现要点**：mjlab 地形函数吃 MjSpec 直接产出几何；MjSpec.to_xml() 不能
+  序列化内嵌 hfield/纹理 → runner（`ds_mode_terrain.py`）改为**内存组装**：
+  from_file(scene_43dof) → 删 floor plane → mjlab 官方 Cfg.function() →
+  compile() → MjModel 经 from_xml_path patch 注入 env（零 XML 落盘）。
+  rough 档后处理对称化（减 mid）落实 G0 结论「坑是必要难点变量」。
+
 ## 4. TO42 R1 封存记录（2026-09-04）
 
 - 云端 wave 演进：v5（TASK_20260904_025，余额杀 signature）→ v6（032，9 分钟即

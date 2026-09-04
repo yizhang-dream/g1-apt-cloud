@@ -37,6 +37,7 @@
 | `eval_torque_srb.py` | 评测 | **SRB TO 力矩开环回放（G1 MuJoCo 力矩闭环）**：τ = sign·τ_SRB(2Hz 相位钟) + kp·(zero-token q_des − q) − kd·q̇ 施加到 sagittal 关节（act 0/3/4 与 6/9/10）；TO06 负结果——SRB 力矩太简化不驱动 G1 走路 | TO06 |
 | `drive_exp3.py` | 数据采集 | 脚本化官方闭环采集缺失的 walk 方向 | D 系列 / exp3 |
 | `drive_ds_smoke.py` | 数据采集 | **DS 重采线冒烟驱动**：RUN(3) 模式 + movement_speed 速度轴阶梯（WALK 基线/RUN 默认+阶梯/SLOW_WALK 阶梯，段间 idle+fall 计数）；setup 镜像 `/tmp/setup_exp3.sh` 模式 | D029 / DS_RECOLLECT_PLAN |
+| `ds_mode_terrain.py` | 评测 | **DS mode×terrain 矩阵 runner**（planner_closed_loop 参数化 fork）：21 非静态 mode 全集 × mjlab 官方论文地形（内存 MjSpec 组装 + from_xml_path patch 注入 env，零 XML 落盘；rough 对称化=坑为必要难点）；hurdle/gap 自建标注 self-built-paper-params；每格 JSON 行输出 | D030 / DS_RECOLLECT_PLAN |
 | `build_exp3_dataset.py` | 数据构建 | 合并 exp1+exp2+exp3 raw → `exp_all3`（68,093 步） | D026 |
 | `recover_torque_data.py` | 工具 | 为已录 SONIC 闭环数据恢复 PD 力矩标签 | 方向 A |
 | `recover_id_torque.py` | 工具 | 用 mj_inverse 重放相位路由器恢复逆动力学力矩 | 方向 A |

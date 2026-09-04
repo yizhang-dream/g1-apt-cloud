@@ -52,3 +52,15 @@
 | Run ID | Purpose | Variant | Data | Metric | Status | Result |
 |--------|---------|---------|------|--------|--------|--------|
 | D029 | SONIC 全动作组核查 + RUN/速度轴冒烟 | deploy LocomotionMode 枚举考古（27 mode）+ pty 键盘驱动 9 段：WALK 基线 60s / RUN(3) 默认 60s / RUN '0' 阶梯 ×2/×4/×6 各 30s / SLOW_WALK 阶梯 ×2/×4/×6 各 30s | ds_smoke: commands 42,020 行 + policy_input 21,015 行 + target_motion 21,015 行（lab-ts apt_g1/data/ds_smoke/） | falls=0 全段; target_vel 阶梯实测 | DONE | **RUN mode 从未采过（exp1/2/3 只按过 1/2/4/5）但完全可用**：默认 60s 零摔（target_vel 1.5），速度阶梯 1.5→1.7→2.1→2.7 全部站住；SLOW_WALK 阶梯贴 0.8 上限；WALK 键盘路径速度恒 -1 不可调。deploy 枚举：SLOW_WALK 0.1–0.8 / WALK 0.8–2.5 / RUN 2.5–7.5（键盘钳 1.5–3.0），三段相接 = 论文 trot/bound 结构同构物。材料上限修正：vx 0–1.0 是采集子集事实，非 SONIC 系统上限 |
+| D030 | mode×terrain 资格赛 Phase A | 21 非静态 LocomotionMode 全集 × {flat, rough_mid(论文形状对称±0.04/0.2m粗格,mjlab官方生成器)} × 3 seed；harness=ds_mode_terrain.py（planner_closed_loop 参数化 fork，10Hz 重规划 + ONNX planner 直调任意 mode；mjlab 地形内存组装注入 env；episode 上限 20s=1000步）；6 进程并行 lab-ts | 126 格 × JSON 行（adv/h_min/h_end/fall） | survive = fall==null 或 h_end≥0.55；fell = h_min<0.40 | DONE | **Phase A 判读**（126/126 全格，episode 20s 上限）：
+①rough_mid（论文形状中档）对多数 mode 不构成威胁——18/21 mode rough 存活
+≥2/3，WALK rough 前进 10.24m≈flat 10.31m（MQ09 walk≈flat 在论文形状上复现）；
+②**唯一被 rough 显著打击 = mode 3 RUN**（flat 3/3 adv8.54 → rough 1/3 adv6.86、
+全场唯一 h_min 0.22 真摔）= 速度换地形脆弱；③**前进排序（rough_mid）**：
+WALK(2) 10.24 ≈ HAPPY_DANCE(23) 9.06 > RUN(3) 6.86(1/3) > SCARE(26) 3.94 ≈
+FORWARD_JUMP(17) 3.61 > SLOW(1) 3.18 ≈ INJURED(19) 2.92 > STEALTH(18) 1.76 >
+ZOMBIE(24) 1.18；④**两个惊喜**：HAPPY_DANCE_WALK 在 rough 上 9.06m 全存活
+（超 flat 8.44）；FORWARD_JUMP flat 0/3→rough 3/3 且 adv 3.61（跳跃在坑洼地
+反而有效——直接支持「跳跃越障」假设）；⑤crawl(8)/elbow(14)/ledge(20)/拳系
+(11-16)/stealth_2(22)/gun(25)：存活但 20s adv<1m（极慢/原地）——crawl 的
+抗倒价值场景（MQ11 amp0.14 档）本档未触发，Phase B/C 加档验证。冒烟锚：walk×rough_mid 300步 fall=null adv 3.42；flat walk 20s adv 10.45m（走完大半 16m 场地）。benchmark 选型：论文原生不可得（项目页无代码无地形），主基准=mjlab 官方地形库（Isaac Lab 同源），hurdle/gap 自建标注（DS_RECOLLECT_PLAN §3.5） |
