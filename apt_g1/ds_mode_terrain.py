@@ -42,6 +42,7 @@ TERRAIN_SPAWN = {  # name -> (spawn_x, spawn_z)
     "hurdle_mid": (-6.0, 0.85), "gap_mid": (-6.0, 0.85),
     "hurdle_h10": (-6.0, 0.85), "hurdle_h20": (-6.0, 0.85),
     "hurdle_h30": (-6.0, 0.85),
+    "bar_h10": (-6.0, 0.85), "bar_h20": (-6.0, 0.85), "bar_h30": (-6.0, 0.85),
 }
 
 
@@ -138,6 +139,10 @@ def build_model(terrain: str, seed: int):
         for i in range(8):
             tb.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.15, 4.0, hz],
                         pos=[-5.0 + 1.5 * i, 0.0, hz], rgba=[0.4, 0.5, 0.6, 1.0])
+    elif terrain.startswith("bar_h"):  # SINGLE bar at x=0 (phase-diagnosis D031)
+        hz = float(terrain[len("bar_h"):]) / 100.0
+        tb.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.15, 4.0, hz],
+                    pos=[0.0, 0.0, hz], rgba=[0.7, 0.4, 0.3, 1.0])
     else:
         raise ValueError(f"unknown terrain {terrain}")
     return spec.compile()
@@ -267,10 +272,15 @@ if __name__ == "__main__":
     ap.add_argument("--terrain", default="flat",
                     choices=list(TERRAIN_SPAWN.keys()))
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--spawn-x", type=float, default=None,
+                    help="override terrain default spawn")
+    ap.add_argument("--spawn-z", type=float, default=None)
     ap.add_argument("--n-steps", type=int, default=2250)  # 45 s @ 50 Hz
     args = ap.parse_args()
     mode_id = int(args.mode) if args.mode.isdigit() else MODES[args.mode]
     sx, sz = TERRAIN_SPAWN[args.terrain]
+    if args.spawn_x is not None: sx = args.spawn_x
+    if args.spawn_z is not None: sz = args.spawn_z
     r = run(mode_id, args.terrain, sx, sz, args.n_steps, args.seed)
-    r.update(mode=mode_id, terrain=args.terrain, seed=args.seed)
+    r.update(mode=mode_id, terrain=args.terrain, seed=args.seed, spawn_x=sx)
     print("DSMT " + json.dumps(r))
