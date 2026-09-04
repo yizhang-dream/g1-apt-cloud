@@ -1,11 +1,16 @@
-# DS 步态流形计划（Phase 0–5）：像论文一样在多步态间切换，全地形 + 全速度段
+# DS 步态流形计划：A 线（官方回路 Phase 0–5）× B 线（官方数据 B1–B4）双源架构
 
-> 【层位 L2 侧轴｜执行计划（2026-09-04 定稿；owner 指令「写计划，另开会话执行」；
-> 前序 D029–D033 五轮实验全部支撑本文，事实源 = `tracker/D.md`）】↑
-> `refine-logs/README.md`（扇出树根）｜上游：`DS_RECOLLECT_PLAN.md`（采集线设计与
-> benchmark 选型）、`TO42_PLAN.md`（选择器配方，Phase 5 平移其预注册框架）｜
-> 执行事实源：`tracker/D.md`（Run 行只进那里）｜状态：**待执行**（本文为唯一
-> 执行依据，另开会话按 Phase 0→5 顺序执行，每 Phase 完成后落盘 Run 行）
+> 【层位 L2 侧轴｜执行计划（2026-09-04 定稿，同日**双线架构重构**（owner 指令
+> 「参考官方数据立项内容彻底修改计划与整体规划」）；前序 D029–D033 支撑 +
+> D034/D035 执行中回写，事实源 = `tracker/D.md`）】↑
+> `refine-logs/README.md`（扇出树根）｜上游：`DS_RECOLLECT_PLAN.md`（采集线设计
+> 与 benchmark 选型）、`TO42_PLAN.md`（选择器配方，Phase 5 平移其预注册框架）、
+> `DS_SONIC_OFFICIAL_DATA.md`（**B 线文件级规范**：官方数据资产清单/B1–B4
+> 细则/坑清单）、`LITERATURE_SURVEY_DS_MANIFOLD.md`（SONIC 论文精读 = B 线出处）｜
+> 执行事实源：`tracker/D.md`（Run 行只进那里）｜状态：**执行中**
+> （Phase 0 已 PASS = D034 + D035；Phase 1 驱动标定完成待全网格；B1–B3 待
+> 服务器会话启动，与 Phase 1 并行；B4 合并策略 = 本计划唯一剩余 owner 裁定点，
+> Phase 3 前裁定）
 
 ---
 
@@ -41,6 +46,37 @@
 exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首版（负障碍专长 +
 感知越障线的未来载体，接受其平地慢 adv~1m 的数据稀释）。
 
+## 0.5 双源总体架构（09-04 重构：A/B 线一等公民化）
+
+```
+                    ┌── A 线（官方 deploy 回路，Phase 1–5）──────────────┐
+                    │   稳态+速度梯度+方向网格+过渡段（唯一物理检验源）      │
+  Phase 0 校准 PASS ─┤                                                    ├→ Phase 3 VAE
+  （D034，1.61）     │   B1 下载 ─ B2 对齐冒烟 ─ B3 抽检门(≥95%) ─ B4 npz │   （数据组成 =
+                    └── B 线（BONES-SEED × 官方 encoder 离线编码）────────┘    A 产物必选
+                                                                      + B4 产物按
+                        B4 合并策略三选一（①对照臂 ②合并加权 ③探针）          合并策略）
+                        = 本计划唯一剩余 owner 裁定点，Phase 3 前裁定
+```
+
+**分工铁律（三条，违反即数据卫生学事故）**：
+1. **A 线独占**：方向网格（8 bin）、族间过渡段、held-out 探针、命令标注速度梯度
+   ——BONES-SEED 方向偏斜（直行/跑/舞为主，转向/横移稀少，`HUMAN_READABLE:859`
+   早有记录）且无命令语义，这些材料只有官方回路能给；
+2. **B 线定位三重**：①G3 速度段放大器（含跑/舞高速材料，绕开官方回路 RUN 48%
+   执行衰减的数据侧瓶颈）②规模放大器（142k 条/288h 离线编码 vs 1:1 实时采集，
+   量级差 2–3 个数量级）③A 线工程受阻时的备胎——**任何情况下不替代 A 线**；
+3. **B 线准入双门**：D001 lattice 检验 + B3 oracle 回放抽检（类级存活 ≥95%，
+   复用 D034 机制）——动捕重定向非物理解，不过门不入集。卫生学边界：D033 禁的
+   是 planner 开环提取路径；B 线走「官方 encoder 编码 + Isaac 回放检验」，
+   与 D002/D034 质检框架同源，不冲突。
+
+**时序**：B1–B3 与 Phase 1 并行（B1 下载不占机时）；B4 在 Phase 2 完成后、
+Phase 3 启动前完成，合并策略裁定点即 Phase 3 的数据组成决策。文件级规范、
+资产清单（HF `nvidia/GEAR-SONIC` encoder 50.1MB/sample_data + `bones-studio/
+seed` 142,220 条双格式）、license 门与六个已知坑 = `DS_SONIC_OFFICIAL_DATA.md`
+（§7B 为本计划内的计划级摘要）。
+
 ## 1. 已冻结的技术决策（D029–D033 沉淀，执行时不得重新发明）
 
 1. **采集回路 = 官方 deploy 回路**（deploy C++ + run_sim_loop WBC + MuJoCo，
@@ -63,6 +99,15 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
    planner ONNX 的 target_vel 非单调（-1≈2.5>1.5），**一律用 -1 哨兵**；standing
    motion set 键位 "1"-"6" = SLOW/WALK/RUN/FORWARD_JUMP/STEALTH/INJURED，styled
    set（'n' 切换）第一位 = LEDGE；HAPPY_DANCE(23) 在 styled set 第 4 位。
+   〔09-04 冒烟+探针勘误与标定，驱动 `drive_ds_manifold.py` 已实现〕：
+   ①'n' 不是二态切换，是 **4 组循环**（0 站立/1 蹲爬/2 拳击/3 styled——
+   `localmotion_kplanner.hpp get_motion_set`；越界回落站立组），HAPPY = 3×'n'
+   到 styled 组后按 "4"，下行用 'p'；②SLOW_WALK **基速 0.2**、RUN 基速 1.5、
+   '0' = +0.1/次（'0'×1→0.3、×5→2.0 已核）；③**'a'/'d' = 每按一次 movement+
+   facing 旋转 ±5.73°（累加制，非长按动量制——长按 300 次转出 139.5° 定值），
+   'q'/'e' = 纯 facing ±30°（movement 不动），'w' 沿当前 movement 维持动量
+   （不复位方向），'r' 清 movement 保 facing**；斜向 = 'a'/'d' 点按 N 次
+   （45°≈8 次）后用 'w' 维持。
 6. **地形基准 = mjlab 官方生成器**（论文原生不可得；`ds_mode_terrain.py` 已实现
    内存组装：rough 对称化/stairs/stones/discrete 原生 + hurdle/gap 自建标注；
    gap 曾有几何 bug 已修——两板 center±(half+gap/2) 才是真缝）。
@@ -95,23 +140,33 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
 > G3 维持；Phase 4 U(0,1.5) 第二臂解锁；Phase 1 解禁。
 > 报告 = `apt_g1/outputs/sync/ds_phase0_calibration.md`。
 
-## 3. Phase 1：采集（官方回路；稳态 + 速度梯度 + 过渡段）
+## 3. Phase 1（A 线主案）：采集（官方回路；稳态 + 速度梯度 + 过渡段）
 
-**网格**（全部官方 deploy 回路，段间 idle 10s + fall 计数，events.json 留档）：
+**网格**（全部官方 deploy 回路，段间 idle 10s + fall 计数，events.json 留档；
+驱动 = `drive_ds_manifold.py`（SCRIPT_MAP 已登记），段段自报末条
+"Replanning with mode" 行做 mode/speed/方向自证）：
 
-| 族 | 键位 | 速度档 | 方向 | 时长 | 段数 |
+| 族 | 键位（含组切换） | 速度档（'0'=+0.1/次） | 方向（点按制） | 时长 | 段数 |
 |---|---|---|---|---|---|
-| SLOW(1) | "1" | '0' 键调 {0.2,0.4,0.6,0.8} | 前/后/左右斜（4 主向） | 60s×2 | 32 |
-| HAPPY(23) | 'n'→"4" | 默认 | 8 方向 bin | 60s×2 | 16 |
-| RUN(3) | "3" | {1.5,2.0,2.5,3.0}（'0' 调） | 前 + 4 主向（仅 1.5/2.5 档） | 60s×2 | 24 |
-| JUMP(17) | "4" | 默认 | 前/左/右 | 60s×2 | 6 |
-| 过渡段 | 序列切键 | — | 前 | 20s×3 相位 | 12 对×3=36 |
+| SLOW(1) | 站立组 "1" | 基速 0.2：{0.2,0.4,0.6,0.8}='0'×{0,2,4,6} | fwd/back(diagL45/diagR45='a'/'d'×8+'w'维持) | 60s×2 | 32 |
+| HAPPY(23) | 3×'n'→styled 组 "4" | 默认 | 8 bin：{0,45,90,135,180,225,270,315}°='w'/'a'×8/×16/×24/'s'/'d'×24/×16/×8 | 60s×2 | 16 |
+| RUN(3) | 站立组 "3" | 基速 1.5：{1.5,2.0,2.5,3.0}='0'×{0,5,10,15} | fwd×4 档；{back,L45,R45,L90}×{1.5,2.5} | 60s×2 | 24 |
+| JUMP(17) | 站立组 "4" | 默认 | fwd/L45/R45 | 60s×2 | 6 |
+| 过渡段 | 组状态机序列切键 | — | 前 | 20s×3 相位 | 12 对×3=36 |
 | （可选 C）stones 过渡 | 见风险 5 | — | 前 | 30s×6 | 6 |
 
+- **方向语义（09-04 探针标定，§1.5 勘误③）**：'a'/'d' 每按一次 movement+facing
+  旋转 ∓5.73°（累加），45°≈8 次；'w' 沿当前 movement 维持动量。斜向段 =
+  先点按 'a'/'d' N 次、再长按 'w' 维持；纯后向直接 's'。
 - 过渡段采法：驱动脚本按 `A 键 10s → idle 2s → B 键 10s` 序列（12 对 = 4 族
   两两双向），3 个起切相位（idle 后第 0/2/4 秒切）。
-- **预算**：~2–2.5h 机时（实时比 1:1）+ 驱动脚本改造 ~0.5 天。
-- **产物**：`apt_g1/data/ds_manifold/`（csv 三件套 + events + deploy.log 分段）。
+- **对齐资产**：deploy `--enable-csv-logs` 逐帧 csv 带 `time_realtime_ms`
+  墙钟戳（logs/ 下 action/base/encoder_mode/motion_name 等），与 events.json
+  墙钟直接对齐——Phase 2 切段不靠行数算术。
+- **预算**：~1.7–2h 机时（实测段表）+ 驱动脚本改造 ~0.5 天（已完成，冒烟
+  两轮标定 mode/speed/组切换全对齐）。
+- **产物**：`apt_g1/data/ds_manifold/`（csv 三件套 + logs/ 逐帧 csv +
+  events.json + manifest.json + deploy.log）。
 
 ## 4. Phase 2：数据集构建 + 质量门
 
@@ -122,12 +177,17 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
   ③过渡段 token 连续性（切换点前后 token 距离 ≤ 族内稳态 P95）。
 - **预算 ~0.5 天**。产物：`data/ds_manifold/ds_manifold.npz` + 质检报告。
 
-## 5. Phase 3：流形 VAE 训练 + held-out 验证
+## 5. Phase 3：流形 VAE 训练 + held-out 验证（A/B 双源汇合点）
 
+- **数据组成（B4 裁定后生效）**：A 线 `ds_manifold.npz`（必选主料：稳态/方向/
+  过渡段/命令标注速度）+ B 线 `ds_bones/` npz（按 B4 策略：①对照臂 = bones-only
+  重训看 held-out 差异；②合并加权 = bones 作速度段补充、A 线作主料加权；③探针 =
+  仅作流形内插验证材料不入训练）。**裁定前置条件 = Phase 2 与 B3 双门全绿**。
 - 新脚本 `train_token_vae_ds.py`（`train_token_vae_e39.py` 架构扩展，登记）：
-  条件轴 = **vb 连续速度（命令标注，弃相位反推）+ regime one-hot（4）+ db 8bin**；
-  z 16d；dir/speed 对抗解耦头沿用（E39 配方）；过渡段按 transition_flag 加权
-  （×2 采样权重——过渡是稀缺样本）。
+  条件轴 = **vb 连续速度（A 线命令标注优先；B 线段落用参考轨迹速度代理标注，
+  来源列区分）+ regime one-hot（4 + bones 来源类）+ db 8bin**；z 16d；dir/speed
+  对抗解耦头沿用（E39 配方）；过渡段按 transition_flag 加权（×2 采样权重——
+  过渡是稀缺样本）。
 - 训练：lab-ts GPU（3060 可，~1h 级）；数据 60–80k 步。
 - **验证三件**（G1 判据）：val MAE ≤0.08；held-out 族 {18,19,2} 最近邻重建误差
   ≤ 训练族 1.5×（流形连续性可证伪检验）；z 空间族间线性插值 token 的 lattice
@@ -158,17 +218,43 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
   TO42_PLAN §2）。
 - **预算**：~1 天（含训练 4 runs + 矩阵评测 ~2h）。
 
+## 7B. B 线（与 Phase 1 并行）：BONES-SEED × 官方 encoder 离线编码
+
+> 架构级定位与分工铁律见 **§0.5**；文件级规范与资产清单 =
+> `DS_SONIC_OFFICIAL_DATA.md`（owner 09-04 提权立项）；本节只定计划级
+> 位置、门与预算。**不替代 A 线 Phase 1**。
+
+- **定位三重**：①G3 速度段放大器（BONES-SEED 含跑/舞高速材料，绕开官方回路
+  RUN 48% 执行衰减的数据侧问题）；②规模放大器（离线编码 vs 1:1 实时采集，
+  差 2–3 个数量级）；③Phase 1 工程受阻时的备胎。
+- **步骤**：B1 下载盘点（`nvidia/GEAR-SONIC` 的 encoder ONNX 50.1MB +
+  observation_config + sample_data <60MB；`bones-studio/seed` G1 格式
+  locomotion/dance 大类抽样；**license 门先核对**）→ B2 格式对齐冒烟
+  （observation_config ↔ `planner_sonic.py` encoder 输入逐字段对齐；
+  sample_data encode→token→decoder 回环 sanity）→ **B3 抽检门（不设门不入集）**：
+  每大类 ≥10 段 ×500 步 Isaac oracle 回放（复用 D034 机制），类级存活 ≥95%
+  准入 → B4 全量编码 npz（`apt_g1/data/ds_bones/`，gitignored）。
+- **判据**：B3 类级存活 ≥95%（首轮抽检后可校准阈值）；token 先过 D001
+  lattice 检验 + 与官方回路 token 分布对照（mode 匹配段）。
+- **B4 合并策略三选一（Phase 3 VAE 训练前 owner 裁定，预注册）**：
+  ①纯对照臂（bones-only 重训 VAE 看 held-out 差异）；②合并加权（bones 作
+  速度段补充，官方回路作稳态/过渡/方向主料）；③探针（仅作流形内插验证材料）。
+- **预算**：~1 个工作日（机时 <1h GPU）；与 Phase 1 并行（B1 下载不占机时）。
+- **卫生学**：D033 禁的是 planner 开环提取路径；本轨走「官方 encoder 编码 +
+  Isaac 回放检验」，与 D002/D034 质检框架同源，不冲突。
+
 ## 8. 总预算与里程碑
 
 | Phase | 墙钟 | 机时 | 关键门 |
 |---|---|---|---|
-| 0 校准 | 0.5d | <1h | Isaac 实现率 ≥0.9（或降级 G3） |
-| 1 采集 | 1d | 2.5h | fall 率 <5%/段、events 完整 |
+| 0 校准 | 0.5d | <1h | ~~Isaac 实现率 ≥0.9~~ **已完成 D034 PASS(1.61)+D035 打滑 HONEST** |
+| 1 采集 | 1d | ~1.7–2h | fall 率 <5%/段、events 完整 |
 | 2 数据集 | 0.5d | — | oracle 回放门 + lattice 门 |
 | 3 VAE | 1d | 1h | G1 三件 |
 | 4 RL 底板 | 0.5d+4h | 4h | 对照 E39 门 |
 | 5 切换 | 1d | 4h | 两臂矩阵 + 停止规则 |
-| 合计 | ~5 个工作日 | ~12h 机时 | |
+| **B 线数据源（§0.5/§7B，与 Phase 1 并行）** | ~1d | <1h GPU | B2 回环 sanity；B3 类级存活 ≥95%；B4 合并策略 owner 裁定 |
+| 合计 | ~6 个工作日 | ~12h 机时 | |
 
 ## 9. 风险清单（按杀伤力排序）
 
@@ -186,11 +272,17 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
    决定，stones 需生成对应 scene xml + config（~0.5d 工程）；首版可跳过
    （过渡带难点已有 D031/D032 证据，Phase 5 判读用 harness 矩阵兜底）。
 6. **target_vel/键位 gotcha 复发**：采集驱动一律先跑 5 分钟冒烟打印
-  "Replanning with mode" 行核对 mode/speed 再放全程。
+   "Replanning with mode" 行核对 mode/speed 再放全程。
+7. **BONES-SEED 方向偏斜**（§7B）：转向/横移材料天然稀少——不得替代 Phase 1
+   方向网格，只作速度段/规模放大器；入集前必须过 B3 门（动态可行比例未知）。
+8. **采集网格有效性依赖方向键语义**：'a'/'d' 为逐次累加转向（长按打转）——
+   驱动已改点按制；若后续 deploy 版本换键位语义，冒烟自证行
+   （movement/facing 向量）是唯一放行依据。
 
 ## 10. 纪律
 
-- Run 行只进 `tracker/D.md`（D034 起）；新脚本全部登记 SCRIPT_MAP；本计划
+- Run 行只进 `tracker/D.md`（D034/D035 已用，后续 D036 起）；新脚本全部登记
+  SCRIPT_MAP；本计划
   执行中的设计变更须回写本文（append 修订记录，不删原文）。
 - 每完成一个 Phase：commit + tracker 行 + 若干判读摘要；全计划完成后回到
   owner 讨论感知线（G5，高度图→相位对齐，另立计划）。
@@ -203,3 +295,22 @@ exp_all 11k 步 mode2 数据保留作流形内插探针）；② JUMP(17) 进首
   Isaac 79.8% > 官方 WBC 48.7% > harness 17.5%（两套 realized 互不外推，
   引用须注明执行栈）；G3 维持、Phase 4 第二臂解锁、Phase 1 解禁。
   详见 §2 修订块与 `sync/ds_phase0_calibration.md`。
+- **09-04 D035**：打滑核验 **HONEST**（3/3，中位接触足速 0.038 m/s、双足
+  占空 ~0.8 = 20% 周期腾空、q 跟踪 MAE 0.171 rad 排除刚性拖拽）——Isaac
+  1.6657 m/s 为物理诚实跑步，速度声明解除打滑保留。
+- **09-04 全面修订（owner 指令「彻底修改计划方案和整体规划」）**：
+  ①并入 **Phase B**（BONES-SEED × 官方 encoder，§7B，owner 同日提权立项，
+  规范 = `DS_SONIC_OFFICIAL_DATA.md`）——数据双源策略入 §0，预算表加行，
+  风险 7 新增，B4 合并策略留 Phase 3 前 owner 裁定；②Phase 1 网格按冒烟
+  两轮 + 方向探针**标定重写**（§1.5 勘误：'n'=4 组循环、SLOW 基速 0.2、
+  'a'/'d' 逐次累加 ±5.73°/q'e' 纯朝向 ±30°/'w' 维持；§3 网格表全部改为
+  点按制方向预置 + 键位含组切换 + logs/ 墙钟戳对齐资产），驱动
+  `drive_ds_manifold.py` 同步实现；③头部状态改「执行中」。
+
+- **09-04 双线架构重构（owner 指令「参考官方数据立项内容彻底修改计划与整体规划」）**：
+  §0.5 新增（A/B 双源总体架构图 + 分工三铁律 + 时序），B 线从「§7B 附录式侧轨」
+  升格为一等公民；Phase 3 改写为「A/B 双源汇合点」（数据组成 = A 必选 + B4 按
+  策略，裁定前置 = Phase 2 与 B3 双门全绿）；vb 标注来源列区分（A 命令标注 /
+  B 参考轨迹代理）；Run 行编号修正 D036 起；上游文档链补
+  `DS_SONIC_OFFICIAL_DATA.md`（B 线规范）与 `LITERATURE_SURVEY_DS_MANIFOLD.md`
+  （出处）。A 线全部 Phase 内容与判据零改动（append-only 纪律维持）。
