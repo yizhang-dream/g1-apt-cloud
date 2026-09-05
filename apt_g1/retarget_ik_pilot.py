@@ -265,8 +265,9 @@ def main():
         dd = np.zeros((n, 29))
         hh = []
         for t in range(n):
+            dt_t = [(pb, cb, v[t]) for (pb, cb, v) in dir_tgts_seq]
             sol = least_squares(residual_dof, xd,
-                                args=(quat_fix[t], root_pos30[t], targets[t], dir_tgts_seq[t]),
+                                args=(quat_fix[t], root_pos30[t], targets[t], dt_t),
                                 method="trf", max_nfev=60, xtol=1e-8, ftol=1e-8,
                                 bounds=(lo, hi))
             xd = sol.x.copy()
