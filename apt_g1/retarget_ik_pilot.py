@@ -198,6 +198,7 @@ def main():
     lo_full = np.concatenate([np.full(4, -2.0), lo])
     hi_full = np.concatenate([np.full(4, 2.0), hi])
     for t in range(n):
+        x[4:] = np.clip(x[4:], lo, hi)
         sol = least_squares(residual, x, args=(root_pos30[t], targets[t]),
                             method="trf", max_nfev=80, xtol=1e-8, ftol=1e-8,
                             bounds=(lo_full, hi_full))
