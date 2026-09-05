@@ -285,12 +285,22 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
    （z 大位移被冻结 VAE 吸收为流形上近邻 token；对照 E45 kl med 64 且 rew 真在上升
    至 2.07）。【注：该对照日志来自 `isaac_e45_e39_from0.log`，与 tracker E45 行
    e27/vae.pt 的记载存在 VAE 版本出入，已挂 owner 待核】
+   【**09-05 晚修订**：本条机制归因整体降级——kl 指标身份错误（对固定先验 KL 非
+   新旧策略 KL，64d 初始底噪即 ≈224、16d ≈56）；"随机游走"降级为"训练退化，
+   机制未定"；"VAE=KL 冲击缓冲器"降级为未证实假设；对照曲线实为 **E46**。_run
+   行数据本身（rew 曲线、eval 结果）不受影响。详见 E49_STATUS §3b】
 3. **修复调研（owner 09-05「发现问题直接停，调研怎么修复」）候选**：①PPO 降温
    （lr 3e-4→1e-4 / epochs 5→2，直击 kl 过大病灶，首选最小实验）；②KL-to-init
    正则（token 空间锚定，软版 tanh）；③best-snapshot 操作规程（已证可行，配
    early-stop 省算力）；④长 episode（20s→60s，补「训练期看不见 60s 后摔」盲区）。
    判据预注册：修复 run 的 rew 应上升而非单调降、kl med 落回 ≤~150、final eval
    不逊 best eval。
+   【**09-05 晚修订**：**撤回判据 "kl med ≤~150"**（该指标测的不是更新幅度，
+   增大探索方差也能降它）；"每 iter ~30 次梯度步"错误（num_epochs 未生效，
+   实际 6 次/iter），①中 epochs 5→2 原为空操作。实锤缺陷改为：GAE 摔倒步不
+   切断/超时自举错置（dones 未用）+ aux 12d 未执行却进 ratio/熵 + 日志 vx 为
+   速度模长非前后向。修复顺序改为：训练器正确性 → 原 LR 基线 → 降温。新判据：
+   rew 上升 + 新旧 approx_kl/clip_frac/act_std 曲线健康 + final 不逊 best。】
 4. 产物：`outputs/e49/`（stats npz + 全部 train/eval 日志与 JSON，服务器）、
    ckpt `GR00T-WholeBodyControl/outputs/isaac_e49a_s{0,1}/`、
    `isaac_e49a_tanh_s0/`；脚本 `e49_smoke.py`（SCRIPT_MAP 已登记）。
