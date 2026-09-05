@@ -77,6 +77,52 @@ def geodesic_deg(qa, qb):
     return np.degrees(2.0 * np.arccos(np.clip(d, 0.0, 1.0)))
 
 
+def mat_to_quat(R):
+    """Rotation matrix (3,3) -> quat wxyz."""
+    t = np.trace(R)
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2
+        w = 0.25 * s
+        x = (R[2, 1] - R[1, 2]) / s
+        y = (R[0, 2] - R[2, 0]) / s
+        z = (R[1, 0] - R[0, 1]) / s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
+        w = (R[2, 1] - R[1, 2]) / s
+        x = 0.25 * s
+        y = (R[0, 1] + R[1, 0]) / s
+        z = (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
+        w = (R[0, 2] - R[2, 0]) / s
+        x = (R[0, 1] + R[1, 0]) / s
+        y = 0.25 * s
+        z = (R[1, 2] + R[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
+        w = (R[1, 0] - R[0, 1]) / s
+        x = (R[0, 2] + R[2, 0]) / s
+        y = (R[1, 2] + R[2, 1]) / s
+        z = 0.25 * s
+    q = np.array([w, x, y, z])
+    return q / np.linalg.norm(q)
+
+
+def umeyama(X, Y):
+    """Y ~= s * R @ X + b  (row-wise points). Returns s, R, b, residual."""
+    mx, my = X.mean(axis=0), Y.mean(axis=0)
+    Xc, Yc = X - mx, Y - my
+    H = Xc.T @ Yc
+    U, S, Vt = np.linalg.svd(H)
+    d = np.sign(np.linalg.det(Vt.T @ U.T))
+    D = np.diag([1.0, 1.0, d])
+    R = Vt.T @ D @ U.T
+    s = float(np.trace(np.diag(S) @ D) / max((Xc ** 2).sum(), 1e-12))
+    b = my - s * R @ mx
+    resid = np.linalg.norm(s * (R @ X.T).T + b - Y, axis=1)
+    return s, R, b, resid
+
+
 def unwrap1(obj):
     if isinstance(obj, dict) and len(obj) == 1:
         v = next(iter(obj.values()))
@@ -115,42 +161,61 @@ def main():
 
     res = {}
 
-    # ---- 1. root orientation
+    # ---- 1. root position: official = s * R * perm(transl) + b  (Umeyama)
+    # the mocap session world frame differs from the robot frame by an
+    # arbitrary yaw (per-take capture orientation), so fit the FULL rotation.
+    X = perm_vec(transl50)                              # (2002,3) @50
+    X30 = eb.resample(X, fps_s, 30.0)                   # (1201,3)
+    n = int(min(n30, len(X30)))
+    sR, R, b, resid = umeyama(X30[:n], trans30[:n])
+    print(f"[root-pos] Umeyama scale s={sR:.4f}, residual MAE={resid.mean():.4f} m, "
+          f"p95={np.percentile(resid, 95):.4f} m")
+    print(f"[root-pos] R (smpl_session -> robot world, incl. y2z perm + yaw):\n"
+          f"{np.round(R, 3)}\n offset b={np.round(b, 3).tolist()}")
+    res["root_position"] = {"scale": sR, "R": np.round(R, 4).tolist(),
+                            "offset": b.tolist(),
+                            "residual_mae_m": round(float(resid.mean()), 4),
+                            "residual_p95_m": round(float(np.percentile(resid, 95)), 4)}
+
+    # ---- 2. root orientation: q_official ~ quat(R) (x) q_smpl_root
     q_root = aa_to_quat(orig_aa[:, :3])
-    cand = {"identity": q_root, "perm_y2z": perm_quat(q_root)}
+    q_R = mat_to_quat(R)
+
+    def qmul_batch(a, b):
+        w1, x1, y1, z1 = a[:, 0], a[:, 1], a[:, 2], a[:, 3]
+        w2, x2, y2, z2 = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
+        return np.stack([
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ], axis=1)
+
     root_ori = {}
+    cand = {
+        "qR*x_smpl": qmul_batch(np.tile(q_R, (n, 1)), q_root[:n]),
+        "qR*x_smpl_Rt": qmul_batch(np.tile(mat_to_quat(R.T), (n, 1)), q_root[:n]),
+        "identity": q_root[:n],
+    }
     for name, q in cand.items():
-        err = geodesic_deg(q, quat30)
+        qn = q / np.linalg.norm(q, axis=1, keepdims=True)
+        err = geodesic_deg(qn, quat30[:n])
         root_ori[name] = {"mean_deg": round(float(err.mean()), 2),
                           "p95_deg": round(float(np.percentile(err, 95)), 2)}
-        print(f"[root-ori] {name:<10} geodesic mean {err.mean():.2f} deg, p95 {np.percentile(err, 95):.2f}")
+        print(f"[root-ori] {name:<14} geodesic mean {err.mean():.2f} deg, p95 {np.percentile(err, 95):.2f}")
     res["root_orientation"] = root_ori
-
-    # ---- 2. root position: official = s * perm(transl) + b
-    X = perm_vec(transl50)                              # (2002,3) @50
-    X30 = eb.resample(X, fps_s, 30.0)                   # -> (1202,3)
-    n = min(n30, len(X30))
-    Xc, Yc = X30[:n], trans30[:n]
-    s = float((Xc * Yc).sum() / max((Xc * Xc).sum(), 1e-9))
-    b = Yc.mean(axis=0) - s * Xc.mean(axis=0)
-    pred = s * Xc + b
-    mae = np.abs(pred - Yc).mean(axis=0)
-    print(f"[root-pos] scale s={s:.4f}, offset b={np.round(b, 3).tolist()}")
-    print(f"[root-pos] residual MAE per axis = {np.round(mae, 4).tolist()} m "
-          f"(total {mae.mean():.4f} m)")
-    res["root_position"] = {"scale": s, "offset": b.tolist(),
-                            "residual_mae_m": mae.tolist()}
+    res["R_quat_wxyz"] = q_R.tolist()
 
     # ---- 3. SMPL joint names via soma (named 26-joint skeleton)
     som_j = som["soma_joints"].astype(np.float64)       # (1202,26,3)
     names = list(som["joint_names"])
     print(f"[soma] {len(names)} joints: {names}")
     som_rel = som_j - som_j[:, 0:1, :]                  # hips as root
-    # smpl joints @30Hz, root-relative, robot frame
-    J30 = eb.resample(joints50.reshape(-1, 72), fps_s, 30.0).reshape(n30, 24, 3)
+    # smpl joints @30Hz, root-relative, robot frame (n = aligned length)
+    J30 = eb.resample(joints50.reshape(-1, 72), fps_s, 30.0).reshape(-1, 24, 3)
     smpl_rel = perm_vec(J30 - J30[:, 0:1, :])
     som_mean = som_rel.mean(axis=0)
-    smpl_mean = smpl_rel[:n30].mean(axis=0)
+    smpl_mean = smpl_rel[:n].mean(axis=0)
     name_of = []
     for j in range(24):
         d = np.linalg.norm(som_mean - smpl_mean[j], axis=1)
@@ -172,7 +237,7 @@ def main():
     qadr = env.body_qpos_adr
     pelvis_id = m.body("pelvis").id
     g1_rel = {}
-    for t in range(0, n30, 5):  # subsample 6 Hz is plenty for means
+    for t in range(0, n, 5):  # subsample 6 Hz is plenty for means
         q = np.zeros(m.nq)
         q[3:7] = quat30[t]
         q[:3] = trans30[t]
