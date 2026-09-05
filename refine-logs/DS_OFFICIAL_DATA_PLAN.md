@@ -6,7 +6,8 @@
 > `refine-logs/README.md`（扇出树根）｜上游：纲领（§1 主假设 / §4 阶段一 /
 > §7 验收 / §8 过渡采法）、`DS_SONIC_OFFICIAL_DATA.md`（资产清单与坑清单）、
 > `DS_GAIT_MANIFOLD_PLAN.md`（质量门与 VAE 训练机制沿用；A 线退役记录见其
-> 修订记录）｜事实源：`tracker/D.md`｜状态：**活跃（待 owner 裁定点 D1–D4）**
+> 修订记录）｜事实源：`tracker/D.md`｜状态：**活跃（09-05c owner 确认方向
+> 与推荐组合；第一实验 = B2-s/D040，协议已预注册 = §3.1）**
 
 **这篇讲什么**：自采数据退役后，官方数据（SMPL 官方镜像 131,455 段）成为
 DS 线唯一动捕来源的执行方案——退役影响面逐项分析（§1，回答「丢了什么、
@@ -82,6 +83,75 @@ DS 线唯一动捕来源的执行方案——退役影响面逐项分析（§1�
 n_vbins=3 写死坑改造 = 原 Phase 3 适配工作量，机制不变（沿用流形计划
 `train_token_vae_ds.py` 架构，数据入口换 B4 npz）。
 
+### 3.1 B2-s 实验协议（D040，2026-09-05c 预注册——第一个实验）
+
+**目的**：打通「SMPL 镜像数据 → smpl 模式 obs → 冻结 encoder → token →
+冻结 decoder → Isaac 物理闭环」全链路，关闭风险 R1（全计划最高风险项）。
+PASS = 解锁 M1/B3'/B4 全部下游；FAIL = 走 fallback 链，不动主线下游。
+
+**素材**（三件，全在服务器，无前置等待）：
+1. `sample_data/smpl_filtered` 官方样例（布局规范参照）；
+2. 131,455 段镜像中抽 1–2 段 walk 类（~8s 中等时长；验证批量读取路径与
+   真实数据代表性）；
+3. B1 的 6 个 g1 格式 pkl——若其中存在与 SMPL 样例同动作的双格式样本，
+   加做**配对 token 对照**（同一运动双模编码，token 距离 = 布局正确性的
+   最强证据）。
+
+**步骤**：
+
+1. **布局逆向（~0.5d）**：observation_config.yaml 全读 + encoder ONNX
+   输入签名探针（输入名/维度/窗口）+ 新脚本 `encode_smpl_smoke.py`
+   （登记 SCRIPT_MAP，镜像 `encode_bones_smoke.py` 结构，D036 g1 同法）。
+   四个预注册陷阱：①SMPL y-up vs 本栈 z-up；②ref-rel 锚定直接内置
+   （f=0 identity 作 sanity，不等失败再修）；③50Hz 假设核验（打点间隔
+   直方图）；④axis-angle 约定与关节序。
+2. **分布级判据（~1h）**：S1/S2（下表）。
+3. **Isaac 冒烟（~2h）**：复用 `replay_bones_tokens_isaac.py`（canonical
+   零改动，吃 tokens npy）2 seed × 40s；参考轨迹 = SMPL transl 累计
+   路径。sim_app.close() 挂死坑已有 daemon + 超时 + os._exit 处置（D037）。
+4. **判读落账**：tracker/D.md D040 行 + 本节回写判定。
+
+**预注册判据**（执行前锁定，不得事后调整）：
+
+| # | 判据 | 阈值 | 依据 |
+|---|---|---|---|
+| S1 | lattice 违例率 | = 0 | encoder 内置 FSQ（D036/D038 同机制） |
+| S2a | token 逐维 std 比 vs 官方 walk token | ∈ [0.5, 2] | D036 双方 0.113 / 0.108 |
+| S2b | mean-L2 vs ds_smoke WALK token 云 | ≤ 1.0 | D038 修复后 g1 模式 0.869 |
+| S3a | Isaac 存活 | 2/2 × 40s 零摔 | D037/D038 |
+| S3b | realized path / SMPL transl 参考路径 | ≥ 90% | D038 实测 97% |
+| S3c | q 跟踪 MAE | ≤ 0.2 rad | D038 0.0705 / D035 官方 0.171 |
+
+**判读分支（预注册）**：
+
+- 全 PASS → B2-s 关闭，同会话或下次直接进 M1 + B3'。
+- S1/S2 PASS + S3 单 seed 摔倒 → 先做失败形态判别（下表）；单次非 yaw
+  形态摔倒不定罪（D037「预演非门」先例），补 seed 复测后再判。
+- S2 失败 + S1 过 → 锚定/轴约定/y-up 判别序列（F2）。
+- S1 失败 → obs 布局构造错（逐块置零消融定位，D036 同法）。
+
+**失败形态 → 判别检查对照表**（假设-判别模式，逐形态度量不混判）：
+
+| 失败形态 | 首选假设 | 判别检查 |
+|---|---|---|
+| yaw 恒偏 / Isaac 侧倒（D037 v1 同型） | apply_delta 锚定坑在 SMPL 世界系复现 | f=0 anchor identity 数值；ref-rel 复测 |
+| 轨迹平面斜置 / 钻地 | SMPL y-up vs 本栈 z-up | transl 三轴方差分析；旋转修正后复测 |
+| 速度/步频 ×2 或 ×0.5 | fps 假设错 | 打点间隔直方图 |
+| 左右镜像 | 关节序/轴向约定 | 单帧 FK 与 smpl_joints 并排可视化 |
+| token 全零 / q_des 爆炸 | obs 布局错位 | 逐块置零消融探针 |
+
+**Fallback 链**（判别穷尽后仍失败，依序）：①betas/shape 归一与锚定修正
+→ ②SMPL→G1 自研重定向（骨架拟合 + 形状匹配，~1 周工程）→ ③owner HF
+token 重试 bones-studio/seed 的 G1 格式直取。
+
+**预算**：~1 天（0.5d 实现 + 0.5d 余量），机时 <1h GPU。
+
+**同会话并行件（M1，无 encoder 依赖，可与 B2-s 调试并行）**：131k 段
+metadata 扫描脚本 → csv（类目 / 帧数 / 时长 / transl 速度直方图 / 演员
+ID / 航向变化统计）。产物 = 类目×时长×速度表 + run 758 段实长定量 +
+方向偏斜定量 + 过渡富集 recording 候选清单。判据 = 全量扫描零 IO 失败 +
+表字段完整。~0.5d。
+
 ## 4. 门与判据（承接纲领 §4/§7）
 
 1. B3' 类级存活 ≥95%（不过门不入集，逐类独立判定）；
@@ -130,3 +200,10 @@ n_vbins=3 写死坑改造 = 原 Phase 3 适配工作量，机制不变（沿用�
 
 - **2026-09-05b 初版**：owner 退役指令当日落盘；B2-s = 下一步第一闸；
   裁定点 D1–D4 待 owner。
+- **2026-09-05c 方向确认 + 首实验预注册（owner「继续原来的方案」）**：
+  D1 推荐组合采纳（O1→O2 渐进 + L2 + T1/T2 + D1→D2 + E1 + S2；D2–D4 按
+  推荐默认，M1 审计后复核）；第一实验 = **B2-s（保留 Run ID D040）**，
+  协议预注册 = §3.1（六判据 + 判读分支 + 失败形态判别表 + fallback 链），
+  M1 并行件同节。会话内 VAE vs planner 接口之辩的结论：planner 臂 = 纲领
+  最小实验既有的「原始 SONIC」臂，不另立结构，主线（VAE 可训练接口）
+  不变。
