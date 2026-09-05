@@ -205,6 +205,8 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
 （rew 1.73）。
 
 | E46 | 从零 latent RL + E39 速度条件化 VAE（无 warm start，破速度天花板） | `--latent-mode --latent-vae-path e39/vae.pt --latent-speed-bins --latent-dir-bins --latent-kl-prior zero --progress-scale 1.0`，128 envs×2000 iters，最优 ckpt it_200 | A 60s ×6 seed | DONE | **6/6 完成、fall=null、h_min 0.743–0.753（不蹲）、vx 0.418、disp 21.6–21.8m、直行 0.86** |
+| E47 | 从零 latent RL + E39 双解耦 VAE + 轻 heading（E46 + heading 0.4，从零线收束最优） | E46 配方 + `heading_scale 0.4`，128 envs×2000 iters，最优 ckpt it_500（服务器 `apt_g1/outputs/isaac_e47_heading/policy_it_500.pt`） | A 60s ×6 seed + B/C/D 电池 | DONE | **A 6/6 完成、fall=null、disp 23.8m、vx 0.42、直行 0.944；B 500N 冲击 24/24（h_min 0.735–0.757）；C 切换马拉松 6/6；D 6/6（vx ~0.165 站住；D「跳跃」为假阳性——E39 VAE 只覆盖 WALK token、模式命令被忽略，见 FINAL_REPORT 剩余方向 #2）**；轻 heading 修直行且不伤速度，从零（无 warm start）逼近 E39 walk 先验版。视频 `e47_mujoco.mp4`（2026-08-27 补渲染） |
+| E47-T | E47 × rough 0.06/0.08 × terrain-seed 0/1（从零最优控制器地形泛化） | eval 同 E26-T 口径（`--tests A --latent-dir-bins`） | rough 0.06/0.08 × seed 0/1 | DONE | **0.06：12/12 存活；0.08：0/12 全倒**——0.08 悬崖对从零最优控制器同样成立（〔MQ09 归因修正后〕悬崖 = 蒸馏路径边界，非解码器/从零本身可解） |
 
 ## E48：冻结解码器 + 全关节残差（RuN/ReSkill 式，文献综述解法 2 的实证，2026-08-15）
 
