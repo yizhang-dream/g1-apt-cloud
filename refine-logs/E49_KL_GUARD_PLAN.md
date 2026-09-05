@@ -234,12 +234,17 @@ vloss 落 hist、expl_var 落 hist/控制台——补 A.3-2 的「价值健康�
 
 ### C.4 实现与验证状态
 
-- [x] ppo_core.py 守卫逻辑 + expl_var（见 git diff）
-- [x] train_apt_isaac.py CLI/hist/回显
-- [x] e49_kl_guard_test.py 单测（≥6 用例）——服务器运行结果：**待运行**
-  （部署与 sha256 对照随本轮提交执行；结果回填本栏与 tracker
-  E49-kl-guard-impl 行，未 PASS 不发射 C1）
-- [x] SCRIPT_MAP 登记
+- [x] ppo_core.py 守卫逻辑 + expl_var（commit d9ce851；diff 零删除行）
+- [x] train_apt_isaac.py CLI/hist/回显（同上）
+- [x] e49_kl_guard_test.py 单测——服务器 **6/6 PASS**（2026-09-06；
+      另旧 e49_gae_test 复跑 **10/10 零回归**；部署 = sync 克隆
+      0d3500f→执行根，sha256 三对逐位一致：ppo_core 552849c1…、train
+      d6682991…、test 529972ff…→case6 判据加固 594c11d 后复跑 6/6）。
+      case6(b) 首版判据把「期望 ≤0」当「单次样本 ≤0」，+0.0049 落
+      ±1/√N 噪声带 FAIL——实现无嫌疑，判据改大方差独立 value
+      （断言 < −1.0，实测 −23.79）。
+- [x] SCRIPT_MAP 登记（DEV 角色，实验号 E49-C）
+- 发射门已开：C1 探针可直接按 §D.1 发射。
 
 ---
 
@@ -359,5 +364,7 @@ E49-C2-guard-s0）+ 结论 8 + `EXPERIMENT_TRACKER.md` 行数同步 → owner �
 ## §G 修订记录
 
 - 2026-09-06：定稿（§A 调研 + §B 预注册 + §C 规格 + §D 手册）；C0 实现
-  完成、单测待服务器运行（结果回填 §C.4）；发射前 §B.3 阈值栏为空，属
-  正常状态。
+  完成、单测服务器 **6/6 PASS**（旧 e49_gae_test 10/10 零回归）、部署
+  sha256 双端一致；§B.3 阈值栏待 C1.5 回填，属正常状态。
+- 2026-09-06（补）：case6(b) 判据加固（594c11d，详见 §C.4）；§D 命令路径
+  按服务器实测核对修正（脚本须绝对路径，eval JSON 落 apt_g1/outputs/e49/）。
