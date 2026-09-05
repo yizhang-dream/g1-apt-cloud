@@ -8,7 +8,7 @@
   3. 极小阈值：每步全回滚 → 参数逐位还原、lr 缩小、连续回滚断路提前结束循环
   4. 巨阈值（=探针等价形态）：零回滚、参数有变化、kl_mb_all 长度 == minibatch 数
   5. grow 恢复路径：小阈值回滚缩 lr 后，巨阈值继续 update → lr 回升且 ≤ 初始 lr
-  6. expl_var 口径：returns==values → ≈1；returns 与 values 独立 → ≤0
+  6. expl_var 口径：returns==values → ≈1；values=大方差独立噪声 → 显著为负
 
 用法（仓库根目录，服务器 CPU 可跑）：
     PYTHONPATH=. python apt_g1/isaac/e49_kl_guard_test.py
@@ -237,11 +237,16 @@ def case6_expl_var() -> bool:
     r["done"] = torch.ones(T, N, dtype=torch.bool)
     s1 = trainer.update(r)
     ok = s1["expl_var"] > 0.999
-    # (b) returns（=rewards）与 values 独立 → expl_var ≤ 0
+    # (b) returns（=rewards）与 values 独立：value 覆写为大方差 fresh-RNG 噪声
+    #     （期望 expl_var = -var(val)/var(ret) ≈ -25 量级，免疫 1/√N 协方差
+    #     噪声——首版判据 ≤0 在 var(val) 极小时会被 ±0.005 噪声压过，实测
+    #     FAIL +0.0049 即此因，非实现问题）
     r2 = _act_rollout(pol, T, N, zd=4, seed=62)
     r2["done"] = torch.ones(T, N, dtype=torch.bool)
+    g = torch.Generator().manual_seed(63)
+    r2["value"] = torch.randn(T, N, generator=g) * 5.0
     s2 = trainer.update(r2)
-    ok &= s2["expl_var"] <= 0.0
+    ok &= s2["expl_var"] < -1.0
     return _report("case6 expl_var conventions", ok,
                    f"perfect={s1['expl_var']:.4f} indep={s2['expl_var']:.4f}")
 
