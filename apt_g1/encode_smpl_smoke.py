@@ -83,7 +83,16 @@ def perm_vec(v):
 
 
 def perm_quat(q):
-    return eb._qn(eb._qmul(PERM_Q, q))
+    """(N,4) wxyz quats composed with the PERM_Q rotation (vectorized)."""
+    w1, x1, y1, z1 = PERM_Q
+    w2, x2, y2, z2 = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    out = np.stack([
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    ], axis=1)
+    return out / np.linalg.norm(out, axis=1, keepdims=True)
 
 
 def aa_to_quat(aa):
