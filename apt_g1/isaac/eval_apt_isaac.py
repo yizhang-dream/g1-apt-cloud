@@ -151,6 +151,13 @@ def jitter_and_reset(env, seed: int):
     env._q_des[:] = sonic
     env._last_phase[:] = 0.0
     env._last_aux[:] = 0.0
+    # E49 fix (owner R4 #2): reset()'s return obs was discarded and the
+    # jitter/history edits above left _last_obs stale -- every rollout's
+    # first policy step acted on the PREVIOUS rollout's last obs (pre-existing
+    # defect; for E49-B it also broke the phase-consistency requirement since
+    # the cached phi did not match the post-reset walk clock). Reassemble and
+    # cache fresh obs after all reset/jitter state edits.
+    env._last_obs = env._get_observations()["policy"]
 
 
 def rollout(

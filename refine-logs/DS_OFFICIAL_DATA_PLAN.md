@@ -274,9 +274,15 @@ ID / 航向变化统计）。产物 = 类目×时长×速度表 + run 758 段实
   env 无 clamp，token 分支同）。
   **策略从随机权重开始训练，使用官方 token 统计量标定动作空间，无示范
   损失**——这是数据提供的动作空间先验，非「无影响的数值标定」。
-  **α = 1 只定初始探索尺度**（初始输出分布 ≈ 官方 token 分布）；可达
-  范围无界（PPO 均值/方差自由外扩）——**初始探索要小与最终可达范围要宽
-  是两件事**，不得用单段动作的 mean±1 std 硬限代替输出边界。统计样本 =
+  **α = 1 只定映射增益，初始分布远小于官方分布**（owner 第四轮评审 #1
+  修正）：token 头沿用代码库默认初始化 `log_std = -4`（std ≈ 0.0183），
+  故 α=1 时初始 token 采样 std ≈ 官方逐维 std 的 **1.83%**，中心 =
+  mean + α·std⊙μ_head(obs)（随机初始化头的输出，非零、依赖观测）；
+  log_std 可学习、随熵正则自行扩张——**保留当前实现不改头初始化**，与
+  E45 latent 臂同 init 约定（同为 -4）= 两臂策略初始化对称；初始动作
+  统计在冒烟中实测记录。可达范围无界（PPO 均值/方差自由外扩）——
+  **初始探索要小与最终可达范围要宽是两件事**，不得用单段动作的
+  mean±1 std 硬限代替输出边界。统计样本 =
   D038 验证版官方 g1-mode tokens（robot_filtered ref-rel 重编码产物）
   逐维现算 mean/std；std 下限 1e-3（防零维坍缩）；首轮不做 FSQ 码本
   量化（latent 臂 VAE 输出的 token 本就是连续值直喂 decoder，代码路径
@@ -312,8 +318,11 @@ ID / 航向变化统计）。产物 = 类目×时长×速度表 + run 758 段实
   取 E27 pca 同款 walk cadence；obs 数学 91+62=153（A）/155（B），env
   assert 兜底）。冒烟清单：①服务器现算 stats npz（D038 官方 g1-mode
   tokens + E27 pca rate）；②`--token-mode` 100 iters：首 iter rew 有限
-  无 NaN、obs 维度断言过、反馈槽==采样值、B 臂 φ obs 逐位一致；③eval
-  冒烟 A 任务 60s。
+  无 NaN、obs 维度断言过、反馈槽==采样值、B 臂 φ obs 逐位一致、**记录
+  iter 0 初始动作统计**（a 采样 std ≈ e^−4 ≈ 0.0183 核对 + 映射 token
+  逐维 mean/std 落日志，owner R4 #1）；③eval 冒烟 A 任务 60s + **验证
+  R4 #2 修复**（`jitter_and_reset` 尾部已补 `_last_obs` 重新组装缓存：
+  B 臂首步 φ == 当前 `_latent_phase`，不再读上一次 rollout 末步旧观测）。
 
 **判读分两问裁决（owner 评审收束）**：首轮只回答 **A 问 =「去掉额外 VAE
 后随机策略能否学会行走」**（E49-A vs E45 = 整体替换效应：A 胜 = 直接
@@ -425,3 +434,14 @@ E49-B vs E45（仍混杂流形+维度，仅方向性参考）在后续归因阶�
   env token 直出分支 + train/eval 四旗标（`--token-mode /
   --token-phase-obs / --token-alpha / --token-stats`），py_compile 过，
   待服务器冒烟（stats npz 现算 + 100 it 断言 + 60s eval）。
+- **2026-09-05d（四）owner 第四轮评审两处 P2 修复（正式训练前）**：
+  ①协议「初始输出分布 ≈ 官方 token 分布」不成立——token 头默认
+  `log_std = -4`（std ≈ 0.0183），α=1 时初始 token 采样 std ≈ 官方逐维
+  std 的 **1.83%**，中心 = mean + α·std⊙μ_head(obs)；改述并钉死「保留
+  默认 init（与 E45 同为 -4，两臂策略初始化对称）+ 冒烟实测记录初始
+  动作统计」。②**eval `jitter_and_reset` 既有缺陷修复**：reset() 返回
+  观测被丢弃 + 姿态/历史手改后 `_last_obs` 不刷新 → 每次 rollout 首步
+  策略读上一次 rollout 末步旧观测（所有模式受影响的历史缺陷；E49-B
+  首步 φ 错配使其 load-bearing）——函数尾补
+  `_last_obs = _get_observations()["policy"]` 重新组装缓存。py_compile
+  过，待服务器冒烟验证。
