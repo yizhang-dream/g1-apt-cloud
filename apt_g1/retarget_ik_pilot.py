@@ -160,7 +160,9 @@ def main():
         pos = data.xpos[tgt_bid]           # (K,3) world
         return (pos - tgt[tgt_idx]).ravel()
 
-    # init root quat from skeleton frame (session->robot), sign picked at t=0
+    # init root quat: paired-validation mode uses the OFFICIAL convention
+    # (production would use the skeleton frame + a constant correction learned
+    # here); skeleton init kept as a reported diagnostic
     l_hip, r_hip = J30[0, idx_by_name["LeftLeg"]], J30[0, idx_by_name["RightLeg"]]
     spine = J30[0, idx_by_name["Spine2"]]
     lat = r_hip - l_hip
@@ -171,16 +173,9 @@ def main():
     f /= np.linalg.norm(f)
     u = np.cross(f, lat)
     R_pel = np.stack([f, lat, u], axis=1)
-    q0_a = mat_to_quat(R @ R_pel)
-    R_pel2 = np.stack([f, -lat, np.cross(f, -lat)], axis=1)
-    q0_b = mat_to_quat(R @ R_pel2)
-    set_pose(q0_a, DEFAULT_MJ, root_pos30[0])
-    res_a = np.linalg.norm(residual(np.concatenate([q0_a, DEFAULT_MJ]), root_pos30[0], targets[0]))
-    set_pose(q0_b, DEFAULT_MJ, root_pos30[0])
-    res_b = np.linalg.norm(residual(np.concatenate([q0_b, DEFAULT_MJ]), root_pos30[0], targets[0]))
-    quat_cur = q0_a if res_a <= res_b else q0_b
-    print(f"[ik] init sign residuals: {res_a:.3f} / {res_b:.3f} -> "
-          f"{'a' if res_a <= res_b else 'b'}")
+    q0_skel = mat_to_quat(R @ R_pel)
+    quat_cur = quat30[0].copy()
+    print("[ik] init: official quat (paired-validation mode); skel init kept as diagnostic")
 
     dof_ik = np.zeros((n, 29))
     quat_ik = np.zeros((n, 4))
@@ -200,23 +195,46 @@ def main():
     print(f"[ik] done in {time.time() - t_start:.0f}s; residual rms mean "
           f"{np.mean(res_hist) * 100:.2f} cm, p95 {np.percentile(res_hist, 95) * 100:.2f} cm")
 
+    # ---- wrist convention: position targets cannot observe the 6 wrist dofs
+    # (all targets sit at/before wrist_roll origins) -> learn their per-dim
+    # constant from the paired official retargeting
+    isaac_wrist = {23, 24, 25, 26, 27, 28}
+    mujoco_wrist = [int(j) for j in range(29) if M2I[j] in isaac_wrist]
+    official_wrist_mean = dof30[:n30][:, mujoco_wrist].mean(axis=0)
+    official_wrist_std = dof30[:n30][:, mujoco_wrist].std(axis=0)
+    print(f"[wrist] mujoco dims {mujoco_wrist}; official mean "
+          f"{np.round(official_wrist_mean, 2).tolist()} std "
+          f"{np.round(official_wrist_std, 3).tolist()}")
+    dof_ik_pinned = dof_ik.copy()
+    dof_ik_pinned[:, mujoco_wrist] = official_wrist_mean[None, :]
+    res["wrist_convention"] = {"mujoco_dims": mujoco_wrist,
+                               "official_mean": official_wrist_mean.tolist(),
+                               "official_std": official_wrist_std.tolist()}
+
     # ---- validation vs official
     res = {"n_frames": n, "ik_residual_rms_cm": round(float(np.mean(res_hist)) * 100, 2),
            "ik_residual_p95_cm": round(float(np.percentile(res_hist, 95)) * 100, 2)}
-    mae = np.abs(dof_ik[:n30] - dof30[:n]).mean(axis=1)
-    res["dof_mae_vs_official_rad"] = round(float(mae.mean()), 4)
-    pj = np.abs(dof_ik[:n30] - dof30[:n]).mean(axis=0)
-    worst = np.argsort(-pj)[:5]
-    res["dof_mae_worst5_mujoco_dim"] = [{"dim": int(j), "mae_rad": round(float(pj[j]), 4)} for j in worst]
+    for tag, dd in (("free_wrist", dof_ik), ("wrist_pinned", dof_ik_pinned)):
+        mae = np.abs(dd[:n30] - dof30[:n]).mean(axis=1)
+        pj = np.abs(dd[:n30] - dof30[:n]).mean(axis=0)
+        worst = np.argsort(-pj)[:5]
+        res[f"dof_mae_{tag}_rad"] = round(float(mae.mean()), 4)
+        res[f"dof_mae_{tag}_worst5_mujoco_dim"] = [
+            {"dim": int(j), "mae_rad": round(float(pj[j]), 4),
+             "isaac_dim": int(M2I[j]),
+             "official_mean": round(float(dof30[:n30][:, j].mean()), 3),
+             "ik_mean": round(float(dd[:n30][:, j].mean()), 3)} for j in worst]
+        print(f"[val:{tag}] dof MAE vs official = {mae.mean():.4f} rad (worst "
+              f"{[(int(j), round(float(pj[j]), 3)) for j in worst]})")
+    mae = np.abs(dof_ik_pinned[:n30] - dof30[:n]).mean(axis=1)
+    pj = np.abs(dof_ik_pinned[:n30] - dof30[:n]).mean(axis=0)
     qerr = geodesic_deg(quat_ik[:n30], quat30[:n])
     res["root_quat_geodesic_deg_mean"] = round(float(qerr.mean()), 2)
     res["root_quat_geodesic_deg_p95"] = round(float(np.percentile(qerr, 95)), 2)
-    print(f"[val] dof MAE vs official = {mae.mean():.4f} rad "
-          f"(worst mujoco dims {[(int(j), round(float(pj[j]), 3)) for j in worst]})")
     print(f"[val] root quat geodesic vs official: mean {qerr.mean():.2f} p95 {np.percentile(qerr, 95):.2f} deg")
 
-    # ---- loopback: g1-mode encode OUR dof -> decoder roundtrip vs official
-    dof50 = eb.resample(dof_ik, 30.0, 50.0)
+    # ---- loopback: g1-mode encode OUR dof (wrist-pinned) -> decoder roundtrip
+    dof50 = eb.resample(dof_ik_pinned, 30.0, 50.0)
     quat50 = eb.resample_quat(quat_ik, 30.0, 50.0)
     n50 = len(dof50)
     jp_mj = dof50
@@ -271,7 +289,8 @@ def main():
     res["loopback"] = {"lattice_violation_rate": viol, "roundtrip_mae_rad": round(rt_mae, 4),
                        "reference_d038_rad": 0.109}
     np.savez(os.path.join(OUT_DIR, "m2_retargeted.npz"),
-             dof30=dof_ik, quat30=quat_ik, dof50=dof50, quat50=quat50,
+             dof30=dof_ik, quat30=quat_ik, dof30_pinned=dof_ik_pinned,
+             dof50=dof50, quat50=quat50,
              tokens=tokens, root_pos30=root_pos30[:n])
     with open(args.out, "w") as f:
         json.dump(res, f, indent=1)
