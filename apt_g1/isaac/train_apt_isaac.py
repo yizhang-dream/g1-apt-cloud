@@ -73,6 +73,14 @@ def build_args():
     # E29: latent KL prior. "zero" = N(0,I) (E27); "walk" = N(z_walk, I) keeps z
     # on the SONIC walk manifold instead of pulling it toward the origin.
     ap.add_argument("--latent-kl-prior", choices=["zero", "walk"], default="zero")
+    # E49: direct-token RL (no VAE). A arm = raw unbounded token coordinates
+    # mapped onto official token stats; B arm adds the walk clock [sin, cos]
+    # to the policy obs (attribution arm).
+    ap.add_argument("--token-mode", action="store_true")
+    ap.add_argument("--token-phase-obs", action="store_true")
+    ap.add_argument("--token-alpha", type=float, default=1.0)
+    ap.add_argument("--token-stats", type=str, default="",
+                    help="npz with mean/std/rate from official g1-mode tokens")
     # E31: speed-conditioned VAE decoder (D(z, phase, v_bin) -> token)
     ap.add_argument("--latent-speed-bins", action="store_true")
     # E35: direction+speed-conditioned VAE decoder (D(z,phi,v_bin,psi_bin))
@@ -208,6 +216,10 @@ def main():
     cfg.phase_mode = cli.phase_mode
     cfg.phase_anchor = cli.phase_anchor
     cfg.latent_mode = cli.latent_mode
+    cfg.token_mode = cli.token_mode
+    cfg.token_phase_obs = cli.token_phase_obs
+    cfg.token_alpha = cli.token_alpha
+    cfg.token_stats = cli.token_stats
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_speed_bins = cli.latent_speed_bins
     cfg.latent_dir_bins = cli.latent_dir_bins
@@ -239,6 +251,14 @@ def main():
         if cli.latent_residual:
             cfg.action_space = 16 + 29  # z(16) + full-joint residual(29)
             cfg.observation_space += 29  # residual action feedback
+    if cli.token_mode:
+        assert not cli.latent_mode and not cli.decft and not cli.gate_sel, (
+            "--token-mode is exclusive with latent/decft/gate_sel")
+        assert cli.token_stats, "--token-stats npz (mean/std/rate) is required"
+        cfg.action_space = 64  # raw token coordinates (unbounded)
+        cfg.observation_space += 62  # _last_phase 2 -> 64 (raw action feedback)
+        if cli.token_phase_obs:
+            cfg.observation_space += 2  # [sin phi, cos phi] walk clock (E49-B)
     if cli.to42_sel != "off":
         # TO42: selection rides on the latent decode path；两臂 obs/action
         # 布局完全一致，唯一差异 = 选择由策略学出还是由冻结 bucketize 产生
@@ -296,8 +316,9 @@ def main():
             aux_dim=29 if cli.latent_residual else 12,
             gate_k=(2 if to42_active else (3 if cfg.use_gate_sel else 0)),
             hidden_dim=256,
-            use_phase=not cfg.use_gate_sel and not cfg.latent_mode,
-            latent_dim=16 if cfg.latent_mode else 0,
+            use_phase=(not cfg.use_gate_sel and not cfg.latent_mode
+                       and not cli.token_mode),
+            latent_dim=64 if cli.token_mode else (16 if cfg.latent_mode else 0),
         ).to("cuda:0")
     latent_prior_mean = None
     if cli.latent_mode and cli.latent_kl_prior == "walk":
@@ -367,7 +388,9 @@ def main():
     buf = {
         "obs": torch.zeros(T, N, D, device="cuda:0"),
         "phase": torch.zeros(
-            T, N, 16 if (cli.latent_mode or cli.decft) else 2, device="cuda:0"
+            T, N,
+            64 if cli.token_mode else (16 if (cli.latent_mode or cli.decft) else 2),
+            device="cuda:0",
         ),
         "aux": torch.zeros(T, N, aux_dim, device="cuda:0"),
         "logp": torch.zeros(T, N, device="cuda:0"),
@@ -430,6 +453,10 @@ def main():
                         # E48: [z(16), res(29)] -- the aux head IS the residual
                         action = torch.cat([act["phase"], act["aux"]], dim=1)
                     elif cfg.latent_mode:
+                        action = act["phase"]
+                    elif cfg.token_mode:
+                        # E49: raw 64-d token coordinates (aux head sampled
+                        # but discarded, same convention as latent mode)
                         action = act["phase"]
                     else:
                         action = torch.cat([act["phase"], act["aux"]], dim=1)

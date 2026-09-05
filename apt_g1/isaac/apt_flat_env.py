@@ -188,6 +188,18 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # res_scale * clamp(res) over ALL 29 joints -- vs the old weak aux
     # (12-d lower body, scale 0.2) that E15-E22b showed is never enough.
     latent_residual: bool = False
+    # E49: direct-token RL. Policy action = raw 64-d token coordinates
+    # (UNBOUNDED -- no tanh, no FSQ quantization); the env maps
+    # token = token_mean + token_alpha * token_std * a and feeds the frozen
+    # SONIC decoder directly (no VAE). The walk clock still free-runs at the
+    # latent arm's cadence; token_phase_obs (E49-B) appends [sin phi, cos phi]
+    # of that clock to the policy obs (attribution arm: phi as obs only,
+    # never a reward or an output prior).
+    token_mode: bool = False
+    token_phase_obs: bool = False
+    token_alpha: float = 1.0
+    token_stats: str = ""  # npz with mean/std/rate from official g1-mode tokens
+    token_std_floor: float = 1e-3
     res_scale: float = 0.4  # rad; max joint-target offset from the prior
     res_clip: float = 1.0
     res_l2_scale: float = 0.0  # penalty on the raw residual (keep prior dominant)
@@ -372,18 +384,36 @@ class AptFlatG1Env(DirectRLEnv):
             self._decoder = SonicTorchDecoder(self.cfg.sonic_decoder_path, device=self.device)
             self._router = BatchedPhaseRouter(self.cfg.router_model_dir, device=self.device)
             self._vae = None
-            if self.cfg.latent_mode or self.cfg.decft_mode:
+            if self.cfg.latent_mode or self.cfg.decft_mode or self.cfg.token_mode:
                 import numpy as _np
 
-                # walk-clock cadence (both latent and decft modes drive the VAE
+                # walk-clock cadence (latent and decft modes drive the VAE
                 # phase from this clock; the VAE itself is only loaded in
-                # latent mode -- decft loads it inside DecFtPolicy).
-                pca = _np.load(
-                    str(Path(self.cfg.latent_vae_path).parent / "pca.npz")
-                )
-                self._latent_phase_rate = float(
-                    self.cfg.latent_phase_rate or pca["rate"]
-                )
+                # latent mode -- decft loads it inside DecFtPolicy). E49 token
+                # mode runs the SAME clock (fixed cadence from the stats npz)
+                # so clock state stays comparable to E45 even though no VAE
+                # consumes it.
+                if self.cfg.token_mode:
+                    stats = _np.load(self.cfg.token_stats)
+                    self._token_mean = torch.as_tensor(
+                        _np.asarray(stats["mean"], dtype=_np.float32),
+                        device=self.device,
+                    )
+                    std = _np.maximum(
+                        _np.asarray(stats["std"], dtype=_np.float32),
+                        self.cfg.token_std_floor,
+                    )
+                    self._token_std = torch.as_tensor(std, device=self.device)
+                    self._latent_phase_rate = float(
+                        self.cfg.latent_phase_rate or float(stats["rate"])
+                    )
+                else:
+                    pca = _np.load(
+                        str(Path(self.cfg.latent_vae_path).parent / "pca.npz")
+                    )
+                    self._latent_phase_rate = float(
+                        self.cfg.latent_phase_rate or pca["rate"]
+                    )
                 self._latent_phase = torch.zeros(
                     self.num_envs, dtype=torch.float32, device=self.device
                 )
@@ -470,7 +500,7 @@ class AptFlatG1Env(DirectRLEnv):
         self.router_commands: list[Command | None] = [None] * self.num_envs
         self._last_phase = torch.zeros(
             self.num_envs,
-            16 if self.cfg.latent_mode else 2,
+            64 if self.cfg.token_mode else (16 if self.cfg.latent_mode else 2),
             dtype=torch.float32,
             device=self.device,
         )
@@ -656,6 +686,20 @@ class AptFlatG1Env(DirectRLEnv):
                 else:
                     # E27: fixed scalar walk cadence.
                     self._latent_phase = (phi + self._latent_phase_rate) % math.tau
+        elif self.cfg.token_mode:
+            # E49: the policy's raw 64-d action maps LINEARLY onto the
+            # official token stats (a unbounded -- alpha sets the initial
+            # exploration scale only, the reachable range stays open). The
+            # frozen decoder consumes the token directly. The walk clock
+            # still advances so the E49-B phase obs carries the same phi the
+            # latent arm feeds its VAE at the matching control step.
+            with torch.no_grad():
+                phi = self._latent_phase
+                tokens = (
+                    self._token_mean
+                    + self.cfg.token_alpha * self._token_std * phase
+                )
+                self._latent_phase = (phi + self._latent_phase_rate) % math.tau
         elif self.cfg.phase_mode:
             groups = self._router_groups(cmds)
             tokens = np.zeros((self.num_envs, 64), dtype=np.float32)
@@ -788,6 +832,17 @@ class AptFlatG1Env(DirectRLEnv):
                 aux = torch.zeros(
                     self.num_envs, 12, dtype=torch.float32, device=self.device
                 )
+            elif self.cfg.token_mode:
+                # E49: action = raw 64-d token coordinates; the env maps it
+                # in _compute_q_des (mean + alpha*std*a, unbounded). Obs
+                # feedback = the RAW policy output (same convention as the
+                # latent arm's z feedback), not the mapped token; A/B arms
+                # differ only in the +2 phase obs.
+                phase = actions
+                aux = torch.zeros(
+                    self.num_envs, 12, dtype=torch.float32, device=self.device
+                )
+                res = None
             else:
                 phase = actions[:, :2]
                 aux = actions[:, 2:14]
@@ -895,6 +950,17 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.latent_residual:
             # E48: residual action feedback (like _last_aux for the aux modes)
             parts.append(self._last_res)
+        if self.cfg.token_phase_obs:
+            # E49-B: the walk clock made visible. _latent_phase was advanced
+            # inside _compute_q_des earlier this control step, so obs carries
+            # the phi that will pair with the NEXT action's token -- the same
+            # action-phi pairing the latent arm's VAE decode uses.
+            parts.append(
+                torch.stack(
+                    [torch.sin(self._latent_phase), torch.cos(self._latent_phase)],
+                    dim=1,
+                )
+            )
         if self.cfg.decft_mode:
             # E44: full 930-d proprio history (decoder input) + walk-clock phase
             parts.append(self._proprio_t())
@@ -1059,7 +1125,7 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.use_2hz_gate and self._router is not None:
             self._held_groups_np = self._router.select_groups(self._build_commands_list())
         self._last_phase[env_ids] = 0.0
-        if self.cfg.latent_mode or self.cfg.decft_mode:
+        if self.cfg.latent_mode or self.cfg.decft_mode or self.cfg.token_mode:
             self._latent_phase[env_ids] = torch.rand(
                 len(env_ids), dtype=torch.float32, device=self.device
             ) * math.tau

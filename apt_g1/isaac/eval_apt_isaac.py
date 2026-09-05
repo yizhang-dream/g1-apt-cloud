@@ -53,6 +53,12 @@ def build_args():
     # E48: full-joint residual escape channel (must mirror training). aux head
     # of the checkpoint is 29-d; --aux-zero gives the residual-off ablation.
     ap.add_argument("--latent-residual", action="store_true")
+    # E49: direct-token RL (no VAE). B arm = walk clock [sin, cos] in obs.
+    ap.add_argument("--token-mode", action="store_true")
+    ap.add_argument("--token-phase-obs", action="store_true")
+    ap.add_argument("--token-alpha", type=float, default=1.0)
+    ap.add_argument("--token-stats", default="",
+                    help="npz with mean/std/rate from official g1-mode tokens")
     ap.add_argument("--res-scale", type=float, default=0.4)
     ap.add_argument("--res-clip", type=float, default=1.0)
     ap.add_argument("--use-elevation", type=int, default=0)
@@ -331,6 +337,10 @@ def main():
         cfg = AptFlatG1EnvCfg()
         if cli.latent_mode:
             cfg.observation_space += 14  # _last_phase 2 -> 16 in the observation
+        if cli.token_mode:
+            cfg.observation_space += 62  # _last_phase 2 -> 64 (raw action feedback)
+            if cli.token_phase_obs:
+                cfg.observation_space += 2  # [sin phi, cos phi] walk clock
         cfg.use_elevation = bool(cli.use_elevation)
         if cfg.use_elevation:
             cfg.observation_space += cfg.elev_grid * cfg.elev_grid
@@ -341,8 +351,8 @@ def main():
         policy = AptPPOPolicy(
             obs_dim=cfg.observation_space,
             aux_dim=29 if cli.latent_residual else 12,
-            use_phase=not cli.latent_mode,
-            latent_dim=16 if cli.latent_mode else 0,
+            use_phase=not cli.latent_mode and not cli.token_mode,
+            latent_dim=64 if cli.token_mode else (16 if cli.latent_mode else 0),
         ).to("cuda:0")
     cfg.scene.num_envs = 1
     cfg.terrain = make_terrain_importer_cfg(
@@ -359,6 +369,10 @@ def main():
     cfg.latent_speed_bins = cli.latent_speed_bins
     cfg.latent_dir_bins = cli.latent_dir_bins
     cfg.latent_residual = cli.latent_residual
+    cfg.token_mode = cli.token_mode
+    cfg.token_phase_obs = cli.token_phase_obs
+    cfg.token_alpha = cli.token_alpha
+    cfg.token_stats = cli.token_stats
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
     cfg.yaw_scale = cli.yaw_scale
@@ -400,7 +414,7 @@ def main():
     pp = cli.phase_mode
     pz = cli.phase_zero
     az = cli.aux_zero
-    lp = cli.latent_mode
+    lp = cli.latent_mode or cli.token_mode
     if cli.decft:
         # single policy key (no aux/noaux split; D needs the router mode path)
         key_list = ["aux"]
