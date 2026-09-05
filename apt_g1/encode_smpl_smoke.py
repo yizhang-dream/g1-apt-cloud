@@ -79,7 +79,8 @@ PERM_Q = np.array([0.5, 0.5, 0.5, 0.5])
 
 
 def perm_vec(v):
-    return v[:, [2, 0, 1]]
+    # ellipsis = last axis (xyz); plain v[:, [2,0,1]] would hit axis 1 on 3-D input
+    return v[..., [2, 0, 1]]
 
 
 def perm_quat(q):
