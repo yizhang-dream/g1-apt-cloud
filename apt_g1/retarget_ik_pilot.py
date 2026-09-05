@@ -223,14 +223,41 @@ def main():
         "skel_corrected": qmul_batch(np.tile(q_corr_mean, (n, 1)), q_skel),
     }
 
-    dof_ik = np.zeros((n, 29))
-    res_hist = []
     x = np.clip(DEFAULT_MJ.copy(), lo, hi)
 
-    def residual_dof(dof, root_quat, root_pos, tgt):
+    def residual_dof(dof, root_quat, root_pos, tgt, dir_tgts):
         set_pose(root_quat, dof, root_pos)
         pos = data.xpos[tgt_bid]
-        return (pos - tgt[tgt_idx]).ravel()
+        r = [(pos - tgt[tgt_idx]).ravel()]
+        for (pb, cb, pdir) in dir_tgts:  # bone-direction residuals (scale-free)
+            v = data.xpos[cb] - data.xpos[pb]
+            v = v / max(np.linalg.norm(v), 1e-9)
+            r.append(0.5 * (v - pdir))
+        return np.concatenate(r)
+
+    # bone-direction targets: (g1_parent_body, g1_child_body); session dirs
+    # = normalized R.(child - parent) from SMPL joints (scale-free) — pins
+    # hip-yaw/shoulder conventions that pure position targets under-determine
+    dir_pairs = [
+        ("LeftLeg", "LeftShin", "left_hip_pitch_link", "left_knee_link"),
+        ("LeftShin", "LeftFoot", "left_knee_link", "left_ankle_pitch_link"),
+        ("RightLeg", "RightShin", "right_hip_pitch_link", "right_knee_link"),
+        ("RightShin", "RightFoot", "right_knee_link", "right_ankle_pitch_link"),
+        ("LeftArm", "LeftForeArm", "left_shoulder_pitch_link", "left_elbow_link"),
+        ("LeftForeArm", "LeftHand", "left_elbow_link", "left_wrist_roll_link"),
+        ("RightArm", "RightForeArm", "right_shoulder_pitch_link", "right_elbow_link"),
+        ("RightForeArm", "RightHand", "right_elbow_link", "right_wrist_roll_link"),
+        ("Hips", "Spine2", "pelvis", "torso_link"),
+    ]
+    dir_tgts_seq = []
+    for ps, cs, pg, cg in dir_pairs:
+        if ps in idx_by_name and cs in idx_by_name:
+            p0 = J30[:n, idx_by_name[ps]]
+            c0 = J30[:n, idx_by_name[cs]]
+            v = (R @ (c0 - p0).T).T
+            v /= np.linalg.norm(v, axis=1, keepdims=True)
+            dir_tgts_seq.append((m.body(pg).id, m.body(cg).id, v))
+    print(f"[ik] direction residuals: {len(dir_tgts_seq)}")
 
     dof_ik_by_mode = {}
     for mode_name, quat_fix in quat_modes.items():
@@ -238,18 +265,19 @@ def main():
         dd = np.zeros((n, 29))
         hh = []
         for t in range(n):
-            sol = least_squares(residual_dof, xd, args=(quat_fix[t], root_pos30[t], targets[t]),
+            sol = least_squares(residual_dof, xd,
+                                args=(quat_fix[t], root_pos30[t], targets[t], dir_tgts_seq[t]),
                                 method="trf", max_nfev=60, xtol=1e-8, ftol=1e-8,
                                 bounds=(lo, hi))
             xd = sol.x.copy()
             dd[t] = xd
             hh.append(float(np.sqrt(np.mean(sol.fun ** 2))))
             if (t + 1) % 200 == 0:
-                print(f"[ik:{mode_name}] {t + 1}/{n} rms {hh[-1] * 100:.1f} cm "
+                print(f"[ik:{mode_name}] {t + 1}/{n} rms {hh[-1] * 100:.1f} cm-eq "
                       f"({time.time() - t_start:.0f}s)", flush=True)
         dof_ik_by_mode[mode_name] = dd
-        print(f"[ik:{mode_name}] done, rms mean {np.mean(hh) * 100:.2f} cm "
-              f"p95 {np.percentile(hh, 95) * 100:.2f} cm")
+        print(f"[ik:{mode_name}] done, rms mean {np.mean(hh) * 100:.2f} cm-eq "
+              f"p95 {np.percentile(hh, 95) * 100:.2f} cm-eq")
     # ---- wrist convention: position targets cannot observe the 6 wrist dofs
     # (all targets sit at/before wrist_roll origins) -> learn their per-dim
     # constant from the paired official retargeting
