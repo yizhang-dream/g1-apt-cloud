@@ -152,6 +152,8 @@ def main():
     trans30 = rob["root_trans_offset"].astype(np.float64)
     n30 = len(dof30)
     print(f"[robot] dof {dof30.shape} fps={rob['fps']}")
+    print(f"[robot] trans30 first={np.round(trans30[0], 3)} last={np.round(trans30[-1], 3)} "
+          f"std={np.round(trans30.std(axis=0), 3)}")
 
     orig_aa = smp["original_pose_aa"].astype(np.float64)  # (1202,72) @30Hz
     joints50 = smp["smpl_joints"].astype(np.float64).reshape(-1, 24, 3)
@@ -192,10 +194,17 @@ def main():
         ], axis=1)
 
     root_ori = {}
+    som_q = som["soma_root_quat"].astype(np.float64)[:n]
+    if np.abs(som_q[:, 0]).mean() < np.abs(som_q[:, 3]).mean():
+        som_q = som_q[:, [3, 0, 1, 2]]
+        print("[soma] root_quat was xyzw -> wxyz")
+    som_q /= np.linalg.norm(som_q, axis=1, keepdims=True)
+    q_R_tiled = np.tile(q_R, (n, 1))
     cand = {
-        "qR*x_smpl": qmul_batch(np.tile(q_R, (n, 1)), q_root[:n]),
-        "qR*x_smpl_Rt": qmul_batch(np.tile(mat_to_quat(R.T), (n, 1)), q_root[:n]),
-        "identity": q_root[:n],
+        "soma_raw": som_q,
+        "qR*soma": qmul_batch(q_R_tiled, som_q),
+        "qR*aa_root": qmul_batch(q_R_tiled, q_root[:n]),
+        "aa_root": q_root[:n],
     }
     for name, q in cand.items():
         qn = q / np.linalg.norm(q, axis=1, keepdims=True)
@@ -211,11 +220,17 @@ def main():
     names = list(som["joint_names"])
     print(f"[soma] {len(names)} joints: {names}")
     som_rel = som_j - som_j[:, 0:1, :]                  # hips as root
-    # smpl joints @30Hz, root-relative, robot frame (n = aligned length)
+    # smpl joints @30Hz: match soma in the SESSION frame (no perm) and perm'd
     J30 = eb.resample(joints50.reshape(-1, 72), fps_s, 30.0).reshape(-1, 24, 3)
-    smpl_rel = perm_vec(J30 - J30[:, 0:1, :])
-    som_mean = som_rel.mean(axis=0)
-    smpl_mean = smpl_rel[:n].mean(axis=0)
+    mlen = min(len(J30), len(som_j), n30)
+    smpl_rel_ses = J30[:mlen] - J30[:mlen][:, 0:1, :]
+    smpl_rel_rob = perm_vec(smpl_rel_ses)
+    som_rel_al = som_rel[:mlen]
+    for tag, sm in (("session", smpl_rel_ses), ("perm_rob", smpl_rel_rob)):
+        sm_mean = sm.mean(axis=0)
+        d_all = np.linalg.norm(som_rel_al.mean(axis=0)[None] - sm_mean[:, None], axis=2)
+        print(f"[smpl<-soma @{tag}] mean match dist = {d_all.min(axis=1).mean():.4f} m")
+    smpl_mean = smpl_rel_ses.mean(axis=0)  # session frame for name matching
     name_of = []
     for j in range(24):
         d = np.linalg.norm(som_mean - smpl_mean[j], axis=1)
@@ -224,7 +239,7 @@ def main():
                         "dist_m": round(float(d[k]), 4),
                         "mean_pos": [round(float(x), 3) for x in smpl_mean[j]]})
     res["smpl_joint_names"] = name_of
-    print("[smpl<-soma names]")
+    print("[smpl<-soma names] (session frame)")
     for e in name_of:
         print(f"   smpl[{e['smpl_idx']:>2}] ~ {e['soma_name']:<18} d={e['dist_m']:.3f} pos={e['mean_pos']}")
 
@@ -248,17 +263,18 @@ def main():
         base = data.xpos[pelvis_id].copy()
         for i in range(m.nbody):
             nm = m.body(i).name
-            if nm in ("pelvis",) or "link" not in nm:
-                continue
+            if nm == "pelvis" or "link" not in nm or "hand" in nm:
+                continue  # exclude root + hand links (not in the 29 dof)
             g1_rel.setdefault(nm, []).append(data.xpos[i] - base)
     g1_mean = {k: np.mean(v, axis=0) for k, v in g1_rel.items()}
 
-    # proposed correspondence: nearest g1 link for each smpl joint
+    # proposed correspondence: nearest g1 link for each smpl joint (ROBOT frame)
+    smpl_mean_rob = smpl_rel_rob[:mlen].mean(axis=0)
     g1_names = sorted(g1_mean)
     g1_mat = np.stack([g1_mean[k] for k in g1_names])
     corr = []
     for j in range(24):
-        d = np.linalg.norm(g1_mat - smpl_mean[j], axis=1)
+        d = np.linalg.norm(g1_mat - smpl_mean_rob[j], axis=1)
         k = int(np.argmin(d))
         corr.append({"smpl_idx": j, "soma_name": name_of[j]["soma_name"],
                      "g1_body": g1_names[k], "dist_m": round(float(d[k]), 3)})
@@ -267,18 +283,13 @@ def main():
     for e in corr:
         print(f"   smpl[{e['smpl_idx']:>2}] {e['soma_name']:<18} -> {e['g1_body']:<26} d={e['dist_m']:.3f}")
 
-    # bone scale ratios for confident leg/arm pairs (by soma name)
-    def g1_pos(nm):
-        return g1_mean.get(nm)
-
-    pairs = [("Left_Knee" if "Left_Knee" in names else None,)]
+    # bone scale ratios for confident pairs (robot frame, |smpl_rel| / |g1_rel|)
     ratio_table = {}
     for j, e in enumerate(corr):
-        nm = e["soma_name"]
         gb = e["g1_body"]
         if gb in g1_mean:
-            r = np.linalg.norm(smpl_mean[j]) / max(np.linalg.norm(g1_mean[gb]), 1e-6)
-            ratio_table[f"smpl{j}:{nm}->{gb}"] = round(float(r), 3)
+            r = np.linalg.norm(smpl_mean_rob[j]) / max(np.linalg.norm(g1_mean[gb]), 1e-6)
+            ratio_table[f"smpl{j}:{e['soma_name']}->{gb}"] = round(float(r), 3)
     res["scale_ratio_by_joint"] = ratio_table
     print("[scale ratios |smpl_rel| / |g1_rel|]")
     for k, v in ratio_table.items():
