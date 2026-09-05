@@ -98,7 +98,7 @@ def scan_one(path):
         th = np.linalg.norm(aa, axis=1)
         cos = np.cos(th / 2)
         s = np.sin(th / 2)
-        axis = np.divide(aa, np.where(th[:, None] < 1e-12, 1.0, th)[:, None])
+        axis = np.divide(aa, np.where(th < 1e-12, 1.0, th)[:, None])
         qw = cos
         qv = axis * s[:, None]
         yaw = np.degrees(np.arctan2(2 * (qw * qv[:, 2] + qv[:, 0] * qv[:, 1]), 1 - 2 * (qv[:, 1] ** 2 + qv[:, 2] ** 2)))

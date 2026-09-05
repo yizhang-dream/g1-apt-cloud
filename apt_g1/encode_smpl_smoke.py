@@ -89,7 +89,7 @@ def perm_quat(q):
 def aa_to_quat(aa):
     """(N,3) axis-angle -> (N,4) wxyz."""
     th = np.linalg.norm(aa, axis=1)
-    axis = np.divide(aa, np.where(th[:, None] < 1e-12, 1.0, th)[:, None])
+    axis = np.divide(aa, np.where(th < 1e-12, 1.0, th)[:, None])
     out = np.zeros((len(aa), 4))
     small = th[:, None] < 1e-12
     out[:, 0] = np.where(small[:, 0], 1.0, np.cos(th / 2))
