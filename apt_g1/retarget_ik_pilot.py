@@ -198,6 +198,8 @@ def main():
     # ---- wrist convention: position targets cannot observe the 6 wrist dofs
     # (all targets sit at/before wrist_roll origins) -> learn their per-dim
     # constant from the paired official retargeting
+    res = {"n_frames": n, "ik_residual_rms_cm": round(float(np.mean(res_hist)) * 100, 2),
+           "ik_residual_p95_cm": round(float(np.percentile(res_hist, 95)) * 100, 2)}
     isaac_wrist = {23, 24, 25, 26, 27, 28}
     mujoco_wrist = [int(j) for j in range(29) if M2I[j] in isaac_wrist]
     official_wrist_mean = dof30[:n30][:, mujoco_wrist].mean(axis=0)
@@ -212,8 +214,6 @@ def main():
                                "official_std": official_wrist_std.tolist()}
 
     # ---- validation vs official
-    res = {"n_frames": n, "ik_residual_rms_cm": round(float(np.mean(res_hist)) * 100, 2),
-           "ik_residual_p95_cm": round(float(np.percentile(res_hist, 95)) * 100, 2)}
     for tag, dd in (("free_wrist", dof_ik), ("wrist_pinned", dof_ik_pinned)):
         mae = np.abs(dd[:n30] - dof30[:n]).mean(axis=1)
         pj = np.abs(dd[:n30] - dof30[:n]).mean(axis=0)
