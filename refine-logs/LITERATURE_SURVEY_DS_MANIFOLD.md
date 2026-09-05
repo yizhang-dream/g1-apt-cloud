@@ -5,7 +5,8 @@
 > + web 搜索，2026-09 时点）】↑
 > `refine-logs/README.md`（扇出树根）｜上游：`DS_GAIT_MANIFOLD_PLAN.md`（被评估
 > 的执行计划）、`LITERATURE_SURVEY_FROZEN_DECODER.md`（前次调研：冻结解码器
-> 地形泛化，结论已入 MQ09/ROOT_CAUSE 证据链）｜事实源：`tracker/D.md`
+> 地形泛化，结论已入 MQ09/ROOT_CAUSE 证据链）｜事实源：`tracker/D.md`｜
+> 状态：冻结存档（**09-05 部分主张撤回**，见文末修订记录）
 
 ---
 
@@ -258,3 +259,25 @@ Whole-Body Control"，Science Robotics 11(117) eaed4592 (2026) = arXiv
 - SONIC 配套论文（09-04 补）：GR00T-WholeBodyControl README Citation 块 +
   [arXiv 2511.07820](https://arxiv.org/abs/2511.07820) 摘要页 + v3 HTML
   全文精读；正文 FSQ/GEM，MotionBricks 仅 README 侧子项目。
+
+## 修订记录（append-only）
+
+- **09-05 撤回（owner 裁定；纲领 = `DS_TERRAIN_ADAPTER_CHARTER.md` §3）**：
+  ①创新点评估表 #1 判定「**成立**（组合新颖性）」与「表述雷区」安全句式
+  「首个在冻结官方部署级 token 解码器上构建的 G1 步态动作流形……」
+  **降级为待验证假设**——限定词越来越多，并不意味着研究问题越来越重要；
+  任何「首次」主张须先完成近邻训练方式与实验协议的对照核查。②新增四个
+  必须重点对照的近邻：T-GMP（[2606.06944](https://arxiv.org/abs/2606.06944)，
+  地形条件化动作流形/平滑风格转换/统一策略适应地形）、Whole-Body Humanoid
+  Locomotion via Motion Generation & Motion Tracking
+  （[2604.17335](https://arxiv.org/abs/2604.17335)，感知驱动动作生成 +
+  闭环微调跟踪器 + G1 混合地形实机）、Perceptive BFM
+  （[2606.08059](https://arxiv.org/abs/2606.08059)，保留动作参考 + 地形
+  感知调整接触/姿态/时序）、SceneBot（[2606.27581](https://arxiv.org/abs/2606.27581)，
+  统一自由运动/地形/操作 + 未见动作泛化）——「感知 + 流形 + 多步态
+  转换」与「首次让多种全身动作适应地形」均不能作宽泛主张。③候选差异
+  主张与措辞纪律（「适配阶段未见」≠「系统从未见过」）以纲领 §1/§3 为准。
+  ④「地形维度补遗」结论（地形解决非我方主张）**维持并加强**：09-05 起
+  主假设改为冻结底座 × 共享适配 × 未见动作迁移；本表其余近邻地图、
+  可借鉴清单与地形补遗的分析素材仍有效，作为纲领阶段一~三执行时的
+  引用池。

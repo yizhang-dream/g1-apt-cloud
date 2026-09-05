@@ -305,3 +305,18 @@ L4 代码层  apt_g1/SCRIPT_MAP.md + 脚本/       ← 每个脚本的角色与�
   留待后续。点足平地解（v 1.701，带洞转录产物）复核未过、按计划 §2.1 被
   foot A 门取代。下一步：B 门 verify（mj_inverse）→ C 门 43-DOF 闭环。
   详见 tracker/TO.md TO36 各节。
+- **DS 线转向与研究纲领（2026-09-04/05，refine-logs 侧轴，本文时间线不展开）**：
+  09-04 owner 指令停 TO 线主攻 DS 数据重采线（TO 线冻结封存；D029 起
+  Run 行入 tracker/D.md；计划三件套 = `DS_RECOLLECT_PLAN` /
+  `DS_GAIT_MANIFOLD_PLAN` / `DS_SONIC_OFFICIAL_DATA`）。关键进展：Phase 0
+  执行保真度校准 PASS（D034 实现率 1.61 + D035 打滑 HONEST）——**历史
+  0.35–0.45 m/s 不能归因冻结 decoder**；B 线官方数据编码链路全通（D036–
+  D038，锚定 ref-rel 语义修复为最大方法学资产）。**09-05 owner 两轮方向
+  讨论定稿研究纲领 `refine-logs/DS_TERRAIN_ADAPTER_CHARTER.md`**：论文重心
+  收窄为「冻结 SONIC 底座 × 共享地形适配 × 未见动作迁移」，过渡衔接为
+  主假设下模块；四阶段执行框架（可信小数据集 → 能力限制定位 → 过渡/
+  适配验证 → 解冻裁决）+ 三对照裁决规则 + 最小判别实验；「组合新颖性
+  成立」「首个冻结官方部署级 token 解码器」主张撤回为待验证假设（新增
+  近邻 T-GMP / 2604.17335 / Perceptive BFM / SceneBot）；DS 计划冲突条款
+  按纲领 §9 处置（Phase 1 全网格挂起、全动作组网格转设计储备等）。
+  本文 §3 结论口径不受影响（负结果与定界仍是已确立贡献）。
