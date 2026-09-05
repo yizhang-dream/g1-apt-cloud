@@ -210,6 +210,117 @@ ID / 航向变化统计）。产物 = 类目×时长×速度表 + run 758 段实
 > **下一步 = 第三步（冻结校准参数、禁读评估动作官方 dof/quat）+ 补校准
 > 数据**；B3' 批量转换维持暂缓。
 
+### 3.2 E49 预注册：去 VAE 直接 token RL 对照（2026-09-05d owner 裁决；同日 owner 四点评审修订口径）
+
+**裁决**：owner 采纳「去 VAE 对照」提案——去掉我们额外训练的 VAE、保留
+冻结 SONIC decoder，策略从随机初始化直接输出 token 的 RL 提为**下一训练
+实验优先级**（Run ID **E49**，结果落 `tracker/E.md`）；**E49 不以 M2/B3'
+为前置**（不为它扩大 SMPL 重定向数据）；D042 剩余步（第三步起，离线为主）
+照常推进、两线并行；B3' 批量转换的 go/no-go 同时接收 D042 质量门与 E49
+判别结果。§3 流水线优先级以本条为准。
+
+**提案前提核验（逐条对照台账与代码，2026-09-05d 执行）**：
+
+1. E27 结构核验完成：latent→VAE→SONIC + 相位条件化 VAE + z_walk
+   warmstart（tracker/E.md E27 行）——提案引述属实。
+2. 「带 VAE」臂 = **E45–E47 已完成**：策略 16d z → 冻结 VAE → token →
+   冻结 decoder，随机初始化无 warm start，`--latent-kl-prior` 默认 zero。
+   **注意（owner 评审 #1）：KL zero 只排除显式正则拉力，不消除冻结 VAE
+   本身施加的动作约束**——z 必经 16 维瓶颈与解码器权重定义的流形，该
+   约束是映射本身的属性。
+3. 「直出 token RL」台账空白（E9/E11 = 直出关节无 decoder；D040 mode-2
+   = 离线直编非 RL；E48 编号已被全关节残差实验占用）——E49 确为缺口，
+   编号取 **E49**。
+4. **接口契约（actor 与 decoder 分别写清，owner 评审 #1 要求）**：
+   - 冻结 decoder 输入 = 64 维 token + 10 帧 proprio 历史（930 维布局）
+     → 29 dof 目标；token 消费率 = 控制频率 50 Hz。
+   - **策略（actor）obs（latent 模式，实测自 `_get_observations`）** =
+     当步本体命令块 ≈90 维（base 线/角速度、projected gravity、
+     jpos_rel/jvel、command、上一步自己的 z(16) 动作反馈、last_aux(12)
+     恒零、mode_oh/gate_tick/root_z）；**不含 10 帧 proprio 历史**（那是
+     E44 decft 模式专属输入），**不含 sin/cos φ**——φ 由 env 在
+     `_compute_q_des` 内部推进（`_latent_phase`，walk cadence）并直接
+     喂 VAE 条件化，**对策略不可见**。以上是**显式时间相关输入**清单
+     （本体速度、上一步动作）——物理系统与 decoder 历史共同形成的动态
+     本身也携带步态信息，非「策略没有任何时间信息」。
+5. **E49 是整体替换对照，非对 VAE 的单因素干净判别（owner 评审 #1）**：
+   相对 E45 臂同时改变 ①输出映射（z→VAE→token → 直接 64d）、②输出维度
+   （16 → 64）、③φ 条件化（env 注入 decode → 无）。既有证据两向都有
+   （E29 z 拉向 walk 流形 = 首个正向杠杆；E45 结论③撞速度天花板 = z 漂
+   离流形 rew 崩）。**归因靠分臂阶梯（见下），不靠单臂成败下结论**。
+6. **能力上限表述（owner 评审 #3 修正）**：mode-0 是表示接口，跳/蹲是
+   动作内容——**同一接口不限制其中只能表示行走**。E49 的行走任务只能
+   验证行走控制：既不证明其他技能已被调用，也不证明这些技能必须经 M2
+   才能调用。冻结 decoder 是否已有某动作能力 = 它在相应参考 token 下的
+   实际表现（可独立检验）；RL 能否找到并稳定调用 = 任务指令、奖励与
+   探索问题。M2 是获得参考数据的路径之一，非唯一必要路径。
+
+**协议（预注册，两臂）**：
+
+| 臂 | 输出路径 | φ | 回答的问题 | 状态 |
+|---|---|---|---|---|
+| E45（已有） | 策略 → 16d z → 冻结 VAE → token | env 内部注入 decode | 历史基线（带 VAE 全套） | DONE |
+| **E49-A** | 策略 → 64d token | 无（策略 obs 无 φ，输出不经 VAE） | 去掉额外 VAE 与外部节拍后，随机策略能否学会行走控制 | **首轮执行** |
+| **E49-B** | 策略 → 64d token；**obs 追加同款 walk 钟 [sinφ, cosφ]（2 维）** | 策略可见、自行利用 | 保留节拍后直接 token 搜索是否可行（φ 单因素归因） | **预注册归因臂：A 落账后 owner 点火，协议层面无需再审批** |
+
+- 共同设定：冻结 SONIC decoder、物理环境、A 任务奖励/终止 = E45 同款
+  单一前进配方（不含 E47 的 heading 0.4 / progress 1.0 修饰）、策略 obs
+  base 块不变（B 仅 +2 维 φ）；策略随机初始化（无 warm start / 无 z_walk
+  / 无 BC / 不以参考 token 为动作中心）；预算 128 envs × 2000 iters ×
+  3 seeds/臂，固定不中途加（D039 修正口径 ~27 min/run 级）。
+- **动作空间标定（owner 第三轮评审修正：初始探索尺度与可达范围分离）**：
+  `token = mean + α · std ⊙ a`，`a` 为**无界**策略动作（已核验 PPO/env
+  无隐藏动作裁剪：ppo_core 仅 ratio clip 与梯度范数 clip，latent 路径
+  env 无 clamp，token 分支同）。
+  **策略从随机权重开始训练，使用官方 token 统计量标定动作空间，无示范
+  损失**——这是数据提供的动作空间先验，非「无影响的数值标定」。
+  **α = 1 只定初始探索尺度**（初始输出分布 ≈ 官方 token 分布）；可达
+  范围无界（PPO 均值/方差自由外扩）——**初始探索要小与最终可达范围要宽
+  是两件事**，不得用单段动作的 mean±1 std 硬限代替输出边界。统计样本 =
+  D038 验证版官方 g1-mode tokens（robot_filtered ref-rel 重编码产物）
+  逐维现算 mean/std；std 下限 1e-3（防零维坍缩）；首轮不做 FSQ 码本
+  量化（latent 臂 VAE 输出的 token 本就是连续值直喂 decoder，代码路径
+  无量化步骤，连续输出保持两臂同性质）；若需输出边界，按实际 token
+  契约（FSQ lattice）单独定义并归入消融。**tanh 受限版（mean±1 std
+  硬界）= 预注册消融**（「受限范围」对照臂，owner 点火免审批）。
+- 预注册消融（需要时启动，**免再审批**，仅 owner 点火 + 另开 run 号）：
+  identity scale（±1 不标定）；FSQ 码本量化；φ-as-obs 即 E49-B。
+- 主判据（A 臂首轮）：A 60s 存活完成率：≥1/3 seed 稳定前行 = 去掉 VAE
+  后直接搜索在该预算可行；3/3 失败且 disp 无学习趋势 = 该预算内不可行
+  （**范围限定**：不据此断言 decoder 缺能力，亦不断言任何预算下不可行）。
+- 次判据：disp / vx / h_min；动作连续性（相邻控制步 token L2 分布 vs
+  E45 latent 臂同统计）；样本效率（达 E45 it_200 水平所需 iters）。
+- **E45 复用的公平性边界（owner 评审 #4）**：「同预算」= 同环境交互步数
+  （同 num_envs × rollout 长度 × iters）。E45 至今的 env 变更 = D039
+  语义不变补丁（latent 首 iter 逐位等价已验证）+ 默认关闭的新旗标
+  （E48 residual / TO38/40 / elevation / gate_sel 均不激活）→ 复用
+  成立；执行时仍须核对奖励/初始化/终止/eval 时长，若发现任一实质差异，
+  E45 降标为**历史对照**，论文级严格比较再补匹配 run。
+- **冒烟检查（owner 第三轮评审两条，实现已按此落码）**：①**动作反馈
+  一致**：E49-A/B 的 obs 反馈槽 = **原始策略输出 a(64)**（同 E45 反馈
+  z(16) 的约定），非映射后 token——两臂只差 +2 维 φ obs；冒烟断言反馈
+  槽逐位 == 策略采样值。②**相位时序一致**：φ 推进发生在
+  `_compute_q_des` 内（decode 读 φ 之后），obs 组装在其后 → obs 携带的
+  φ = 下一步 decode 将配对的 φ（与 E45 的 z-φ 配对逐位对齐）；reset
+  随机相位两臂同分布；冒烟断言 B 臂 obs 的 [sinφ, cosφ] 逐位 ==
+  sin/cos(`_latent_phase`)。
+- 代码改动面（**已实现，待服务器冒烟**）：`apt_flat_env.py` token 直出
+  分支（`token = mean + α·std⊙a` 线性映射 → 公共 decoder 尾部；walk 钟
+  照常推进；反馈槽 = 原始 a(64)；B 臂 φ obs 2 维可选）+
+  `train/eval_apt_isaac.py` 四旗标 `--token-mode / --token-phase-obs /
+  --token-alpha / --token-stats`（npz = {mean[64], std[64], rate}，rate
+  取 E27 pca 同款 walk cadence；obs 数学 91+62=153（A）/155（B），env
+  assert 兜底）。冒烟清单：①服务器现算 stats npz（D038 官方 g1-mode
+  tokens + E27 pca rate）；②`--token-mode` 100 iters：首 iter rew 有限
+  无 NaN、obs 维度断言过、反馈槽==采样值、B 臂 φ obs 逐位一致；③eval
+  冒烟 A 任务 60s。
+
+**判读分两问裁决（owner 评审收束）**：首轮只回答 **A 问 =「去掉额外 VAE
+后随机策略能否学会行走」**（E49-A vs E45 = 整体替换效应：A 胜 = 直接
+token 策略整体更有效；A 败 = 无法分辨高维探索/缺 φ/VAE 映射何者为因）。
+**B 问 =「VAE 究竟帮助还是限制学习」**由 E49-B vs E49-A（φ 单因素）+
+E49-B vs E45（仍混杂流形+维度，仅方向性参考）在后续归因阶段回答。
+
 ## 4. 门与判据（承接纲领 §4/§7）
 
 1. B3' 类级存活 ≥95%（不过门不入集，逐类独立判定）；
@@ -278,3 +389,39 @@ ID / 航向变化统计）。产物 = 类目×时长×速度表 + run 758 段实
   质量级 PARTIAL（B3' 前须 dof MAE ≤0.15，杠杆 = 分肢体尺度/足底接触/扩
   校准集——6 配对样本仅 1 唯一 motion 为校准瓶颈）。判定块见 §4 前。
   新脚本 `retarget_smpl_g1.py` / `retarget_ik_pilot.py` 登记。
+- **2026-09-05d E49 预注册（owner 采纳「去 VAE 对照」提案）**：无额外
+  VAE、冻结 decoder、策略随机初始化直出 64 维 token 的 RL 提为下一训练
+  实验优先级（Run ID E49，协议预注册 = §3.2）；E49 不以 M2/B3' 为前置，
+  不为它扩大 SMPL 重定向数据；D042 剩余步照常、两线并行；B3' 批量
+  go/no-go 加收 E49 判别结果。提案前提核验（§3.2）：E27 结构属实；
+  E45–E47 = 带 VAE 臂已完成（对照不重跑）；「直出 token RL」台账空白；
+  接口契约钉死（64d token @ 50 Hz + 10 帧 history → 29 dof；latent 臂
+  白送 φ 相位钟为直出臂最大混杂）。
+- **2026-09-05d（二）owner 四点评审修订 §3.2**：①E49 定性改「整体替换
+  对照」非 VAE 单因素干净判别（KL zero 只排除显式拉力、不消除冻结 VAE
+  映射本身的约束）——分臂 **E49-A（无 φ，首轮）/E49-B（obs 追加同款
+  [sinφ,cosφ]，预注册归因臂，A 落账后 owner 点火免再审批）**；补
+  actor/decoder 输入分离的代码事实：latent 模式策略 obs = 当步本体块 +
+  上一步 z 反馈，**无 10 帧 history（E44 decft 专属）、无 φ（env 内部
+  推进直喂 VAE）**；②动作标定改述为「官方 token 统计量标定动作空间的
+  数据先验，无示范损失」，钉死样本来源（D038 验证版官方 g1-mode
+  tokens）/std 下限 1e-3/不另设裁剪/**首轮不 FSQ 量化**（latent 臂
+  token 本就连续直喂 decoder，两臂同性质）；identity scale 与 FSQ 量化
+  降为预注册消融（owner 点火免审批）；③mode-0 接口≠动作内容上限——
+  E49 行走任务只验证行走控制，不证其他技能可调用、也不证其必经 M2
+  （decoder 是否已有某动作能力 = 参考 token 下表现，可独立检验）；
+  ④「同预算」钉死 = 同 env 交互步数，执行时核对奖励/初始化/终止/eval
+  时长，实质差异则 E45 降标历史对照。判读分两问：首轮 A 问（去 VAE 能
+  否学会），归因阶段 B 问（VAE 帮助还是限制）。
+- **2026-09-05d（三）owner 第三轮评审（冻结前最后修正）+ E49 实现落码**：
+  ①动作映射改 **`token = mean + α·std⊙a`（a 无界）**——原 tanh 版把每维
+  硬限在单段数据 mean±1 std 内，会引入「可探索范围被人为截窄」的混杂；
+  α=1 只定初始探索尺度、可达范围无界；PPO/env 无隐藏动作裁剪已核验；
+  tanh 版降为「受限范围」预注册消融。②冒烟检查两条入协议：动作反馈
+  一致（= 原始策略输出 a(64)，非映射后 token）；相位时序一致（φ 推进在
+  `_compute_q_des` 内 decode 后、obs 组装前 → obs φ = 下一步 decode
+  配对 φ；reset 随机相位同分布）。③「E45 策略时间信息」表述改「显式
+  时间相关输入」（物理-解码动态亦携带步态信息）。④**代码实现落码**：
+  env token 直出分支 + train/eval 四旗标（`--token-mode /
+  --token-phase-obs / --token-alpha / --token-stats`），py_compile 过，
+  待服务器冒烟（stats npz 现算 + 100 it 断言 + 60s eval）。
