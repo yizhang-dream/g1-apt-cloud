@@ -39,6 +39,10 @@ class AptPPOPolicy(nn.Module):
         self.gate_k = gate_k
         self.use_phase = use_phase
         self.latent_dim = latent_dim
+        # E49：False = aux 头采样后丢弃（latent/token/to42 模式 action=act["phase"]）。
+        # 此时 act() 与 update() 的 log_prob/entropy 都不得含 aux 项——
+        # 两处必须是同一约定，否则 ratio 全错。
+        self.aux_executed = True
         self.encoder = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
             nn.Tanh(),
@@ -84,13 +88,21 @@ class AptPPOPolicy(nn.Module):
         return self.critic(obs).squeeze(-1)
 
     def act(self, obs: torch.Tensor, deterministic: bool = False):
-        """Return dict of sampled actions, log_prob, entropy, value."""
+        """Return dict of sampled actions, log_prob, entropy, value.
+
+        aux_executed=False（latent/token 模式：aux 采样后丢弃）时 log_prob 与
+        entropy 只累计 phase（+ gate）项；aux 照常采样并放进返回 dict。
+        """
         p = self.forward_actor(obs)
         ad = Normal(p["aux_mean"], p["aux_log_std"].exp())
         aux = ad.mean if deterministic else ad.sample()
         out = {"aux": aux}
-        log_prob = ad.log_prob(aux).sum(-1)
-        entropy = ad.entropy().sum(-1)
+        if self.aux_executed:
+            log_prob = ad.log_prob(aux).sum(-1)
+            entropy = ad.entropy().sum(-1)
+        else:
+            log_prob = 0.0
+            entropy = 0.0
         if self.use_phase or self.latent_dim > 0:
             pd = Normal(p["phase_mean"], p["phase_log_std"].exp())
             phase = pd.mean if deterministic else pd.sample()
@@ -136,7 +148,9 @@ class PPOTrainer:
         gamma: float = 0.99,
         lam: float = 0.95,
         clip_eps: float = 0.2,
-        num_epochs: int = 5,
+        # 默认 1 = 历史 run 的实际行为（旧 update() 从未循环，此参数形同虚设）；
+        # 多 epoch 只能经 CLI --ppo-epochs 显式开启
+        num_epochs: int = 1,
         minibatch_size: int = 512,
         entropy_coef: float = 0.001,
         latent_kl_coef: float = 2.5e-6,
@@ -204,13 +218,21 @@ class PPOTrainer:
         truncated: torch.Tensor,
         last_value: torch.Tensor,
     ) -> torch.Tensor:
-        """rewards/values/dones/truncated: (T, N); returns advantages (T, N)."""
+        """rewards/values/dones/truncated: (T, N); returns advantages (T, N).
+
+        边界语义：terminated（dones，摔倒）= 真终局 → 不自举 + 切断优势递推；
+        truncated（超时）= rollout 人为截断 → 切断递推。两者的自举都保持 0：
+        Isaac DirectRLEnv 在边界处返回的是复位后的 obs，其价值属于下一局，
+        终末状态价值不可得（生态同病，已知残留限制，勿在此试图"修好"）。
+        t == T-1 的 last_value 同样被 cont 掩码：摔倒/超时恰发生在 rollout
+        末步时不再泄漏复位态价值。
+        """
         T, N = rewards.shape
         adv = torch.zeros_like(rewards)
         gae = torch.zeros(N, device=self.device)
         for t in reversed(range(T)):
             next_value = last_value if t == T - 1 else values[t + 1]
-            cont = (~truncated[t]).float()
+            cont = (~(dones[t] | truncated[t])).float()
             delta = rewards[t] + self.gamma * next_value * cont - values[t]
             gae = delta + self.gamma * self.lam * cont * gae
             adv[t] = gae
@@ -266,105 +288,128 @@ class PPOTrainer:
         # decaying latent exploration coefficient (paper: exploration -> exploitation)
         expl_coef = self.latent_expl_coef * max(0.0, 1.0 - self.it / max(1, self.max_iters))
 
-        idx = torch.randperm(T * N, device=self.device)
+        # E49：aux_executed=False（latent/token/to42）时 aux 项不进 log_prob/
+        # entropy；decft 的 aux 是 29d 实际动作，恒参与（DecFtPolicy 无此属性，
+        # getattr 默认 True）
+        aux_scored = getattr(self.policy, "aux_executed", True)
+
         losses = []
-        for start in range(0, T * N, self.minibatch_size):
-            mb = idx[start : start + self.minibatch_size]
-            p = self.policy.forward_actor(obs[mb])
-            if getattr(self.policy, "decoder_ft", False):
-                # E44: the decoder is the policy's mean network. Recompute mu
-                # from the STORED latent z (phase) so PPO gradients reach the
-                # decoder weights; reg keeps it near the official decoder.
-                aux_mean, dec_reg = self.policy.action_mean(phase[mb], obs[mb])
-                ad = Normal(aux_mean, p["aux_log_std"].exp())
-                lp = ad.log_prob(aux[mb]).sum(-1)
-            else:
-                ad = Normal(p["aux_mean"], p["aux_log_std"].exp())
-                lp = ad.log_prob(aux[mb]).sum(-1)
-            if phase is not None:
-                pd = Normal(p["phase_mean"], p["phase_log_std"].exp())
-                lp = lp + pd.log_prob(phase[mb]).sum(-1)
-            if gate is not None:
-                gd = Categorical(logits=p["gate_logits"])
-                lp = lp + gd.log_prob(gate[mb])
-            ratio = (lp - logp_old[mb]).exp()
-            surr1 = ratio * adv_f[mb]
-            surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * adv_f[mb]
-            ploss = -torch.min(surr1, surr2).mean()
-            vloss = torch.nn.functional.mse_loss(self.policy.get_value(obs[mb]), ret_f[mb])
-            ent = ad.entropy().sum(-1)
-            if phase is not None:
-                ent = ent + pd.entropy().sum(-1)
-            if gate is not None:
-                ent = ent + gd.entropy()
-            loss = (
-                ploss
-                + self.value_coef * vloss
-                - self.entropy_coef * ent.mean()
-            )
-            if phase is not None:
-                if self.latent_prior_mean is not None:
-                    kl = kl_normal(
-                        p["phase_mean"], p["phase_log_std"], self.latent_prior_mean
-                    )
+        # 真 epoch 循环：每个 epoch 重新洗牌（默认 num_epochs=1 = 历史单遍）
+        for _ in range(self.num_epochs):
+            idx = torch.randperm(T * N, device=self.device)
+            for start in range(0, T * N, self.minibatch_size):
+                mb = idx[start : start + self.minibatch_size]
+                p = self.policy.forward_actor(obs[mb])
+                if getattr(self.policy, "decoder_ft", False):
+                    # E44: the decoder is the policy's mean network. Recompute mu
+                    # from the STORED latent z (phase) so PPO gradients reach the
+                    # decoder weights; reg keeps it near the official decoder.
+                    aux_mean, dec_reg = self.policy.action_mean(phase[mb], obs[mb])
+                    ad = Normal(aux_mean, p["aux_log_std"].exp())
+                    lp = ad.log_prob(aux[mb]).sum(-1)
                 else:
-                    kl = kl_normal_std_normal(p["phase_mean"], p["phase_log_std"])
-                loss = (
-                    loss
-                    - expl_coef * pd.entropy().sum(-1).mean()
-                    + self.latent_kl_coef * kl.mean()
+                    ad = Normal(p["aux_mean"], p["aux_log_std"].exp())
+                    # 与 act() 同一约定：aux 未被执行时不进 log_prob
+                    lp = ad.log_prob(aux[mb]).sum(-1) if aux_scored else 0.0
+                if phase is not None:
+                    pd = Normal(p["phase_mean"], p["phase_log_std"].exp())
+                    lp = lp + pd.log_prob(phase[mb]).sum(-1)
+                if gate is not None:
+                    gd = Categorical(logits=p["gate_logits"])
+                    lp = lp + gd.log_prob(gate[mb])
+                logratio = lp - logp_old[mb]
+                ratio = logratio.exp()
+                # E49 训练健康指标：k3 估计的 approx_kl（逐点非负）、超出
+                # clip 窗口的样本比例、phase 头当前 std（detached，进 losses）
+                approx_kl = (torch.exp(logratio) - 1.0 - logratio).mean()
+                clip_frac = ((ratio - 1.0).abs() > self.clip_eps).float().mean()
+                act_std = (
+                    p["phase_log_std"].mean().exp() if phase is not None else 0.0
                 )
-            if phase_labels is not None:
+                surr1 = ratio * adv_f[mb]
+                surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * adv_f[mb]
+                ploss = -torch.min(surr1, surr2).mean()
+                vloss = torch.nn.functional.mse_loss(self.policy.get_value(obs[mb]), ret_f[mb])
+                ent = ad.entropy().sum(-1) if aux_scored else 0.0
+                if phase is not None:
+                    ent = ent + pd.entropy().sum(-1)
+                if gate is not None:
+                    ent = ent + gd.entropy()
                 loss = (
-                    loss
-                    + phase_warm_coef
-                    * torch.nn.functional.mse_loss(p["phase_mean"], phase_labels[mb])
+                    ploss
+                    + self.value_coef * vloss
+                    - self.entropy_coef * ent.mean()
                 )
-            if getattr(self.policy, "decoder_ft", False):
-                # E44: keep the fine-tuned decoder near the official one
-                loss = loss + self.decoder_reg_coef * dec_reg
-                if self.decoder_wreg_coef > 0.0:
-                    # E44v2: direct weight-space anchor (||theta - theta_ref||^2)
-                    wdrift = sum(
-                        (p - rp).pow(2).sum()
-                        for p, rp in zip(
-                            self.policy.decoder.net.parameters(),
-                            self.policy.decoder_ref.net.parameters(),
+                if phase is not None:
+                    if self.latent_prior_mean is not None:
+                        kl = kl_normal(
+                            p["phase_mean"], p["phase_log_std"], self.latent_prior_mean
                         )
+                    else:
+                        kl = kl_normal_std_normal(p["phase_mean"], p["phase_log_std"])
+                    loss = (
+                        loss
+                        - expl_coef * pd.entropy().sum(-1).mean()
+                        + self.latent_kl_coef * kl.mean()
                     )
-                    loss = loss + self.decoder_wreg_coef * wdrift
-            self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-            nan_skip = 0.0
-            if self.skip_nan and self._grads_nonfinite():
-                # E44: NaN guard -- drop this minibatch's update (keeps the
-                # fine-tuned decoder from exploding the run)
+                if phase_labels is not None:
+                    loss = (
+                        loss
+                        + phase_warm_coef
+                        * torch.nn.functional.mse_loss(p["phase_mean"], phase_labels[mb])
+                    )
+                if getattr(self.policy, "decoder_ft", False):
+                    # E44: keep the fine-tuned decoder near the official one
+                    loss = loss + self.decoder_reg_coef * dec_reg
+                    if self.decoder_wreg_coef > 0.0:
+                        # E44v2: direct weight-space anchor (||theta - theta_ref||^2)
+                        wdrift = sum(
+                            (p - rp).pow(2).sum()
+                            for p, rp in zip(
+                                self.policy.decoder.net.parameters(),
+                                self.policy.decoder_ref.net.parameters(),
+                            )
+                        )
+                        loss = loss + self.decoder_wreg_coef * wdrift
                 self.optimizer.zero_grad()
-                nan_skip = 1.0
-            else:
-                self.optimizer.step()
-            # 统计张量先 detach 存 GPU（切断 autograd 图，不占显存），epoch 末
-            # 统一 .item() —— 原先每 minibatch ~6 次同步；各 key 的均值口径不变
-            losses.append(
-                {
-                    "loss": loss.detach(),
-                    "ploss": ploss.detach(),
-                    "vloss": vloss.detach(),
-                    "ent": ent.detach().mean(),
-                    "kl": kl.detach().mean() if phase is not None else 0.0,
-                    "expl": expl_coef,
-                    "dreg": (
-                        dec_reg.detach()
-                        if getattr(self.policy, "decoder_ft", False)
-                        else 0.0
-                    ),
-                    "nan_skip": nan_skip,
-                }
-            )
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                nan_skip = 0.0
+                if self.skip_nan and self._grads_nonfinite():
+                    # E44: NaN guard -- drop this minibatch's update (keeps the
+                    # fine-tuned decoder from exploding the run)
+                    self.optimizer.zero_grad()
+                    nan_skip = 1.0
+                else:
+                    self.optimizer.step()
+                # 统计张量先 detach 存 GPU（切断 autograd 图，不占显存），epoch 末
+                # 统一 .item() —— 原先每 minibatch ~6 次同步；各 key 的均值口径不变
+                losses.append(
+                    {
+                        "loss": loss.detach(),
+                        "ploss": ploss.detach(),
+                        "vloss": vloss.detach(),
+                        "ent": ent.detach().mean(),
+                        "kl_prior": kl.detach().mean() if phase is not None else 0.0,
+                        "approx_kl": approx_kl.detach(),
+                        "clip_frac": clip_frac.detach(),
+                        "act_std": (
+                            act_std.detach()
+                            if isinstance(act_std, torch.Tensor)
+                            else act_std
+                        ),
+                        "expl": expl_coef,
+                        "dreg": (
+                            dec_reg.detach()
+                            if getattr(self.policy, "decoder_ft", False)
+                            else 0.0
+                        ),
+                        "nan_skip": nan_skip,
+                    }
+                )
         self.it += 1
         for d in losses:
-            d.setdefault("kl", 0.0)
+            d.setdefault("kl_prior", 0.0)
         # 张量 key 在 GPU 上 stack+mean 后每 key 只做一次 .item()；标量 key
         # （expl/nan_skip 等）仍走原 np.mean
         agg = {}

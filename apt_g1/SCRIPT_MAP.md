@@ -125,9 +125,9 @@
 | `terrain_cfg.py` | MODULE | 地形配置辅助（plane/rough/stairs/stones/discrete + **2026-08-15 G0 新增 `rough_paper`（论文形状：对称±噪声、0.2m 粗格）/ `rough_sym`（对称±噪声、0.1m 格，坑 vs 格子解耦对照）**） |
 | `token_window_vae.py` | MODULE | token VAE 三件：**E27 PhaseTokenVAE + E31 SpeedPhaseTokenVAE（+速度条件）+ E35 DirSpeedPhaseTokenVAE（+方向条件）**，冻结解码器供 RL |
 | `decft_policy.py` | MODULE | **E44 解码器微调策略**：E39 z头 → 冻结 VAE → token → **可训练 SONIC 解码器** → 29-d 关节目标动作（PPO 评分梯度直达解码器 + 官方解码器漂移正则） |
-| `ppo_core.py` | MODULE | 向量化 PPO（含论文式训练附加项；E44 增加 `decoder_ft` 分支与 `decoder_reg_coef`） |
-| `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略；TO42 修订 v4 增 `--ppo-minibatch`（默认 512 = 既有行为不变；2048envs 操作点用 4096）；**E49 增 `--token-mode/--token-phase-obs/--token-alpha/--token-bound/--token-stats`（直出 64d token，无 VAE）** |
-| `eval_apt_isaac.py` | 入口 | A/B/C/D 评测；**E49 增 token-mode 同款旗标** |
+| `ppo_core.py` | MODULE | 向量化 PPO（含论文式训练附加项；E44 增加 `decoder_ft` 分支与 `decoder_reg_coef`；**E49 修复：GAE 边界 done|trunc 都切断递推且不自举 + aux_executed=False 时 aux 不进 log_prob/entropy + 真 epoch 循环 + approx_kl/clip_frac/act_std 指标，stats 键 `kl` 更名 `kl_prior`**） |
+| `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略；TO42 修订 v4 增 `--ppo-minibatch`（默认 512 = 既有行为不变；2048envs 操作点用 4096）；**E49 增 `--token-mode/--token-phase-obs/--token-alpha/--token-bound/--token-stats`（直出 64d token，无 VAE）；E49 修复轮增 `--ppo-epochs`（默认 1 = 历史单遍）+ latent/token/to42 置 `aux_executed=False` + vx 拆 fwd（机体系带符号）/spd（模长，hist `vx` 键不变）双口径 + hist 增 approx_kl/clip_frac/act_std + `policy_it_0.pt` 初始快照** |
+| `eval_apt_isaac.py` | 入口 | A/B/C/D 评测；**E49 增 token-mode 同款旗标；E49 修复轮增 `--init-policy`（未训练初始化对照，`--checkpoint` 随之转 optional）** |
 | `rollout_log_joints.py` | 入口 | **无相机 rollout → npz**（base 位姿 + 29 关节角，SONIC order，供 `replay_render_mujoco.py` 渲染） |
 | `eval_fast.py` | 入口 | 守护式评测（只跑请求的 A/B/C/D 段） |
 | `render_walk.py` | 渲染 | 从 APT Isaac 环境渲染短行走视频 |
@@ -135,6 +135,7 @@
 | `parity_decoder.py` / `parity_layers.py` / `parity_onnx2torch.py` | DEV | ONNX↔torch 解码器数值一致性校验 |
 | `check_isaac.py` / `smoke_isaac.py` | DEV | Isaac venv 导入检查 / 环境冒烟 |
 | `e49_smoke.py` | DEV | **E49 直出 token 模式不变量冒烟**（obs 维度 / decoder 收到的映射 token / 反馈槽=原始 a / B 臂 φ obs 逐位 / 初始动作统计；2026-09-05 登记） |
+| `e49_gae_test.py` | DEV | **E49 训练器修复确定性测试**（纯 torch CPU，无 isaaclab 依赖，仓库根 `PYTHONPATH=. python apt_g1/isaac/e49_gae_test.py`：朴素 GAE 对拍 / 手算边界小例 / done+trunc+last_value 切断不变性 / aux_executed=False 剔除不变量 / num_epochs step 计数 / approx_kl+clip_frac+kl_prior 指标 sanity；六用例全 PASS exit 0；2026-09-05 登记） |
 | `dbg_path.py` | DEV | 诊断 sys.path / PYTHONPATH |
 | `server_apt_flat_env.py` | **FORK** | `apt_flat_env.py` 的服务端分叉（同源，body 已分叉） |
 | `server_train_apt_isaac.py` | **FORK** | `train_apt_isaac.py` 的服务端分叉 |

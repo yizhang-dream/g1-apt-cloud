@@ -122,6 +122,10 @@ def build_args():
     # TO42 修订 v4（论文式大并行操作点）：2048 envs × 500it 配 minibatch 4096
     # （24×2048/4096 = 12 minibatch/epoch，整除）；默认 512 = 既有行为逐字不变
     ap.add_argument("--ppo-minibatch", type=int, default=512)
+    # E49 修复：update() 改为真 epoch 循环后把 epoch 数暴露到 CLI；
+    # 默认 1 = 历史 run 的实际行为（旧 update 从未循环，单遍）
+    ap.add_argument("--ppo-epochs", type=int, default=1,
+                    help="PPO epochs per update (historical behavior = single pass)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="outputs/isaac_apt_aux")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
@@ -323,6 +327,10 @@ def main():
                        and not cli.token_mode),
             latent_dim=64 if cli.token_mode else (16 if cfg.latent_mode else 0),
         ).to("cuda:0")
+        if cli.latent_mode or cli.token_mode or to42_active:
+            # E49：这些模式 action = act["phase"]（aux 采样后丢弃），aux 头
+            # 不进 PPO log_prob/entropy —— 与 update() 的重算同一约定
+            policy.aux_executed = False
     latent_prior_mean = None
     if cli.latent_mode and cli.latent_kl_prior == "walk":
         zw = np.load(str(Path(cli.latent_vae_path).parent / "z_walk.npy"))
@@ -344,6 +352,7 @@ def main():
         decoder_lr=cli.decoder_lr if cli.decft else None,
         decoder_wreg_coef=cli.decoder_wreg if cli.decft else 0.0,
         minibatch_size=cli.ppo_minibatch,
+        num_epochs=cli.ppo_epochs,
         fused=cli.fused_adam,
     )
     start_it = 0
@@ -367,6 +376,11 @@ def main():
                 f"[train] resume iteration {start_it} >= --iters {cli.iters}; "
                 "pass a cumulative --iters larger than the checkpoint iteration"
             )
+
+    # E49：未训练初始化对照用的 iter-0 初始权重快照（resume 时 start_it>0，
+    # 原始 init 已不存在，不重复落盘）
+    if start_it == 0:
+        torch.save(policy.state_dict(), out_dir / "policy_it_0.pt")
 
     rollout = cli.rollout
     T, N, D = rollout, env.num_envs, cfg.observation_space
@@ -412,7 +426,15 @@ def main():
 
     if buf_phase_none:
         buf["phase"] = None
-    hist = {"rewards": [], "vx": [], "fall_rate": []}
+    hist = {
+        "rewards": [],
+        "vx": [],
+        "vx_fwd": [],
+        "fall_rate": [],
+        "approx_kl": [],
+        "clip_frac": [],
+        "act_std": [],
+    }
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
 
@@ -509,13 +531,19 @@ def main():
         fall_rate = float(buf["done"].float().mean().item())
         hist["rewards"].append(mean_rew)
         hist["fall_rate"].append(fall_rate)
-        # mean vx from env data
-        vx = float(
+        # E49 修正 vx 口径：fwd = 机体系前后向速度（带符号，+x = 前进）；
+        # 原模长口径保留为 spd（hist["vx"] 键语义不变，旧工具兼容）
+        fwd = float(env.robot.data.root_lin_vel_b[:, 0].mean().detach())
+        spd = float(
             torch.mean(
                 torch.norm(env.robot.data.root_lin_vel_w[:, :2], dim=1).detach().cpu()
             )
         )
-        hist["vx"].append(vx)
+        hist["vx"].append(spd)
+        hist["vx_fwd"].append(fwd)
+        hist["approx_kl"].append(stats["approx_kl"])
+        hist["clip_frac"].append(stats["clip_frac"])
+        hist["act_std"].append(stats["act_std"])
         if cli.speed_log_interval > 0 and (
             it % cli.speed_log_interval == 0 or it == cli.iters - 1
         ):
@@ -541,10 +569,12 @@ def main():
                 )
             print(
                 f"[{it}/{cli.iters}] rew={mean_rew:.3f} fall={fall_rate:.3f} "
-                f"vx={vx:.3f} loss={stats['loss']:.4f} ploss={stats['ploss']:.4f} "
-                f"ent={stats['ent']:.4f} kl={stats['kl']:.6f} "
-                f"expl={stats['expl']:.5f} dreg={stats['dreg']:.5f} "
-                f"dec_dw={dec_dw:.4f} dt={it_time:.1f}s",
+                f"fwd={fwd:.3f} spd={spd:.3f} loss={stats['loss']:.4f} "
+                f"ploss={stats['ploss']:.4f} ent={stats['ent']:.4f} "
+                f"klp={stats['kl_prior']:.6f} expl={stats['expl']:.5f} "
+                f"dreg={stats['dreg']:.5f} dec_dw={dec_dw:.4f} "
+                f"dt={it_time:.1f}s akl={stats['approx_kl']:.5f} "
+                f"clip={stats['clip_frac']:.3f} std={stats['act_std']:.4f}",
                 flush=True,
             )
         if (it + 1) % 50 == 0 or it == cli.iters - 1:

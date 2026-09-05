@@ -25,7 +25,17 @@ import torch
 def build_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--headless", action="store_true", default=True)
-    ap.add_argument("--checkpoint", required=True)
+    ap.add_argument("--checkpoint", default=None)
+    # E49：未训练初始化对照——跳过 checkpoint 加载，直接用按旗标新构造的
+    # policy 评测（确定性模式照旧；token 模式下确定性初始策略 ≈ 固定官方
+    # 均值 token 回放）
+    ap.add_argument(
+        "--init-policy",
+        action="store_true",
+        help="未训练初始化对照：跳过 --checkpoint 加载，直接用按旗标新构造的 "
+        "policy 评测（确定性模式照旧；token 模式下确定性初始策略 ≈ 固定官方"
+        "均值 token 回放）",
+    )
     ap.add_argument("--tests", default="A,B,C,D")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
     ap.add_argument("--out", default="outputs/isaac_eval.json")
@@ -404,12 +414,20 @@ def main():
         env = AptFlatG1VanillaEnv(cfg)
     else:
         env = AptFlatG1Env(cfg)
-    try:
-        policy.load_state_dict(torch.load(cli.checkpoint, map_location="cuda:0"))
+    if cli.init_policy:
+        # 未训练初始化对照：直接用按现有旗标新构造的 policy（确定性模式照旧）
         policy.eval()
-        print("[eval] loaded checkpoint", cli.checkpoint)
-    except FileNotFoundError:
-        print("[eval] WARNING: checkpoint not found, aux=0 only")
+        print("[eval] --init-policy: using freshly initialized policy "
+              "(no checkpoint loaded)")
+    else:
+        if cli.checkpoint is None:
+            raise SystemExit("[eval] pass --checkpoint or --init-policy")
+        try:
+            policy.load_state_dict(torch.load(cli.checkpoint, map_location="cuda:0"))
+            policy.eval()
+            print("[eval] loaded checkpoint", cli.checkpoint)
+        except FileNotFoundError:
+            print("[eval] WARNING: checkpoint not found, aux=0 only")
 
     # initial obs
     env._vanilla = cli.env == "vanilla"
