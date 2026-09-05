@@ -5,10 +5,11 @@
 > `refine-logs/README.md`（扇出树根）｜上游：`DS_GAIT_MANIFOLD_PLAN.md`
 > （Phase 1 采集主案，本文是它的数据放大器/备胎，不替代）、
 > `LITERATURE_SURVEY_DS_MANIFOLD.md`（SONIC 论文精读 §5 = 本选项出处）｜
-> 执行事实源：`tracker/D.md`｜状态：**活跃（09-05 起定位 =
-> `DS_TERRAIN_ADAPTER_CHARTER.md` 纲领阶段一主数据源；B1 完成 + encoder
-> MD5 全等、B2 编码链路全通 = D036–D038；数据源改道 bones_seed_smpl
-> 32.3GB 零门禁 SMPL 镜像，下载进行中）**
+> 执行事实源：`tracker/D.md`｜状态：**活跃（09-05b 起升格 = DS 线唯一
+> 数据源（owner 指令自采退役）；执行协议 = `DS_OFFICIAL_DATA_PLAN.md`；
+> B1 完成 + encoder MD5 全等、B2-g1 编码链路全通 = D036–D038、SMPL 镜像
+> 131,455 段解压验收（0b33dab）；下一步 = B2-s（SMPL 模式 obs 布局逆向
+> + 冒烟）= 全计划第一闸）**
 
 ---
 
