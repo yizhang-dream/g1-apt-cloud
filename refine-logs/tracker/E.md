@@ -262,7 +262,9 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
 
 > 结构：策略随机初始化**直出 64d token**（无自训 VAE）→ 冻结 SONIC decoder → 29 dof 目标；
 > `token = mean + α·std⊙a`（α=1，官方 g1-mode tokens 标定，无示范损失）；A 任务 = E45 同款单一前进配方。
-> 对照臂 = E45–E47（带 VAE 全套，已有）；归因臂 E49-B（obs+[sinφ,cosφ]）预注册未点火。
+> 对照臂 = E45–E47（带 VAE 全套，历史结果；新归因参照 = E49-VAE-ref-fix2-s0，
+> 09-06 中止于 it950 非完成态）；归因臂 E49-B 已跑毕（09-06 落账：相位 =
+> 有效表征变量、非优化稳定器）。
 > 冒烟全过（`e49_smoke.py`：obs 153/155、映射、反馈槽=原始 a、B 臂 φ 逐位、初始 a std=0.0182≈e⁻⁴）。
 > **owner 快速迭代新标准（09-05）**：发现问题立刻停/改，算力优先于协议跑满——本节 s1/tanh 两行即中止打捞产物。
 
@@ -279,6 +281,8 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
 | E49-trainer-fix2 | **训练器正确性修复二轮**（owner 钉死语义：timeout 自举必须用复位前终末状态价值，非下一局观测） | `apt_flat_env.py`（`_reset_idx` 前抓终末 obs→`_final_obs`）+ `ppo_core.py`（compute_gae 加 trunc_values：done→0 优先 / trunc→终末价值自举+递推切断 / t==T-1 trunc 优先于 last_value；update 末尾整批 no_grad **post_update_kl**=整轮更新后统一 KL，k3 口径）+ train（buf["trunc_value"] + last_value 修正 + hist pkl）| e49_gae_test 新 4 用例 | DONE | **10/10 PASS**（case7 超时自举 / case8 done 优先 / case9 末步 trunc 优先 / case10 None 回归逐位一致）；服务器部署 sha256 双端一致（apt_flat_env 59aad6bb / ppo_core cf62cc01 / train ffd81977 / e49_gae_test 244e5635）。**训练器版本自此冻结**，配方验证（诊断步骤 ④）以此为准；旧 run（fix-s0/lr1e4）带"trunc 自举=0"偏差，与新 run 不严格可比，归因时以新参照系为准 |
 | E49-diag-matrix | **诊断步骤②：2×2×3 短对照矩阵**（不训练，纯评测；fix_s0 臂 × A test cmd 0.8；eval 加 `--contract train`（20s episode+训练初态）+ `--num-rollouts`） | 3 ckpt {init, it_50, final} × 2 契约 {eval 60s, train 20s} × 2 模式 {det, sample}，共 12 格（4 格复用已有数据，8 格新跑，产物 `outputs/e49/diag/`） | disp/vx/fall 按格 | DONE | **it_50：四格全走**（eval-det 21.4m / eval-sample 21.2m / train-det 6.6m/20s / train-sample 6.6m）——行走对契约+采样双重扰动鲁棒；**final：四格全站**（0.09–0.22m、vx≈0.10）；**判读：环境契约差异与探索扰动两因子均否决 → final 站立 = 策略真退化**（预注册分支前两条排除，剩"站立回报更高？"vs"更新后丢行走"两候选待步骤③分项记录裁决）。**附带发现：init×train×sample 塌站立（0.10m）而 init×train×det 走 6.0m**——未训练策略（μ_head 初始输出+64 维采样联合）对采样敏感，init 类策略采样评测会定性失真；训练初期 rollout 全采样口径，其 fwd 低≠初始策略不会走 |
 | E49-A-fix2-s0 | **诊断步骤③④合并：冻结训练器配方验证**（fix_s0 逐字配方 + timeout 终末自举 + post_update_kl + `--diag-log` 分项窗口一致记录，10 个 d_* 量进 train_log.json；GAE 变化=与 fix_s0 唯一实质差异） | 128×1000，seed 0，`--token-mode --ppo-epochs 1 --diag-log` | 曲线+分项+双评 | DONE | **"final 塌站立"在修正训练器下复现**（final eval 零摔 disp 0.19–0.47m/vx 0.02–0.03 纯站立）→ trunc 自举缺陷非主因；it_50 形态不同：零摔 vx 0.68–0.70 但 disp 0.5–2.2m = **有速度无净位移**（GAE 变化→同配方不同动力学，非复现失败）。**退化路径分项首次全程可视**：it0 rew 1.659≈地板（d_up 0.990）→ it100 峰 1.731（d_xy 0.824 行走态）→ it340–390 探索摔期（rew 0.55–0.85，d_up 塌 0.20–0.37，drift 1.7）→ it680–730 akl 冲 3700–5100 → 尾段 rew 1.04–1.20、stand_frac 0.30–0.36、fwd_rate≈0（**动而不前进**，2/3 时间 |vx|>0.05）。**裁决材料**：行走峰 1.731 > 站立地板 1.641 > 尾段 1.04–1.20——奖励结构实际把行走排在纯站之上，且尾段连纯站都不是；"站立回报更高"在本 run 无直接支持，"更新后丢行走"（akl/clip 爆走段在案，clip 恒 0.833）权重上升——最终裁决归 owner |
+| E49-B-fix2-s0 | **归因臂：显式相位观测**（obs 追加 [sinφ,cosφ] 两维 =155d，A/B 单变量 = φ 可见性；fix2 冻结训练器逐字配方） | 128×1000，seed 0，`--token-mode --token-phase-obs --ppo-epochs 1 --diag-log` | 曲线+diag+双评（it_50/final，6 rollouts） | DONE | **it_50：6/6 零摔真直行 vx 0.450–0.453 / disp 23.7–24.3 m**（把 A-fix2 早期"有速度无净位移"改善为真直行，头段峰 it68 rew 1.7969 亦高于 fix2 的 1.7315）；**final：6/6 立即失败 disp≈0.001 m、h_min 0.201–0.229**。训练内两次退化形态不同：it170–260 KL 抬升期（akl 均值 352 ≈ 头段 7×，rew 降至 1.49）；it400 谷 0.302 即日恢复 1.41；**it575 低 KL 崩塌（akl 33.4，vx 0.53→1.75、drift 0.41→3.94，随后 fall 0.014–0.025）**；尾段 it999 rew 0.972、act_std 0.0299（四 run 最高）；clip 恒 0.83。**裁决（owner 09-06）：相位 = 有效表征变量（直行改善成立），非优化稳定器（未阻止退化）** |
+| E49-VAE-ref-fix2-s0 | **A/B 比较的 VAE 参照**（同修正训练器 latent 模式；E45–E47 降历史结果后的新归因参照；owner 09-06 中止） | 128×950（中止），seed 0，latent 模式 + `--diag-log` | 曲线+diag（未做终点评测） | **ABORTED@it950**（owner 中止；ckpt/日志保留；非跑满终态、不作完成结果——owner 09-06 钉死） | it301 峰 **rew 2.0781** 正常行走；**it460–470 首退化**：rew 1.88→0.715，akl 先塌 158.9→5.6→3.2，vx_fwd 转负 −0.54、drift 0.05→0.58，clip 全程唯一一次掉离 0.83（0.785），随后恢复 1.879；it690–760 二次退化（低 KL，akl 低至 1.09，rew 0.92–1.39，fall 峰值仅 0.001–0.004）；it880–949 恢复 1.684；**中止点 it949/950 = 1.832/1.861 零摔、akl 20–55、act_std 0.0258**。**判读：VAE 能缓冲直出 64d token 的退化（退化仍发生但幅度小/恢复快/近零摔），但不证其在修正训练器下长期稳定** |
 
 **E49-A 结论（A 问已答 + 新问题 = 训练崩坏，修复调研中）**：
 
@@ -343,3 +347,26 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
    A/B 比较须补**同修正训练器的 VAE 参照**（E45–E47 保留为历史结果，
    不承担新归因）；每路线比较自己的初始化/固定预算终态/按预定规则选的
    快照，区分训练种子与评测种子。诊断四步与分支判读表见 E49_STATUS §3c。
+7. **退化调研轮（09-06，无训练；结论全文与 E49-C 执行计划 =
+   `refine-logs/E49_KL_GUARD_PLAN.md`，本条只摘要）**：① 四 run 日志
+   时序**否决「KL/裁剪失控打崩策略」**——三次退化谷底全在 akl 低位+
+   速度失控处（fix2 it656 akl 65.9/vx 1.81；E49-B it575 akl 33.4/vx 1.75/
+   drift 3.94；VAE it468 akl 5.6/后漂 −0.54），最大 KL spike（fix2 it680
+   akl 5098/pkl 16496）与 rew 恢复同相——形态 = 大 KL 是大修正步、退化
+   是慢漂移随机游走；② **clip 恒 0.833 = 5/6 机制实锤**：epochs 1×6
+   minibatch 下首个 mb ratio≡1（logp_old 存自 rollout 策略，裁剪零约束
+   = 纯策略梯度步）、后 5 个联合概率比（64d 小 σ 求和）几乎全裁 →
+   裁剪完全失效 = "每 iter 一次无约束步"，owner"必须回滚非 early-stop"
+   直觉被代码证实（ppo_core.py:294,313-341）；③ act_std 四 run 单调涨
+   （退化 run +43–64%，不学的 lr1e4 仅 +8%）且**三项 loss 推 log_std
+   上行**（熵 0.001×64d / expl_coef×pd 熵 / kl_prior 项 logσ<0 梯度为
+   负）= 嫌疑队列第 1；日志 expl 键 = 探索系数 schedule **非** explained
+   variance（vloss/expl_var 此前不落盘 = 价值健康度不可观测）= 嫌疑队列
+   第 2；④ 外部锚：rsl_rl/Isaac Lab 官方配方默认 per-minibatch
+   desired_kl=0.01 自适应 lr（v3.0.0 起默认开）、APT 原文 Table S4
+   kl threshold 0.008——我方训练器零 KL 反馈环 = 与官方配方最大单点
+   差异；⑤ **owner 裁决下一干预 = E49-C KL 信任域守卫**（判据量换解析
+   对角高斯 KL 之 rsl_rl 口径、超阈回滚+缩 lr、探针定阈→单 seed；奖励/
+   log_std/熵全部冻结不混做），协议预注册于 E49_KL_GUARD_PLAN §B；
+   提取数据件在本地 `tmp/e49_investigation/`（gitignored，含四 run 关键
+   窗口 CSV 与服务器路径索引）。
