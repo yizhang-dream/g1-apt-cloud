@@ -36,6 +36,15 @@ def build_args():
         "policy 评测（确定性模式照旧；token 模式下确定性初始策略 ≈ 固定官方"
         "均值 token 回放）",
     )
+    # E49 诊断：采样 vs 确定性对照。--sample 时动作改用策略分布采样
+    # (deterministic=False，与训练 rollout 同口径)；默认 False = 历史确定性
+    # 评测逐位不变。JSON 顶层会标注 mode: "det" | "sample"。
+    ap.add_argument(
+        "--sample",
+        action="store_true",
+        help="sample actions from the policy distribution (deterministic="
+        "False, same口径 as the training rollout) instead of the mean action",
+    )
     ap.add_argument("--tests", default="A,B,C,D")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
     ap.add_argument("--out", default="outputs/isaac_eval.json")
@@ -184,11 +193,24 @@ def rollout(
     latent_policy=False,
     yaw_bias=0.0,  # E33: open-loop yaw command offset (rad/s) to cancel a
     # systematic turning bias (e.g. E31's -4 deg/s left drift)
+    sample: bool = False,  # E49 诊断: True = act(deterministic=False) 采样动作
 ):
     """schedule: list of (vx, vy, seconds) or (Command, seconds) pairs."""
     from apt_g1.encoder import Command
 
     jitter_and_reset(env, seed)
+    # E49 --sample: 单次 act() 按步记忆化。det 模式与旧的分散调用逐位等价
+    # （均值头与调用次数无关）；sample 模式下保证 aux/latent/gate 分支消费
+    # 同一次采样 draw（训练 rollout 就是每步一次 act）。obs 更新后清缓存。
+    _act_cache: dict = {}
+
+    def _act():
+        if "out" not in _act_cache:
+            with torch.no_grad():
+                _act_cache["out"] = policy.act(
+                    env._last_obs, deterministic=not sample
+                )
+        return _act_cache["out"]
     total_steps = int(
         sum(entry[2] if len(entry) == 3 else entry[1] for entry in schedule) * 50
     )
@@ -226,32 +248,27 @@ def rollout(
                     body_ids=[env._root_body_idx[0]],
                 )
             if use_aux:
-                with torch.no_grad():
-                    act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                act, _, _, _, _ = _act()
                 aux = act["aux"]
                 if aux_zero:
                     aux = torch.zeros_like(aux)
             else:
                 aux = torch.zeros(1, 12, dtype=torch.float32, device=env.device)
             if getattr(env, "_vanilla", False):
-                with torch.no_grad():
-                    act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                act, _, _, _, _ = _act()
                 action = act["aux"]
             elif getattr(env, "_decft", False):
                 # E44: policy action IS the 29-d joint-target vector
                 if not use_aux:  # should not happen (decft keys force use_aux)
-                    with torch.no_grad():
-                        act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                    act, _, _, _, _ = _act()
                 action = act["aux"]
             elif getattr(env, "_gate_policy", False):
-                with torch.no_grad():
-                    act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                act, _, _, _, _ = _act()
                 action = torch.zeros(1, 13, dtype=torch.float32, device=env.device)
                 action[:, :12] = aux
                 action[:, 12] = act["gate"].float()
             elif latent_policy:
-                with torch.no_grad():
-                    act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                act, _, _, _, _ = _act()
                 action = act["latent"]
                 if getattr(env, "_latent_residual", False):
                     # E48: append the full-joint residual (policy aux head).
@@ -265,13 +282,13 @@ def rollout(
                 action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
                 action[:, 2:] = aux
                 if phase_policy:
-                    with torch.no_grad():
-                        act, _, _, _, _ = policy.act(env._last_obs, deterministic=True)
+                    act, _, _, _, _ = _act()
                     if phase_zero:
                         act["phase"] = torch.zeros_like(act["phase"])
                     action[:, :2] = act["phase"]
             obs_dict, reward, term, trunc, _ = env.step(action)
             env._last_obs = obs_dict["policy"]
+            _act_cache.clear()
             if t in imp:
                 env.robot.set_external_force_and_torque(
                     torch.zeros(1, 1, 3, dtype=torch.float32, device=env.device),
@@ -436,6 +453,11 @@ def main():
     obs_dict, _ = env.reset()
     env._last_obs = obs_dict["policy"]
 
+    # E49: action mode annotation ("det" = mean action [历史行为], "sample" =
+    # policy-distribution sampling, training-rollout 口径)
+    mode = "sample" if cli.sample else "det"
+    print(f"[eval] act mode = {mode}", flush=True)
+
     tests = set(cli.tests.split(","))
     out = {"A_walk60": {}, "B_disturbance": {}, "C_switch": {}, "D_jump": {}}
     pp = cli.phase_mode
@@ -458,9 +480,9 @@ def main():
             out["A_walk60"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(cli.a_cmd_vx, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
+                r = rollout(env, policy, [(cli.a_cmd_vx, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
                 out["A_walk60"][key][f"seed{seed}"] = r
-                print(f"A walk{cli.a_cmd_vx} {key} seed{seed} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
+                print(f"A walk{cli.a_cmd_vx} {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
 
     # ---- B. disturbance grid ----
 
@@ -472,9 +494,9 @@ def main():
             for dname, dvec in dirs.items():
                 for seed in [0, 1, 2]:
                     imp = [(500, dvec), (1250, dvec)]
-                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
+                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
                     out["B_disturbance"][key][f"{dname}_seed{seed}"] = r
-                    print(f"B {dname} {key} seed{seed} done={r['completed']} h_min={r['h_min']}", flush=True)
+                    print(f"B {dname} {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']}", flush=True)
 
     # ---- C. command-switch marathon ----
 
@@ -488,9 +510,9 @@ def main():
             out["C_switch"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
+                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
                 out["C_switch"][key][f"seed{seed}"] = r
-                print(f"C switch {key} seed{seed} done={r['completed']} fall={r['fall_step']} h_min={r['h_min']}", flush=True)
+                print(f"C switch {key} seed{seed} mode={mode} done={r['completed']} fall={r['fall_step']} h_min={r['h_min']}", flush=True)
 
     # ---- D. jump (explicit mode) ----
 
@@ -504,12 +526,14 @@ def main():
             out["D_jump"][key] = {}
             use_aux = key != "noaux"
             for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp)
+                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
                 out["D_jump"][key][f"seed{seed}"] = r
-                print(f"D jump {key} seed{seed} done={r['completed']} h_min={r['h_min']} vx={r['vx']}", flush=True)
+                print(f"D jump {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']} vx={r['vx']}", flush=True)
 
     if tests != {"A", "B", "C", "D"}:
         out = {k: v for k, v in out.items() if k.split("_")[0] in tests}
+    # E49: 顶层动作模式标注（放在 tests 过滤之后，避免被滤掉）
+    out["mode"] = mode
     with open(cli.out, "w") as f:
         json.dump(out, f, indent=1)
     print("saved", cli.out)

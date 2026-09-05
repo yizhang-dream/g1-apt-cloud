@@ -217,24 +217,37 @@ class PPOTrainer:
         dones: torch.Tensor,
         truncated: torch.Tensor,
         last_value: torch.Tensor,
+        trunc_values: "torch.Tensor | None" = None,
     ) -> torch.Tensor:
-        """rewards/values/dones/truncated: (T, N); returns advantages (T, N).
+        """rewards/values/dones/truncated: (T, N); trunc_values: (T, N) 或 None。
+        returns advantages (T, N).
 
-        边界语义：terminated（dones，摔倒）= 真终局 → 不自举 + 切断优势递推；
-        truncated（超时）= rollout 人为截断 → 切断递推。两者的自举都保持 0：
-        Isaac DirectRLEnv 在边界处返回的是复位后的 obs，其价值属于下一局，
-        终末状态价值不可得（生态同病，已知残留限制，勿在此试图"修好"）。
-        t == T-1 的 last_value 同样被 cont 掩码：摔倒/超时恰发生在 rollout
-        末步时不再泄漏复位态价值。
+        边界语义（E49 修订）：terminated（dones，摔倒）= 真终局 → 自举 0 +
+        切断优势递推；truncated（超时）= rollout 人为截断 → 递推仍切断，但
+        自举改用复位前终末状态的价值 trunc_values[t]（env._reset_idx 在 super()
+        之前截留终末 obs，非复位后 obs 的价值）；t == T-1 且 trunc 时
+        trunc_values[T-1] 优先于 last_value。trunc_values=None 时保持旧行为
+        （done/trunc 自举均为 0，向后兼容旧调用方）。
         """
         T, N = rewards.shape
         adv = torch.zeros_like(rewards)
         gae = torch.zeros(N, device=self.device)
         for t in reversed(range(T)):
             next_value = last_value if t == T - 1 else values[t + 1]
-            cont = (~(dones[t] | truncated[t])).float()
-            delta = rewards[t] + self.gamma * next_value * cont - values[t]
-            gae = delta + self.gamma * self.lam * cont * gae
+            rec = ~(dones[t] | truncated[t])  # 递推切断掩码：done 与 trunc 都切断
+            if trunc_values is None:
+                # 旧行为：cont 同控自举与递推，done/trunc 步自举均为 0
+                boot = rec
+            else:
+                # E49：仅 done 切断自举；超时步自举复位前终末状态价值
+                boot = ~dones[t]
+                next_value = torch.where(
+                    dones[t],
+                    torch.zeros_like(next_value),
+                    torch.where(truncated[t], trunc_values[t], next_value),
+                )
+            delta = rewards[t] + self.gamma * next_value * boot.float() - values[t]
+            gae = delta + self.gamma * self.lam * rec.float() * gae
             adv[t] = gae
         return adv
 
@@ -262,8 +275,11 @@ class PPOTrainer:
     ) -> dict:
         """rollout: obs (T,N,D), phase/aux/gate, logp, value, reward, done, trunc."""
         T, N = rollout["obs"].shape[:2]
+        # E49: rollout 带 "trunc_value"（复位前终末状态价值）时启用超时步自举
+        trunc_values = rollout.get("trunc_value")
         adv = self.compute_gae(
-            rollout["reward"], rollout["value"], rollout["done"], rollout["trunc"], rollout["last_value"]
+            rollout["reward"], rollout["value"], rollout["done"], rollout["trunc"], rollout["last_value"],
+            trunc_values=trunc_values,
         )
         returns = adv + rollout["value"]
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)
@@ -419,4 +435,28 @@ class PPOTrainer:
                 agg[k] = float(torch.stack(vals).mean().item())
             else:
                 agg[k] = float(np.mean(vals))
+        # E49: 整轮更新结束后的统一 KL 测量——no_grad 下用更新后的 policy 对
+        # 整批 rollout obs 重算联合 logp（与 minibatch 的 logp 同口径，含
+        # aux_executed / decoder_ft 分支），k3 估计与 approx_kl 同族，但样本
+        # = 整批 T*N、时机 = 全部 epoch 完成后（minibatch approx_kl 只反映
+        # 更新中途的洗牌子集）。
+        with torch.no_grad():
+            p_all = self.policy.forward_actor(obs)
+            if getattr(self.policy, "decoder_ft", False):
+                aux_mean_all, _ = self.policy.action_mean(phase, obs)
+                ad_all = Normal(aux_mean_all, p_all["aux_log_std"].exp())
+                lp_all = ad_all.log_prob(aux).sum(-1)
+            else:
+                ad_all = Normal(p_all["aux_mean"], p_all["aux_log_std"].exp())
+                lp_all = ad_all.log_prob(aux).sum(-1) if aux_scored else 0.0
+            if phase is not None:
+                pd_all = Normal(p_all["phase_mean"], p_all["phase_log_std"].exp())
+                lp_all = lp_all + pd_all.log_prob(phase).sum(-1)
+            if gate is not None:
+                gd_all = Categorical(logits=p_all["gate_logits"])
+                lp_all = lp_all + gd_all.log_prob(gate)
+            logratio_all = lp_all - logp_old
+            agg["post_update_kl"] = float(
+                (logratio_all.exp() - 1.0 - logratio_all).mean().item()
+            )
         return agg

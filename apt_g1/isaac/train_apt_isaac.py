@@ -415,6 +415,8 @@ def main():
         "reward": torch.zeros(T, N, device="cuda:0"),
         "done": torch.zeros(T, N, dtype=torch.bool, device="cuda:0"),
         "trunc": torch.zeros(T, N, dtype=torch.bool, device="cuda:0"),
+        # E49: 复位前终末状态价值（超时步自举）；非 trunc 位被 ×trunc 清零
+        "trunc_value": torch.zeros(T, N, device="cuda:0"),
     }
     if cli.gate_sel:
         buf["gate"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
@@ -434,6 +436,7 @@ def main():
         "approx_kl": [],
         "clip_frac": [],
         "act_std": [],
+        "post_update_kl": [],
     }
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
@@ -491,6 +494,14 @@ def main():
             buf["reward"][t] = rew
             buf["done"][t] = term
             buf["trunc"][t] = trunc
+            # E49: 超时步自举价值 = 复位前终末状态的价值。Isaac step 返回前
+            # 已把 obs 换成复位后新局观测，不能用它算；_final_obs 由 env 的
+            # _reset_idx 在 super() 之前截留。×trunc 把非 trunc 位清零防陈旧值。
+            final_obs = getattr(env, "_final_obs", None)
+            if final_obs is not None:
+                buf["trunc_value"][t] = (
+                    policy.get_value(final_obs).detach().squeeze(-1) * trunc
+                )
             obs = obs_dict["policy"]
             rew_sum += rew.sum()
             if (
@@ -514,7 +525,11 @@ def main():
                         sc, _ = env._router.phase_raw_batch(proprio, cmds)
                         phase_labels_buf[t] = torch.from_numpy(sc).to("cuda:0")
         last_val = policy.get_value(obs)
-        buf["last_value"] = last_val.detach()
+        # E49: T-1 步若有超时（trunc&~done）位，last_value（复位后 obs 的价值）
+        # 对这些位无意义，用复位前终末状态价值覆盖
+        m_last = buf["trunc"][T - 1] & ~buf["done"][T - 1]
+        last_val = torch.where(m_last, buf["trunc_value"][T - 1], last_val.detach())
+        buf["last_value"] = last_val
 
         warm_coef = 0.0
         warm_iters = (
@@ -544,6 +559,7 @@ def main():
         hist["approx_kl"].append(stats["approx_kl"])
         hist["clip_frac"].append(stats["clip_frac"])
         hist["act_std"].append(stats["act_std"])
+        hist["post_update_kl"].append(stats["post_update_kl"])
         if cli.speed_log_interval > 0 and (
             it % cli.speed_log_interval == 0 or it == cli.iters - 1
         ):
@@ -574,6 +590,7 @@ def main():
                 f"klp={stats['kl_prior']:.6f} expl={stats['expl']:.5f} "
                 f"dreg={stats['dreg']:.5f} dec_dw={dec_dw:.4f} "
                 f"dt={it_time:.1f}s akl={stats['approx_kl']:.5f} "
+                f"pkl={stats['post_update_kl']:.5f} "
                 f"clip={stats['clip_frac']:.3f} std={stats['act_std']:.4f}",
                 flush=True,
             )

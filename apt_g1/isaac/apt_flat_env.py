@@ -520,6 +520,8 @@ class AptFlatG1Env(DirectRLEnv):
         self._aux_rate = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
         self._last_res = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
+        # E49: 复位前终末状态观测（_reset_idx 在 super() 前截留），惰性分配
+        self._final_obs = None
         self._disturb = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._disturb_dir = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
         self._disturb_step = torch.full(
@@ -1085,6 +1087,21 @@ class AptFlatG1Env(DirectRLEnv):
         return terminated, truncated
 
     def _reset_idx(self, env_ids: Sequence[int]):
+        # E49: 在 super() 复位之前截留复位前终末状态的观测，供训练侧对超时步
+        # （trunc&~done）做价值自举——Isaac 的 step 在返回前已把 obs 换成复位后
+        # 新局的观测，训练侧拿不到终末状态价值。两个约束：
+        # ① 此时 reset 尚未发生，robot.data 仍是上一局的终末物理状态；
+        # ② decft 模式下该 obs 缺本步终末的 proprio history 帧（_post_step_history
+        #    在 step 返回后才 push），E49 token/latent 模式不含 history 块，不受影响。
+        env_ids_pre = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
+        if env_ids_pre.numel() > 0:
+            final_obs = self._get_observations()["policy"]
+            if self._final_obs is None:
+                self._final_obs = torch.zeros(
+                    self.num_envs, final_obs.shape[1],
+                    dtype=torch.float32, device=self.device,
+                )
+            self._final_obs[env_ids_pre] = final_obs[env_ids_pre].detach()
         super()._reset_idx(env_ids)
         env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
         n = len(env_ids)
