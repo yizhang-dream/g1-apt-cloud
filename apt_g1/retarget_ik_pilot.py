@@ -180,7 +180,6 @@ def main():
     # joint-name lookup for diagnostics + per-joint bounds from the official
     # envelope (+/- 0.25 rad margin) -- kills the classic knee/ankle flip
     # local minima of position-only IK
-    import mujoco as mjc
     jname_by_qadr = {}
     for i in range(m.njnt):
         if m.jnt_type[i] == 3:  # hinge
@@ -188,35 +187,73 @@ def main():
     dof_names = [jname_by_qadr.get(int(a), f"dof{j}") for j, a in enumerate(qadr)]
     lo = dof30[:n30].min(axis=0) - 0.25
     hi = dof30[:n30].max(axis=0) + 0.25
-    print(f"[ik] bounds from official envelope: "
-          f"{[(dof_names[j], round(float(lo[j]), 2), round(float(hi[j]), 2)) for j in range(29)][:6]} ...")
+
+    # root quat modes: the position targets cannot pin the pelvis orientation
+    # (global-scale proportion mismatch leaves a gauge freedom) -> FIX it:
+    #   official: paired-validation upper bound
+    #   skel:     convention-free skeleton frame x constant correction
+    #             (correction learned from the paired sample; production form)
+    l_hip = J30[:n, idx_by_name["LeftLeg"]]
+    r_hip = J30[:n, idx_by_name["RightLeg"]]
+    spine = J30[:n, idx_by_name["Spine2"]]
+    hips_mid = 0.5 * (l_hip + r_hip)
+    lat = r_hip - l_hip
+    up0 = spine - hips_mid
+    lat /= np.linalg.norm(lat, axis=1, keepdims=True)
+    up0 /= np.linalg.norm(up0, axis=1, keepdims=True)
+    f = np.cross(lat, up0)
+    f /= np.linalg.norm(f, axis=1, keepdims=True)
+    u = np.cross(f, lat)
+    q_skel = np.zeros((n, 4))
+    for t in range(n):
+        q_skel[t] = mat_to_quat(R @ np.stack([f[t], lat[t], u[t]], axis=1))
+    q_skel /= np.linalg.norm(q_skel, axis=1, keepdims=True)
+    # constant correction (validation): q_off ~ q_corr (x) q_skel
+    q_corr = qmul_batch(quat30[:n], qconj_batch(q_skel))
+    q_corr *= np.where(q_corr[:, 0:1] < 0, -1.0, 1.0)
+    q_corr_mean = q_corr.mean(axis=0)
+    q_corr_mean /= np.linalg.norm(q_corr_mean)
+    corr_err = geodesic_deg(qmul_batch(np.tile(q_corr_mean, (n, 1)), q_skel), quat30[:n])
+    print(f"[quat] skel+const-correction vs official: mean {corr_err.mean():.2f} "
+          f"p95 {np.percentile(corr_err, 95):.2f} deg (correction spread "
+          f"{float(np.linalg.norm(q_corr - q_corr_mean, axis=1).mean()):.3f})")
+
+    quat_modes = {
+        "official": quat30[:n],
+        "skel_corrected": qmul_batch(np.tile(q_corr_mean, (n, 1)), q_skel),
+    }
 
     dof_ik = np.zeros((n, 29))
-    quat_ik = np.zeros((n, 4))
     res_hist = []
-    x = np.concatenate([quat_cur, DEFAULT_MJ])
-    lo_full = np.concatenate([np.full(4, -2.0), lo])
-    hi_full = np.concatenate([np.full(4, 2.0), hi])
-    for t in range(n):
-        x[4:] = np.clip(x[4:], lo, hi)
-        sol = least_squares(residual, x, args=(root_pos30[t], targets[t]),
-                            method="trf", max_nfev=80, xtol=1e-8, ftol=1e-8,
-                            bounds=(lo_full, hi_full))
-        x = sol.x.copy()
-        dof_ik[t] = x[4:]
-        quat_ik[t] = x[:4] / np.linalg.norm(x[:4])
-        res_hist.append(float(np.sqrt(np.mean(sol.fun ** 2))))
-        if (t + 1) % 200 == 0:
-            print(f"[ik] {t + 1}/{n} frames, rms {res_hist[-1] * 100:.1f} cm, "
-                  f"{(time.time() - t_start):.0f}s", flush=True)
-    print(f"[ik] done in {time.time() - t_start:.0f}s; residual rms mean "
-          f"{np.mean(res_hist) * 100:.2f} cm, p95 {np.percentile(res_hist, 95) * 100:.2f} cm")
+    x = np.clip(DEFAULT_MJ.copy(), lo, hi)
 
+    def residual_dof(dof, root_quat, root_pos, tgt):
+        set_pose(root_quat, dof, root_pos)
+        pos = data.xpos[tgt_bid]
+        return (pos - tgt[tgt_idx]).ravel()
+
+    dof_ik_by_mode = {}
+    for mode_name, quat_fix in quat_modes.items():
+        xd = x.copy()
+        dd = np.zeros((n, 29))
+        hh = []
+        for t in range(n):
+            sol = least_squares(residual_dof, xd, args=(quat_fix[t], root_pos30[t], targets[t]),
+                                method="trf", max_nfev=60, xtol=1e-8, ftol=1e-8,
+                                bounds=(lo, hi))
+            xd = sol.x.copy()
+            dd[t] = xd
+            hh.append(float(np.sqrt(np.mean(sol.fun ** 2))))
+            if (t + 1) % 200 == 0:
+                print(f"[ik:{mode_name}] {t + 1}/{n} rms {hh[-1] * 100:.1f} cm "
+                      f"({time.time() - t_start:.0f}s)", flush=True)
+        dof_ik_by_mode[mode_name] = dd
+        print(f"[ik:{mode_name}] done, rms mean {np.mean(hh) * 100:.2f} cm "
+              f"p95 {np.percentile(hh, 95) * 100:.2f} cm")
     # ---- wrist convention: position targets cannot observe the 6 wrist dofs
     # (all targets sit at/before wrist_roll origins) -> learn their per-dim
     # constant from the paired official retargeting
-    res = {"n_frames": n, "ik_residual_rms_cm": round(float(np.mean(res_hist)) * 100, 2),
-           "ik_residual_p95_cm": round(float(np.percentile(res_hist, 95)) * 100, 2)}
+    res = {"n_frames": n}
     isaac_wrist = {23, 24, 25, 26, 27, 28}
     mujoco_wrist = [int(j) for j in range(29) if M2I[j] in isaac_wrist]
     official_wrist_mean = dof30[:n30][:, mujoco_wrist].mean(axis=0)
@@ -224,91 +261,91 @@ def main():
     print(f"[wrist] mujoco dims {mujoco_wrist}; official mean "
           f"{np.round(official_wrist_mean, 2).tolist()} std "
           f"{np.round(official_wrist_std, 3).tolist()}")
-    dof_ik_pinned = dof_ik.copy()
-    dof_ik_pinned[:, mujoco_wrist] = official_wrist_mean[None, :]
     res["wrist_convention"] = {"mujoco_dims": mujoco_wrist,
                                "official_mean": official_wrist_mean.tolist(),
                                "official_std": official_wrist_std.tolist()}
 
-    # ---- validation vs official
-    for tag, dd in (("free_wrist", dof_ik), ("wrist_pinned", dof_ik_pinned)):
-        mae = np.abs(dd[:n30] - dof30[:n]).mean(axis=1)
-        pj = np.abs(dd[:n30] - dof30[:n]).mean(axis=0)
-        worst = np.argsort(-pj)[:5]
-        res[f"dof_mae_{tag}_rad"] = round(float(mae.mean()), 4)
-        res[f"dof_mae_{tag}_worst5_mujoco_dim"] = [
-            {"dim": int(j), "joint": dof_names[j], "mae_rad": round(float(pj[j]), 4),
-             "isaac_dim": int(M2I[j]),
-             "official_mean": round(float(dof30[:n30][:, j].mean()), 3),
-             "ik_mean": round(float(dd[:n30][:, j].mean()), 3)} for j in worst]
-        print(f"[val:{tag}] dof MAE vs official = {mae.mean():.4f} rad (worst "
-              f"{[(int(j), round(float(pj[j]), 3)) for j in worst]})")
-    mae = np.abs(dof_ik_pinned[:n30] - dof30[:n]).mean(axis=1)
-    pj = np.abs(dof_ik_pinned[:n30] - dof30[:n]).mean(axis=0)
-    qerr = geodesic_deg(quat_ik[:n30], quat30[:n])
-    res["root_quat_geodesic_deg_mean"] = round(float(qerr.mean()), 2)
-    res["root_quat_geodesic_deg_p95"] = round(float(np.percentile(qerr, 95)), 2)
-    print(f"[val] root quat geodesic vs official: mean {qerr.mean():.2f} p95 {np.percentile(qerr, 95):.2f} deg")
-
-    # ---- loopback: g1-mode encode OUR dof (wrist-pinned) -> decoder roundtrip
-    dof50 = eb.resample(dof_ik_pinned, 30.0, 50.0)
-    quat50 = eb.resample_quat(quat_ik, 30.0, 50.0)
-    n50 = len(dof50)
-    jp_mj = dof50
-    jp_isaac = dof50[:, M2I]
-    jv_isaac = (np.vstack([np.zeros((1, 29)), np.diff(dof50, axis=0) * 50.0]))[:, M2I]
-    bq = quat50.reshape(-1, 1, 4)
-    apply_delta = eb._qn(eb._qmul(eb._heading(np.array([1.0, 0, 0, 0])), eb._heading_inv(bq[0, 0])))
-    import onnxruntime as ort
-    enc = ort.InferenceSession(ENC_ONNX, providers=["CPUExecutionProvider"])
-    iname = enc.get_inputs()[0].name
-    tokens = np.zeros((n50, 64), dtype=np.float32)
-    for t in range(n50):
-        obs = eb.build_obs(t, jp_isaac, jv_isaac, bq, apply_delta, anchor="ref-rel")
-        tokens[t] = enc.run(None, {iname: obs[None]})[0][0].astype(np.float32)
-    lat_tokens = tokens.astype(np.float64) * 16.0
-    viol = float((np.abs(lat_tokens - np.round(lat_tokens)) > 0.05).mean())
-
     dof50_official = eb.resample(dof30[:n30], 30.0, 50.0)
     jp_isaac_ref = dof50_official[:, M2I]
     dec = SonicOnnxDecoder(DEC_ONNX)
-    omega_body = np.zeros((n50, 3))
-    for t in range(n50):
-        a, bb = quat50[min(t + 1, n50 - 1)], quat50[max(t - 1, 0)]
-        step = (min(t + 1, n50 - 1) - max(t - 1, 0)) / 50.0
-        dq = eb._qmul(a, eb._qconj(bb))
-        if dq[0] < 0:
-            dq = -dq
-        w_world = 2.0 * dq[1:] / max(dq[0], 1e-6) / max(step, 1e-6)
-        omega_body[t] = eb._quat_rotate_inverse(quat50[t], w_world)
-    grav = np.array([eb._quat_rotate_inverse(qq, np.array([0.0, 0.0, -1.0])) for qq in quat50])
+    import onnxruntime as ort
+    enc = ort.InferenceSession(ENC_ONNX, providers=["CPUExecutionProvider"])
+    iname = enc.get_inputs()[0].name
+    save = {}
+    dof50_by_mode = {}
 
-    def sonic_history(t):
-        idx = np.clip(np.arange(t - 9, t + 1), 0, n50 - 1)
-        return {
-            "base_angular_velocity": omega_body[idx].astype(np.float32),
-            "body_joint_positions": ((dof50[idx] - DEFAULT_MJ)[:, M2I]).astype(np.float32),
-            "body_joint_velocities": jv_isaac[idx].astype(np.float32),
-            "last_actions": (((dof50[idx] - DEFAULT_MJ) / SONIC_ACTION_SCALE_MUJOCO)[:, M2I]).astype(np.float32),
-            "gravity_dir": grav[idx].astype(np.float32),
-        }
+    for mode_name, dd in dof_ik_by_mode.items():
+        dp = dd.copy()
+        dp[:, mujoco_wrist] = official_wrist_mean[None, :]
+        mae = np.abs(dp[:n30] - dof30[:n]).mean(axis=1)
+        pj = np.abs(dp[:n30] - dof30[:n]).mean(axis=0)
+        worst = np.argsort(-pj)[:5]
+        res.setdefault("dof_mae", {})[mode_name] = {
+            "mean_rad": round(float(mae.mean()), 4),
+            "worst5": [{"dim": int(j), "joint": dof_names[j],
+                        "mae_rad": round(float(pj[j]), 4),
+                        "official_mean": round(float(dof30[:n30][:, j].mean()), 3),
+                        "ik_mean": round(float(dp[:n30][:, j].mean()), 3)} for j in worst]}
+        print(f"[val:{mode_name}] dof MAE vs official = {mae.mean():.4f} rad (worst "
+              f"{[(dof_names[int(j)], round(float(pj[j]), 3)) for j in worst]})")
 
-    err = []
-    for t in range(n50):
-        obs = dec.build_decoder_obs(tokens[t], sonic_history(t))
-        act = dec.session.run([dec.output_name], {dec.input_name: obs})[0][0]
-        q_des = DEFAULT_ISAAC + act.astype(np.float64) * SCALE_ISAAC
-        err.append(np.abs(q_des - jp_isaac_ref[t]))
-    rt_mae = float(np.mean(err))
-    print(f"[loopback] lattice viol {viol:.2e}; roundtrip MAE vs official = {rt_mae:.4f} rad "
-          f"(D038 official-dof reference: 0.109)")
+        # loopback: g1-mode encode OUR retargeted dof -> decoder vs official
+        quat_mode = quat_modes[mode_name]
+        dof50 = eb.resample(dp, 30.0, 50.0)
+        quat50 = eb.resample_quat(quat_mode, 30.0, 50.0)
+        n50 = len(dof50)
+        jp_isaac = dof50[:, M2I]
+        jv_isaac = (np.vstack([np.zeros((1, 29)), np.diff(dof50, axis=0) * 50.0]))[:, M2I]
+        bq = quat50.reshape(-1, 1, 4)
+        apply_delta = eb._qn(eb._qmul(eb._heading(np.array([1.0, 0, 0, 0])), eb._heading_inv(bq[0, 0])))
+        tokens = np.zeros((n50, 64), dtype=np.float32)
+        for t in range(n50):
+            obs = eb.build_obs(t, jp_isaac, jv_isaac, bq, apply_delta, anchor="ref-rel")
+            tokens[t] = enc.run(None, {iname: obs[None]})[0][0].astype(np.float32)
+        lat_tokens = tokens.astype(np.float64) * 16.0
+        viol = float((np.abs(lat_tokens - np.round(lat_tokens)) > 0.05).mean())
 
-    res["loopback"] = {"lattice_violation_rate": viol, "roundtrip_mae_rad": round(rt_mae, 4),
-                       "reference_d038_rad": 0.109}
-    np.savez(os.path.join(OUT_DIR, "m2_retargeted.npz"),
-             dof30=dof_ik, quat30=quat_ik, dof30_pinned=dof_ik_pinned,
-             dof50=dof50, quat50=quat50,
-             tokens=tokens, root_pos30=root_pos30[:n])
+        omega_body = np.zeros((n50, 3))
+        for t in range(n50):
+            a, bb = quat50[min(t + 1, n50 - 1)], quat50[max(t - 1, 0)]
+            step = (min(t + 1, n50 - 1) - max(t - 1, 0)) / 50.0
+            dq = eb._qmul(a, eb._qconj(bb))
+            if dq[0] < 0:
+                dq = -dq
+            w_world = 2.0 * dq[1:] / max(dq[0], 1e-6) / max(step, 1e-6)
+            omega_body[t] = eb._quat_rotate_inverse(quat50[t], w_world)
+        grav = np.array([eb._quat_rotate_inverse(qq, np.array([0.0, 0.0, -1.0])) for qq in quat50])
+
+        def sonic_history(t):
+            idx = np.clip(np.arange(t - 9, t + 1), 0, n50 - 1)
+            return {
+                "base_angular_velocity": omega_body[idx].astype(np.float32),
+                "body_joint_positions": ((dof50[idx] - DEFAULT_MJ)[:, M2I]).astype(np.float32),
+                "body_joint_velocities": jv_isaac[idx].astype(np.float32),
+                "last_actions": (((dof50[idx] - DEFAULT_MJ) / SONIC_ACTION_SCALE_MUJOCO)[:, M2I]).astype(np.float32),
+                "gravity_dir": grav[idx].astype(np.float32),
+            }
+
+        err = []
+        for t in range(n50):
+            obs = dec.build_decoder_obs(tokens[t], sonic_history(t))
+            act = dec.session.run([dec.output_name], {dec.input_name: obs})[0][0]
+            q_des = DEFAULT_ISAAC + act.astype(np.float64) * SCALE_ISAAC
+            err.append(np.abs(q_des - jp_isaac_ref[t]))
+        rt_mae = float(np.mean(err))
+        print(f"[loopback:{mode_name}] lattice viol {viol:.2e}; roundtrip MAE = {rt_mae:.4f} rad "
+              f"(D038 official-dof reference: 0.109)")
+        res.setdefault("loopback", {})[mode_name] = {
+            "lattice_violation_rate": viol, "roundtrip_mae_rad": round(rt_mae, 4)}
+        save[f"dof30_{mode_name}"] = dp
+        save[f"quat30_{mode_name}"] = quat_modes[mode_name][:n]
+        save[f"tokens_{mode_name}"] = tokens
+        dof50_by_mode[mode_name] = dof50
+
+    res["root_quat_skel_correction"] = {"quat_wxyz": q_corr_mean.tolist(),
+                                        "vs_official_mean_deg": round(float(corr_err.mean()), 2)}
+    save["dof50_official"] = dof50_official
+    np.savez(os.path.join(OUT_DIR, "m2_retargeted.npz"), **save)
     with open(args.out, "w") as f:
         json.dump(res, f, indent=1)
     print(f"[out] {args.out} + m2_retargeted.npz; total {time.time() - t_start:.0f}s")
