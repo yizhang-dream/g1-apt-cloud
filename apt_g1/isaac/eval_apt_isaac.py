@@ -60,6 +60,13 @@ def build_args():
     # 分布独立重复，双组结构不变）
     ap.add_argument("--num-rollouts", type=int, default=3,
                     help="number of rollouts per (test, key); default 3")
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="base evaluation seed for policy sampling and env reset RNG; "
+        "rollout i uses seed+i (default 0 preserves historical seed0..N-1)",
+    )
     # E49 诊断：cmd 随机化对照（仅 A test 生效）。每局 rollout 前从
     # uniform(0, --a-cmd-vx) 抽本局 vx 写入命令，并记进 JSON 该 rollout 条目
     # 的 cmd_vx 字段；默认 False = 固定 --a-cmd-vx（与已有数据单变量可比）。
@@ -404,6 +411,13 @@ def main():
     from apt_g1.isaac.terrain_cfg import make_terrain_importer_cfg
     from apt_g1.isaac.ppo_core import AptPPOPolicy
 
+    # Seed before policy/env construction: AptFlatG1Env._reset_idx samples the
+    # walk-clock phase from torch, and --sample consumes the same global RNG.
+    # Previously the per-rollout seed only controlled numpy reset jitter.
+    np.random.seed(cli.seed)
+    torch.manual_seed(cli.seed)
+    torch.cuda.manual_seed_all(cli.seed)
+
     if cli.env == "vanilla":
         cfg = AptFlatG1VanillaEnvCfg()
         policy = AptPPOPolicy(
@@ -479,8 +493,6 @@ def main():
     # E49 诊断 --contract：eval = 历史评测口径（120s 上限，实际最长 test 68s）；
     # train = 训练契约（20s 上限 = 250 控制步@50Hz，与训练 rollout 一致）
     cfg.episode_length_s = 20.0 if cli.contract == "train" else 120.0
-    # pin the global numpy RNG to the terrain seed before env creation
-    np.random.seed(cli.terrain_seed)
     if cli.env == "vanilla":
         env = AptFlatG1VanillaEnv(cfg)
     else:
@@ -514,7 +526,7 @@ def main():
     print(f"[eval] contract = {cli.contract} "
           f"(episode_length_s={cfg.episode_length_s}, "
           f"num_rollouts={cli.num_rollouts})", flush=True)
-    seeds = list(range(cli.num_rollouts))
+    seeds = list(range(cli.seed, cli.seed + cli.num_rollouts))
 
     tests = set(cli.tests.split(","))
     out = {"A_walk60": {}, "B_disturbance": {}, "C_switch": {}, "D_jump": {}}
@@ -604,6 +616,7 @@ def main():
     out["mode"] = mode
     # E49 诊断: 评测契约标注（"eval" = 历史口径 / "train" = 训练契约 20s）
     out["contract"] = cli.contract
+    out["seed"] = cli.seed
     with open(cli.out, "w") as f:
         json.dump(out, f, indent=1)
     print("saved", cli.out)
