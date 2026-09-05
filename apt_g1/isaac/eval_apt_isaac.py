@@ -57,6 +57,7 @@ def build_args():
     ap.add_argument("--token-mode", action="store_true")
     ap.add_argument("--token-phase-obs", action="store_true")
     ap.add_argument("--token-alpha", type=float, default=1.0)
+    ap.add_argument("--token-bound", choices=["none", "tanh"], default="none")
     ap.add_argument("--token-stats", default="",
                     help="npz with mean/std/rate from official g1-mode tokens")
     ap.add_argument("--res-scale", type=float, default=0.4)
@@ -379,6 +380,7 @@ def main():
     cfg.token_mode = cli.token_mode
     cfg.token_phase_obs = cli.token_phase_obs
     cfg.token_alpha = cli.token_alpha
+    cfg.token_bound = cli.token_bound
     cfg.token_stats = cli.token_stats
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip

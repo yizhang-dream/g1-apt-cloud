@@ -79,6 +79,8 @@ def build_args():
     ap.add_argument("--token-mode", action="store_true")
     ap.add_argument("--token-phase-obs", action="store_true")
     ap.add_argument("--token-alpha", type=float, default=1.0)
+    ap.add_argument("--token-bound", choices=["none", "tanh"], default="none",
+                    help="tanh = restricted-range ablation (anti-drift stabilizer)")
     ap.add_argument("--token-stats", type=str, default="",
                     help="npz with mean/std/rate from official g1-mode tokens")
     # E31: speed-conditioned VAE decoder (D(z, phase, v_bin) -> token)
@@ -219,6 +221,7 @@ def main():
     cfg.token_mode = cli.token_mode
     cfg.token_phase_obs = cli.token_phase_obs
     cfg.token_alpha = cli.token_alpha
+    cfg.token_bound = cli.token_bound
     cfg.token_stats = cli.token_stats
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_speed_bins = cli.latent_speed_bins

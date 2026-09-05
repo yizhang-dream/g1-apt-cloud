@@ -200,6 +200,13 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     token_alpha: float = 1.0
     token_stats: str = ""  # npz with mean/std/rate from official g1-mode tokens
     token_std_floor: float = 1e-3
+    # E49-A-tanh: restricted-range ablation (anti-drift stabilizer). The
+    # unbounded arm found walking in <=50 iters but PPO then drifted off the
+    # decodable token region and the gait collapsed (s0: it_50 3/3 29m ->
+    # final 0/3 backward shuffle; s1 diverged even faster). "tanh" re-bounds
+    # the mapping to mean +/- alpha*std per dim -- the pre-registered
+    # restricted-range arm from the protocol, repurposed as the immediate fix.
+    token_bound: str = "none"  # "none" (unbounded) | "tanh"
     res_scale: float = 0.4  # rad; max joint-target offset from the prior
     res_clip: float = 1.0
     res_l2_scale: float = 0.0  # penalty on the raw residual (keep prior dominant)
@@ -695,10 +702,16 @@ class AptFlatG1Env(DirectRLEnv):
             # latent arm feeds its VAE at the matching control step.
             with torch.no_grad():
                 phi = self._latent_phase
-                tokens = (
-                    self._token_mean
-                    + self.cfg.token_alpha * self._token_std * phase
-                )
+                if self.cfg.token_bound == "tanh":
+                    tokens = (
+                        self._token_mean
+                        + self.cfg.token_alpha * self._token_std * torch.tanh(phase)
+                    )
+                else:
+                    tokens = (
+                        self._token_mean
+                        + self.cfg.token_alpha * self._token_std * phase
+                    )
                 self._latent_phase = (phi + self._latent_phase_rate) % math.tau
         elif self.cfg.phase_mode:
             groups = self._router_groups(cmds)
