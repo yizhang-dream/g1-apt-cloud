@@ -257,3 +257,40 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
    `apt_g1/outputs/`）。
 
 
+
+## E49：去 VAE 直接 token RL 对照（owner 2026-09-05d 裁决 + 四轮评审定稿，协议 = `DS_OFFICIAL_DATA_PLAN.md` §3.2）
+
+> 结构：策略随机初始化**直出 64d token**（无自训 VAE）→ 冻结 SONIC decoder → 29 dof 目标；
+> `token = mean + α·std⊙a`（α=1，官方 g1-mode tokens 标定，无示范损失）；A 任务 = E45 同款单一前进配方。
+> 对照臂 = E45–E47（带 VAE 全套，已有）；归因臂 E49-B（obs+[sinφ,cosφ]）预注册未点火。
+> 冒烟全过（`e49_smoke.py`：obs 153/155、映射、反馈槽=原始 a、B 臂 φ 逐位、初始 a std=0.0182≈e⁻⁴）。
+> **owner 快速迭代新标准（09-05）**：发现问题立刻停/改，算力优先于协议跑满——本节 s1/tanh 两行即中止打捞产物。
+
+| Run ID | Purpose | Variant | Metric | Status | Result |
+|--------|---------|---------|--------|--------|--------|
+| E49-A-s0 | 无界直出 token（A 问主 run） | 128 envs × 2000 it，seed 0，`--token-mode` | A 60s ×3（best + final 双评） | DONE | **best it_50：3/3 存活 disp 29.0m vx 0.47 h_min 0.76（超 E45–E47 全线同口径）；final it_1999：0/3 disp 0 后退 shuffle h_min 0.23**。训练 rew 1.78@it50 → 0.62 单调崩，kl med 374 |
+| E49-A-s1 | 复现检查（owner 中止@it1720 打捞） | 同上 seed 1 | it_50 打捞 eval | DONE（中止打捞） | **it_50：3/3 disp 15.3–16.1m vx 0.36**——早期步态 2/2 seed 复现；训练 rew 1.74→0.68、vx 冲 1.67 超速 + fall 出现，kl med 654 |
+| E49-A-tanh-s0 | 受限范围消融（当即转修复臂） | `--token-bound tanh`（±α·std 硬界），owner 中止@it870 | 曲线诊断 | DONE（中止） | **恒不摔**（fall=0 全程）但 vx 衰向站立（0.36→0.26@440→0.09@770），rew 1.83→1.16；kl med 256（仍 4× latent）——界把崩坏变成安全退化，未保住步态 |
+
+**E49-A 结论（A 问已答 + 新问题 = 训练崩坏，修复调研中）**：
+
+1. **A 问（去掉额外 VAE、随机策略能否学会行走）= 能，且极快**：两 seed 早期快照
+   （it_40–60，≈50 iters = 1 分钟级训练）均 3/3 真走路；s0 it_50 29.0m/0.47 超 E45
+   （14m/0.27）与 E47（23.8m/0.42）同预算 eval 口径。**初始 token 邻域（官方 token
+   均值附近）本身就近可步态区，搜索不是瓶颈。**
+2. **新问题 = 继续训练必然崩坏（2/2 seed）**：PPO 每更新 kl med 374–654 = latent 臂
+   （64）的 4–10×（动作维度 4× + 无 VAE 缓冲），rew 单调下降——**PPO 在裸 token
+   空间不是在优化而是在随机游走**；终态两形态：无界→超速/摔（s1 vx 1.67）或后退
+   shuffle（s0），tanh 界→安全站立化。**VAE 的隐藏第四角色 = KL 冲击缓冲器**
+   （z 大位移被冻结 VAE 吸收为流形上近邻 token；对照 E45 kl med 64 且 rew 真在上升
+   至 2.07）。【注：该对照日志来自 `isaac_e45_e39_from0.log`，与 tracker E45 行
+   e27/vae.pt 的记载存在 VAE 版本出入，已挂 owner 待核】
+3. **修复调研（owner 09-05「发现问题直接停，调研怎么修复」）候选**：①PPO 降温
+   （lr 3e-4→1e-4 / epochs 5→2，直击 kl 过大病灶，首选最小实验）；②KL-to-init
+   正则（token 空间锚定，软版 tanh）；③best-snapshot 操作规程（已证可行，配
+   early-stop 省算力）；④长 episode（20s→60s，补「训练期看不见 60s 后摔」盲区）。
+   判据预注册：修复 run 的 rew 应上升而非单调降、kl med 落回 ≤~150、final eval
+   不逊 best eval。
+4. 产物：`outputs/e49/`（stats npz + 全部 train/eval 日志与 JSON，服务器）、
+   ckpt `GR00T-WholeBodyControl/outputs/isaac_e49a_s{0,1}/`、
+   `isaac_e49a_tanh_s0/`；脚本 `e49_smoke.py`（SCRIPT_MAP 已登记）。
