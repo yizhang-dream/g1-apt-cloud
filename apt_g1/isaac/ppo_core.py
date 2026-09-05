@@ -139,6 +139,26 @@ def kl_normal(
     return 0.5 * (d.pow(2) + var - 2.0 * log_std - 1.0).sum(-1)
 
 
+def kl_diag_gaussian(
+    old_mean: torch.Tensor,
+    old_log_std: torch.Tensor,
+    new_mean: torch.Tensor,
+    new_log_std: torch.Tensor,
+) -> torch.Tensor:
+    """对角高斯解析 KL，rsl_rl 口径 KL(new‖old)，逐样本（动作维已 sum）。
+
+    E49-C KL 信任域守卫用：old/new = optimizer.step 前后同一策略头的分布参数。
+    """
+    var_old = torch.exp(2.0 * old_log_std)
+    var_new = torch.exp(2.0 * new_log_std)
+    return (
+        old_log_std
+        - new_log_std
+        + (var_new + (new_mean - old_mean) ** 2) / (2.0 * var_old)
+        - 0.5
+    ).sum(-1)
+
+
 class PPOTrainer:
     def __init__(
         self,
@@ -165,6 +185,10 @@ class PPOTrainer:
         decoder_wreg_coef: float = 0.0,  # E44v2: weight-space anchor to official
         skip_nan: bool = True,  # E44: skip optimizer step if any grad is NaN
         fused: bool = False,  # fused Adam（CUDA 融合实现）；默认 False 保持 E 系列历史 run 可比
+        kl_guard: "float | None" = None,  # E49-C: KL 信任域阈值；None = 完全关闭（默认）
+        kl_guard_shrink: float = 0.8,  # E49-C: 回滚时 lr 乘子（TRPO 回溯惯例）
+        kl_guard_grow: float = 1.2,  # E49-C: KL < 阈/2 时 lr 回升乘子（镜像 rsl_rl 自适应；1.0 = 关；上限钉在初始 lr）
+        kl_guard_max_rolls: int = 3,  # E49-C: 同一 update() 内连续回滚达此数 → 提前结束整个循环
     ):
         self.policy = policy.to(device)
         self.device = device
@@ -189,6 +213,9 @@ class PPOTrainer:
             )
         else:
             self.optimizer = torch.optim.Adam(policy.parameters(), lr=lr, fused=fused)
+        # E49-C：KL 信任域守卫的 lr 状态（回滚缩小 / 通过回升，上限钉在初始 lr）
+        self._lr0 = self.optimizer.param_groups[0]["lr"]
+        self._lr_now = self._lr0
         self.skip_nan = skip_nan
         self.gamma = gamma
         self.lam = lam
@@ -208,6 +235,11 @@ class PPOTrainer:
         self.value_coef = value_coef
         self.decoder_reg_coef = decoder_reg_coef
         self.decoder_wreg_coef = decoder_wreg_coef
+        # E49-C：KL 信任域守卫（kl_guard=None = 完全关闭，默认 = 冻结版行为）
+        self.kl_guard = kl_guard
+        self.kl_guard_shrink = kl_guard_shrink
+        self.kl_guard_grow = kl_guard_grow
+        self.kl_guard_max_rolls = kl_guard_max_rolls
         self.it = 0
 
     def compute_gae(
@@ -295,6 +327,12 @@ class PPOTrainer:
         adv_f = adv.reshape(-1)
         ret_f = returns.reshape(-1)
         val_f = rollout["value"].reshape(-1)
+        # E49-C：价值解释方差（return 被 critic 解释的比例，1 = 完美拟合）。
+        # 无条件记录的纯日志量，不影响训练与 RNG 路径
+        with torch.no_grad():
+            expl_var = float(
+                (1.0 - torch.var(ret_f - val_f) / (torch.var(ret_f) + 1e-8)).item()
+            )
         gate = rollout.get("gate")
         if gate is not None:
             gate = gate.reshape(-1)
@@ -310,6 +348,9 @@ class PPOTrainer:
         aux_scored = getattr(self.policy, "aux_executed", True)
 
         losses = []
+        # E49-C：KL 守卫的连续回滚计数与提前停止标志（作用域 = 整个 update()）
+        roll_streak = 0
+        stop = False
         # 真 epoch 循环：每个 epoch 重新洗牌（默认 num_epochs=1 = 历史单遍）
         for _ in range(self.num_epochs):
             idx = torch.randperm(T * N, device=self.device)
@@ -391,13 +432,69 @@ class PPOTrainer:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 nan_skip = 0.0
+                kl_mb = 0.0
+                rolled = 0.0
                 if self.skip_nan and self._grads_nonfinite():
                     # E44: NaN guard -- drop this minibatch's update (keeps the
                     # fine-tuned decoder from exploding the run)
                     self.optimizer.zero_grad()
                     nan_skip = 1.0
                 else:
+                    if self.kl_guard is not None:
+                        # E49-C：step 前快照全模型（回滚 = 拒绝整步，TRPO 式回溯）
+                        snap = {
+                            k: v.detach().clone()
+                            for k, v in self.policy.state_dict().items()
+                        }
                     self.optimizer.step()
+                    if self.kl_guard is not None:
+                        with torch.no_grad():
+                            # old 分布 = loss 计算时的步前 forward 结果 p（detach），
+                            # new 分布 = 步后前向重算；解析对角高斯 KL，rsl_rl 口径
+                            # KL(new‖old)。两点局限：① decoder_ft 模式 old 分布用
+                            # forward 头近似（该模式实际 mean 走 policy.action_mean，
+                            # E49 不用该模式）；② Adam 动量不回滚（动量是估计量，
+                            # 常规做法）。gate 头为离散分布，不进本 KL。
+                            p_new = self.policy.forward_actor(obs[mb])
+                            kl_t = None
+                            if phase is not None:
+                                kl_t = kl_diag_gaussian(
+                                    p["phase_mean"].detach(),
+                                    p["phase_log_std"].detach(),
+                                    p_new["phase_mean"],
+                                    p_new["phase_log_std"],
+                                )
+                            if aux_scored:
+                                kl_aux = kl_diag_gaussian(
+                                    p["aux_mean"].detach(),
+                                    p["aux_log_std"].detach(),
+                                    p_new["aux_mean"],
+                                    p_new["aux_log_std"],
+                                )
+                                kl_t = kl_aux if kl_t is None else kl_t + kl_aux
+                            if kl_t is not None:
+                                kl_mb = float(kl_t.mean().item())
+                        if kl_mb > self.kl_guard:
+                            # 超阈：回滚本步 + 缩小 lr（TRPO 回溯惯例）
+                            self.policy.load_state_dict(snap)
+                            self._lr_now = max(
+                                1e-6, self._lr_now * self.kl_guard_shrink
+                            )
+                            self.optimizer.param_groups[0]["lr"] = self._lr_now
+                            roll_streak += 1
+                            rolled = 1.0
+                            if roll_streak >= self.kl_guard_max_rolls:
+                                # 连续回滚达上限：提前结束整个 epoch×minibatch 循环
+                                stop = True
+                        else:
+                            roll_streak = 0
+                            if self.kl_guard_grow > 1.0 and kl_mb < self.kl_guard / 2:
+                                # 通过且 KL 小：lr 回升（镜像 rsl_rl 自适应，
+                                # 上限钉在初始 lr）
+                                self._lr_now = min(
+                                    self._lr0, self._lr_now * self.kl_guard_grow
+                                )
+                                self.optimizer.param_groups[0]["lr"] = self._lr_now
                 # 统计张量先 detach 存 GPU（切断 autograd 图，不占显存），epoch 末
                 # 统一 .item() —— 原先每 minibatch ~6 次同步；各 key 的均值口径不变
                 losses.append(
@@ -423,6 +520,16 @@ class PPOTrainer:
                         "nan_skip": nan_skip,
                     }
                 )
+                if self.kl_guard is not None:
+                    # E49-C：守卫量进 per-minibatch losses（kl_mb/kl_roll 会随下方
+                    # agg 循环出便捷均值；明细/总数/lr 在 agg 循环外单列）
+                    losses[-1]["kl_mb"] = kl_mb
+                    losses[-1]["kl_roll"] = rolled
+                if stop:
+                    break
+            if stop:
+                # E49-C：断路同时提前结束 epoch 循环
+                break
         self.it += 1
         for d in losses:
             d.setdefault("kl_prior", 0.0)
@@ -435,6 +542,12 @@ class PPOTrainer:
                 agg[k] = float(torch.stack(vals).mean().item())
             else:
                 agg[k] = float(np.mean(vals))
+        if self.kl_guard is not None:
+            # E49-C：不进上方均值循环的守卫量（losses[0] 中无这些键）
+            agg["kl_mb_all"] = [float(d["kl_mb"]) for d in losses]
+            agg["kl_rolls"] = int(sum(d["kl_roll"] for d in losses))
+            agg["lr_now"] = float(self._lr_now)
+        agg["expl_var"] = expl_var
         # E49: 整轮更新结束后的统一 KL 测量——no_grad 下用更新后的 policy 对
         # 整批 rollout obs 重算联合 logp（与 minibatch 的 logp 同口径，含
         # aux_executed / decoder_ft 分支），k3 估计与 approx_kl 同族，但样本

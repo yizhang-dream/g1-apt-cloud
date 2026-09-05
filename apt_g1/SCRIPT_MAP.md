@@ -136,6 +136,7 @@
 | `check_isaac.py` / `smoke_isaac.py` | DEV | Isaac venv 导入检查 / 环境冒烟 |
 | `e49_smoke.py` | DEV | **E49 直出 token 模式不变量冒烟**（obs 维度 / decoder 收到的映射 token / 反馈槽=原始 a / B 臂 φ obs 逐位 / 初始动作统计；2026-09-05 登记） |
 | `e49_gae_test.py` | DEV | **E49 训练器修复确定性测试**（纯 torch CPU，无 isaaclab 依赖，仓库根 `PYTHONPATH=. python apt_g1/isaac/e49_gae_test.py`：朴素 GAE 对拍 / 手算边界小例 / done+trunc+last_value 切断不变性 / aux_executed=False 剔除不变量 / num_epochs step 计数 / approx_kl+clip_frac+kl_prior 指标 sanity；六用例全 PASS exit 0；2026-09-05 登记） |
+| `e49_kl_guard_test.py` | DEV | **E49-C KL 信任域守卫单测**（纯 torch CPU，无 isaaclab 依赖，仓库根 `PYTHONPATH=. python apt_g1/isaac/e49_kl_guard_test.py`：解析对角高斯 KL 公式 vs torch.distributions 对拍 / kl_guard=None 默认关闭零回归 / 极小阈值全回滚+连续回滚断路 / 巨阈值探针形态零回滚 / grow lr 回复路径 / expl_var 口径；六用例全 PASS exit 0；2026-09-06 登记） |
 | `dbg_path.py` | DEV | 诊断 sys.path / PYTHONPATH |
 | `server_apt_flat_env.py` | **FORK** | `apt_flat_env.py` 的服务端分叉（同源，body 已分叉） |
 | `server_train_apt_isaac.py` | **FORK** | `train_apt_isaac.py` 的服务端分叉 |

@@ -126,6 +126,17 @@ def build_args():
     # 默认 1 = 历史 run 的实际行为（旧 update 从未循环，单遍）
     ap.add_argument("--ppo-epochs", type=int, default=1,
                     help="PPO epochs per update (historical behavior = single pass)")
+    # E49-C：KL 信任域守卫（默认 None = 完全关闭 = 冻结版行为）。每 minibatch
+    # step 后测新旧策略解析 KL，超阈回滚该步并缩小 lr；KL < 阈/2 时回升 lr
+    # （上限钉在初始 lr）；连续回滚达 max-rolls 提前结束整个 update 循环
+    ap.add_argument("--kl-guard", type=float, default=None,
+                    help="E49-C: KL trust-region threshold (default None = off)")
+    ap.add_argument("--kl-guard-shrink", type=float, default=0.8,
+                    help="E49-C: lr multiplier on rollback (TRPO backtracking)")
+    ap.add_argument("--kl-guard-grow", type=float, default=1.2,
+                    help="E49-C: lr multiplier when KL < threshold/2 (1.0 = off)")
+    ap.add_argument("--kl-guard-max-rolls", type=int, default=3,
+                    help="E49-C: consecutive rollbacks before ending the update loop")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="outputs/isaac_apt_aux")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
@@ -198,6 +209,16 @@ def main():
 
     out_dir = Path(cli.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # E49-C：启动配置回显（此前版本无完整回显行；关键 PPO 参数 + 守卫四参数
+    # + token-stats 路径，便于日志取证）
+    print(
+        f"[CFG] out={cli.out} num_envs={cli.num_envs} iters={cli.iters} "
+        f"lr={cli.lr} ppo_epochs={cli.ppo_epochs} minibatch={cli.ppo_minibatch} "
+        f"token_stats={cli.token_stats!r} "
+        f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
+        f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}",
+        flush=True,
+    )
 
     if cli.env == "vanilla":
         cfg = AptFlatG1VanillaEnvCfg()
@@ -359,6 +380,10 @@ def main():
         minibatch_size=cli.ppo_minibatch,
         num_epochs=cli.ppo_epochs,
         fused=cli.fused_adam,
+        kl_guard=cli.kl_guard,
+        kl_guard_shrink=cli.kl_guard_shrink,
+        kl_guard_grow=cli.kl_guard_grow,
+        kl_guard_max_rolls=cli.kl_guard_max_rolls,
     )
     start_it = 0
     if cli.resume:
@@ -442,7 +467,15 @@ def main():
         "clip_frac": [],
         "act_std": [],
         "post_update_kl": [],
+        # E49-C：vloss / expl_var 无条件记录；KL 守卫四键仅 --kl-guard 开启时记录
+        "vloss": [],
+        "expl_var": [],
     }
+    if cli.kl_guard is not None:
+        hist["kl_mb"] = []
+        hist["kl_mb_all"] = []
+        hist["kl_rolls"] = []
+        hist["lr_now"] = []
     # E49 诊断步骤③：分项诊断（--diag-log 开启时启用）。vanilla env 无
     # _last_rew_terms 快照，不支持。d_* 序列随 hist 整体序列化进 train_log.json。
     DIAG_KEYS = ("track_xy", "track_yaw", "upright", "height", "stillness")
@@ -598,6 +631,14 @@ def main():
         hist["clip_frac"].append(stats["clip_frac"])
         hist["act_std"].append(stats["act_std"])
         hist["post_update_kl"].append(stats["post_update_kl"])
+        # E49-C：新键一律 .get 防御（键缺失时不记录，不抛错）
+        hist["vloss"].append(stats.get("vloss"))
+        hist["expl_var"].append(stats.get("expl_var"))
+        if cli.kl_guard is not None:
+            hist["kl_mb"].append(stats.get("kl_mb"))
+            hist["kl_mb_all"].append(stats.get("kl_mb_all"))
+            hist["kl_rolls"].append(stats.get("kl_rolls"))
+            hist["lr_now"].append(stats.get("lr_now"))
         dvals = None
         if diag:
             # E49 诊断口径（裁决 fix-s0 退化用的分项材料）：
@@ -650,6 +691,18 @@ def main():
                     )
                     ** 0.5
                 )
+            # E49-C：vloss / 解释方差无条件追加；守卫开启时再追加 KL 守卫量
+            # （stats.get 键存在性防御；roll = 本次 update 的回滚总数）
+            ev_line = (
+                f" vloss={stats.get('vloss', 0.0):.4f}"
+                f" ev={stats.get('expl_var', 0.0):.3f}"
+            )
+            if cli.kl_guard is not None:
+                ev_line += (
+                    f" kl_g={stats.get('kl_mb', 0.0):.4g}"
+                    f" roll={stats.get('kl_rolls', 0)}"
+                    f" lr={stats.get('lr_now', 0.0):.2g}"
+                )
             print(
                 f"[{it}/{cli.iters}] rew={mean_rew:.3f} fall={fall_rate:.3f} "
                 f"fwd={fwd:.3f} spd={spd:.3f} loss={stats['loss']:.4f} "
@@ -658,7 +711,8 @@ def main():
                 f"dreg={stats['dreg']:.5f} dec_dw={dec_dw:.4f} "
                 f"dt={it_time:.1f}s akl={stats['approx_kl']:.5f} "
                 f"pkl={stats['post_update_kl']:.5f} "
-                f"clip={stats['clip_frac']:.3f} std={stats['act_std']:.4f}",
+                f"clip={stats['clip_frac']:.3f} std={stats['act_std']:.4f}"
+                f"{ev_line}",
                 flush=True,
             )
             if diag:
