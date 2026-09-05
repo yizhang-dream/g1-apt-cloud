@@ -55,7 +55,11 @@ DEFAULT_MJ = SONIC_DEFAULT_ANGLES_MUJOCO.astype(np.float64)
 SCALE_ISAAC = SONIC_ACTION_SCALE_MUJOCO[M2I]
 DEFAULT_ISAAC = DEFAULT_MJ[M2I]
 
-# soma name -> G1 link (position targets); Hips = root (fixed), rest skipped
+# soma name -> G1 link (position targets); Hips = root (fixed), rest skipped.
+# D042 review: one target point per G1 link only — Spine2 and Chest both
+# mapping to torso_link (and ToeBase onto ankle links) created conflicting
+# position requirements; ToeBase dropped (G1 has no toe joint), Chest dropped
+# (Spine2 keeps the torso target; the arm/leg bones pin the upper body).
 TARGET_MAP = {
     "LeftLeg": "left_hip_pitch_link",
     "RightLeg": "right_hip_pitch_link",
@@ -63,10 +67,7 @@ TARGET_MAP = {
     "RightShin": "right_knee_link",
     "LeftFoot": "left_ankle_pitch_link",
     "RightFoot": "right_ankle_pitch_link",
-    "LeftToeBase": "left_ankle_roll_link",
-    "RightToeBase": "right_ankle_roll_link",
     "Spine2": "torso_link",
-    "Chest": "torso_link",
     "LeftArm": "left_shoulder_pitch_link",
     "RightArm": "right_shoulder_pitch_link",
     "LeftForeArm": "left_elbow_link",
@@ -282,9 +283,18 @@ def main():
     # ---- wrist convention: position targets cannot observe the 6 wrist dofs
     # (all targets sit at/before wrist_roll origins) -> learn their per-dim
     # constant from the paired official retargeting
+    # NOTE(D042 fix): M2I is the reorder table dof[:, M2I] (mujoco->isaac),
+    # so M2I[i] = the mujoco index that lands at isaac slot i. The wrist
+    # mujoco indices are therefore M2I[23:29] = [19,26,20,27,21,28] (owner
+    # D042 review); the previous M2I[j] in {23..28} filter selected shoulder
+    # channels by mistake.
     res = {"n_frames": n}
     isaac_wrist = {23, 24, 25, 26, 27, 28}
-    mujoco_wrist = [int(j) for j in range(29) if M2I[j] in isaac_wrist]
+    mujoco_wrist = sorted(int(j) for j in M2I[23:29])
+    assert all("wrist" in dof_names[j] for j in mujoco_wrist), \
+        f"wrist index check failed: {[dof_names[j] for j in mujoco_wrist]}"
+    print(f"[wrist] mujoco dims {mujoco_wrist} = "
+          f"{[dof_names[j] for j in mujoco_wrist]}")
     official_wrist_mean = dof30[:n30][:, mujoco_wrist].mean(axis=0)
     official_wrist_std = dof30[:n30][:, mujoco_wrist].std(axis=0)
     print(f"[wrist] mujoco dims {mujoco_wrist}; official mean "
@@ -355,17 +365,25 @@ def main():
                 "gravity_dir": grav[idx].astype(np.float32),
             }
 
-        err = []
+        err_e2e = []   # end-to-end: decoder output vs OFFICIAL joints
+        err_recon = [] # self-reconstruction: decoder output vs OUR retargeted input
         for t in range(n50):
             obs = dec.build_decoder_obs(tokens[t], sonic_history(t))
             act = dec.session.run([dec.output_name], {dec.input_name: obs})[0][0]
             q_des = DEFAULT_ISAAC + act.astype(np.float64) * SCALE_ISAAC
-            err.append(np.abs(q_des - jp_isaac_ref[t]))
-        rt_mae = float(np.mean(err))
-        print(f"[loopback:{mode_name}] lattice viol {viol:.2e}; roundtrip MAE = {rt_mae:.4f} rad "
-              f"(D038 official-dof reference: 0.109)")
+            err_e2e.append(np.abs(q_des - jp_isaac_ref[t]))
+            err_recon.append(np.abs(q_des - jp_isaac[t]))
+        rt_mae = float(np.mean(err_e2e))
+        recon_mae = float(np.mean(err_recon))
+        print(f"[loopback:{mode_name}] lattice viol {viol:.2e}; "
+              f"retarget(dof MAE) / self-recon / end-to-end = "
+              f"{res['dof_mae'][mode_name]['mean_rad']:.4f} / "
+              f"{recon_mae:.4f} / {rt_mae:.4f} rad "
+              f"(D038 native self-recon reference: 0.109)")
         res.setdefault("loopback", {})[mode_name] = {
-            "lattice_violation_rate": viol, "roundtrip_mae_rad": round(rt_mae, 4)}
+            "lattice_violation_rate": viol,
+            "self_reconstruction_mae_rad": round(recon_mae, 4),
+            "end_to_end_mae_rad": round(rt_mae, 4)}
         save[f"dof30_{mode_name}"] = dp
         save[f"quat30_{mode_name}"] = quat_modes[mode_name][:n]
         save[f"tokens_{mode_name}"] = tokens
