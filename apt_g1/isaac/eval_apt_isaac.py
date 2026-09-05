@@ -45,6 +45,30 @@ def build_args():
         help="sample actions from the policy distribution (deterministic="
         "False, same口径 as the training rollout) instead of the mean action",
     )
+    # E49 诊断步骤②：训练契约评测。train = episode 上限 20s（250 控制步@50Hz，
+    # 同训练）+ 初态 = env 原生 reset 分布（_reset_idx 的 z=0.76+U(±0.02)、
+    # SONIC 默认关节精确值、零速度、随机 walk-clock 相位），跳过 eval 契约的
+    # 高斯 jitter 覆盖；eval = 现状 120s 上限 + jitter 初态。
+    ap.add_argument(
+        "--contract",
+        choices=["eval", "train"],
+        default="eval",
+        help="评测契约：eval=历史口径（120s 上限、高斯 jitter 初态）；"
+        "train=训练契约（20s episode 上限、env 原生 reset 初态）",
+    )
+    # 每组 rollout 数（默认 3 与历史 seeds 对齐；token 模式 aux/noaux 为同
+    # 分布独立重复，双组结构不变）
+    ap.add_argument("--num-rollouts", type=int, default=3,
+                    help="number of rollouts per (test, key); default 3")
+    # E49 诊断：cmd 随机化对照（仅 A test 生效）。每局 rollout 前从
+    # uniform(0, --a-cmd-vx) 抽本局 vx 写入命令，并记进 JSON 该 rollout 条目
+    # 的 cmd_vx 字段；默认 False = 固定 --a-cmd-vx（与已有数据单变量可比）。
+    ap.add_argument(
+        "--cmd-sample",
+        action="store_true",
+        help="per-rollout vx ~ uniform(0, --a-cmd-vx) for test A (recorded "
+        "per-rollout as cmd_vx in the JSON); default fixed a-cmd-vx",
+    )
     ap.add_argument("--tests", default="A,B,C,D")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
     ap.add_argument("--out", default="outputs/isaac_eval.json")
@@ -124,8 +148,21 @@ def build_args():
     return ap
 
 
-def jitter_and_reset(env, seed: int):
-    """Reset all envs (num_envs=1) and apply MuJoCo-parity reset jitter."""
+def jitter_and_reset(env, seed: int, contract: str = "eval"):
+    """Reset all envs (num_envs=1) and apply MuJoCo-parity reset jitter.
+
+    contract="train" (E49 诊断): skip the jitter overlay entirely -- the
+    initial state is exactly the env's native ``env.reset()`` distribution
+    (``_reset_idx``: z=0.76+U(±0.02), exact SONIC default joints, zero
+    velocities, random walk-clock phase), i.e. the same per-episode spawn
+    distribution the policy saw during training. We consume the reset-returned
+    obs and refresh ``_last_obs`` with it (same discipline as the E49 fix in
+    the eval path below).
+    """
+    if contract == "train":
+        obs_dict, _ = env.reset()
+        env._last_obs = obs_dict["policy"]
+        return
     rng = np.random.default_rng(1000 + seed)
     env.reset()
     device = env.device
@@ -194,11 +231,13 @@ def rollout(
     yaw_bias=0.0,  # E33: open-loop yaw command offset (rad/s) to cancel a
     # systematic turning bias (e.g. E31's -4 deg/s left drift)
     sample: bool = False,  # E49 诊断: True = act(deterministic=False) 采样动作
+    contract: str = "eval",  # E49 诊断: "train" = 20s episode 上限（env 原生
+    # reset 初态），rollout 在 max_episode_length 处按正常截断收尾（非 fall）
 ):
     """schedule: list of (vx, vy, seconds) or (Command, seconds) pairs."""
     from apt_g1.encoder import Command
 
-    jitter_and_reset(env, seed)
+    jitter_and_reset(env, seed, contract=contract)
     # E49 --sample: 单次 act() 按步记忆化。det 模式与旧的分散调用逐位等价
     # （均值头与调用次数无关）；sample 模式下保证 aux/latent/gate 分支消费
     # 同一次采样 draw（训练 rollout 就是每步一次 act）。obs 更新后清缓存。
@@ -214,10 +253,15 @@ def rollout(
     total_steps = int(
         sum(entry[2] if len(entry) == 3 else entry[1] for entry in schedule) * 50
     )
+    if contract == "train":
+        # 训练契约：episode 在 max_episode_length（20s@50Hz=1000 步）处被 env
+        # 截断并自动 reset——schedule 只会跑到那里（60s 的 A test 实际 20s）。
+        total_steps = min(total_steps, int(env.max_episode_length))
     imp = {s: f for s, f in (impulses or [])}
     heights, vxs, vys = [], [], []
     xys = []
     fall = None
+    ep_done = False
     t = 0
     for entry in schedule:
         if len(entry) == 3:
@@ -295,6 +339,13 @@ def rollout(
                     torch.zeros(1, 1, 3, dtype=torch.float32, device=env.device),
                     body_ids=[env._root_body_idx[0]],
                 )
+            if trunc.any() and not term.any():
+                # E49 train 契约：episode 时限截断（20s=1000 步）。env.step 内部
+                # 已自动 reset（_last_obs/robot.data 均已换成新局状态），本步物理
+                # 量不可进统计（否则 disp/h_min/vx 的末点会被新局初值污染）。
+                # 按正常跑满收尾，不算 fall。
+                ep_done = True
+                break
             h = float(env.robot.data.root_pos_w[0, 2].item())
             v = env._base_lin_vel()[0].detach().cpu().numpy()
             xy = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy()
@@ -304,9 +355,10 @@ def rollout(
             xys.append(xy)
             if term.any():
                 fall = t
+                ep_done = True
                 break
             t += 1
-        if fall is not None:
+        if fall is not None or ep_done:
             break
     heights = np.array(heights)
     vxs = np.array(vxs)
@@ -424,7 +476,9 @@ def main():
     cfg.stillness_vx_scale = cli.stillness_vx_scale
     cfg.aux_scale = cli.aux_scale
     cfg.disturbance_prob = 0.0
-    cfg.episode_length_s = 120.0
+    # E49 诊断 --contract：eval = 历史评测口径（120s 上限，实际最长 test 68s）；
+    # train = 训练契约（20s 上限 = 250 控制步@50Hz，与训练 rollout 一致）
+    cfg.episode_length_s = 20.0 if cli.contract == "train" else 120.0
     # pin the global numpy RNG to the terrain seed before env creation
     np.random.seed(cli.terrain_seed)
     if cli.env == "vanilla":
@@ -457,6 +511,10 @@ def main():
     # policy-distribution sampling, training-rollout 口径)
     mode = "sample" if cli.sample else "det"
     print(f"[eval] act mode = {mode}", flush=True)
+    print(f"[eval] contract = {cli.contract} "
+          f"(episode_length_s={cfg.episode_length_s}, "
+          f"num_rollouts={cli.num_rollouts})", flush=True)
+    seeds = list(range(cli.num_rollouts))
 
     tests = set(cli.tests.split(","))
     out = {"A_walk60": {}, "B_disturbance": {}, "C_switch": {}, "D_jump": {}}
@@ -479,10 +537,20 @@ def main():
         for key in key_list:
             out["A_walk60"][key] = {}
             use_aux = key != "noaux"
-            for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(cli.a_cmd_vx, 0.0, 60)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
+            for seed in seeds:
+                sched = [(cli.a_cmd_vx, 0.0, 60)]
+                if cli.cmd_sample:
+                    # E49 --cmd-sample：每局独立抽 vx（按 seed 派生 RNG 可复现）；
+                    # 只影响本局命令，cmd_vx 记进该 rollout 的 JSON 条目
+                    vx_cmd = float(
+                        np.random.default_rng(2000 + seed).uniform(0.0, cli.a_cmd_vx)
+                    )
+                    sched = [(vx_cmd, 0.0, 60)]
+                r = rollout(env, policy, sched, seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
+                if cli.cmd_sample:
+                    r["cmd_vx"] = sched[0][0]
                 out["A_walk60"][key][f"seed{seed}"] = r
-                print(f"A walk{cli.a_cmd_vx} {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
+                print(f"A walk{sched[0][0]} {key} seed{seed} mode={mode} contract={cli.contract} done={r['completed']} h_min={r['h_min']} vx={r['vx']} disp={r['disp']}", flush=True)
 
     # ---- B. disturbance grid ----
 
@@ -492,9 +560,9 @@ def main():
             out["B_disturbance"][key] = {}
             use_aux = key != "noaux"
             for dname, dvec in dirs.items():
-                for seed in [0, 1, 2]:
+                for seed in seeds:
                     imp = [(500, dvec), (1250, dvec)]
-                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
+                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                     out["B_disturbance"][key][f"{dname}_seed{seed}"] = r
                     print(f"B {dname} {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']}", flush=True)
 
@@ -509,8 +577,8 @@ def main():
         for key in key_list:
             out["C_switch"][key] = {}
             use_aux = key != "noaux"
-            for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
+            for seed in seeds:
+                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                 out["C_switch"][key][f"seed{seed}"] = r
                 print(f"C switch {key} seed{seed} mode={mode} done={r['completed']} fall={r['fall_step']} h_min={r['h_min']}", flush=True)
 
@@ -525,8 +593,8 @@ def main():
         for key in key_list:
             out["D_jump"][key] = {}
             use_aux = key != "noaux"
-            for seed in [0, 1, 2]:
-                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample)
+            for seed in seeds:
+                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                 out["D_jump"][key][f"seed{seed}"] = r
                 print(f"D jump {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']} vx={r['vx']}", flush=True)
 
@@ -534,6 +602,8 @@ def main():
         out = {k: v for k, v in out.items() if k.split("_")[0] in tests}
     # E49: 顶层动作模式标注（放在 tests 过滤之后，避免被滤掉）
     out["mode"] = mode
+    # E49 诊断: 评测契约标注（"eval" = 历史口径 / "train" = 训练契约 20s）
+    out["contract"] = cli.contract
     with open(cli.out, "w") as f:
         json.dump(out, f, indent=1)
     print("saved", cli.out)

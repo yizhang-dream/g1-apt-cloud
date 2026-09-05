@@ -522,6 +522,9 @@ class AptFlatG1Env(DirectRLEnv):
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         # E49: 复位前终末状态观测（_reset_idx 在 super() 前截留），惰性分配
         self._final_obs = None
+        # E49 诊断步骤③：最近一个控制步的奖励分项快照（_get_rewards 内写入；
+        # 训练侧 --diag-log 开启时逐步读取 GPU 累积）
+        self._last_rew_terms = None
         self._disturb = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._disturb_dir = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
         self._disturb_step = torch.full(
@@ -1074,6 +1077,17 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.res_l2_scale > 0.0 and self.cfg.latent_residual:
             reward = reward - self.cfg.res_l2_scale * (self._last_res ** 2).sum(-1)
         reward = reward - self.cfg.termination_penalty * self.reset_terminated.float()
+        # E49 诊断步骤③：分项快照，return 前一次性存（GPU tensor 原样引用，
+        # 纯记录不改计算图/数值；heading/progress/yaw_rate 等默认 0 的分支不记）。
+        # 未开启 diag 时每步被覆盖，无累积开销。vx_err = 当时口径的 cmd 跟踪误差。
+        self._last_rew_terms = {
+            "track_xy": track_xy,
+            "track_yaw": track_yaw,
+            "upright": upright,
+            "height": height,
+            "stillness": stillness,
+            "vx_err": base_lin_vel[:, 0] - self._commands[:, 0],
+        }
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:

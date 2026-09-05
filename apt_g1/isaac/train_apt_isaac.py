@@ -148,6 +148,11 @@ def build_args():
     ap.add_argument("--fused-adam", action="store_true")
     # 每 N iter 打一行 [SPEED] 墙钟日志；0 = 关闭
     ap.add_argument("--speed-log-interval", type=int, default=50)
+    # E49 诊断步骤③：窗口一致的奖励分项/位移诊断。env 侧 _last_rew_terms
+    # 快照 + 训练侧逐控制步 GPU 累积、iter 末一次同步换算，统计窗口与
+    # mean_rew 全同（修复旧口径 rew 全窗 vs fwd 末时刻的窗口错位）
+    ap.add_argument("--diag-log", action="store_true",
+                    help="E49: per-term reward / motion diagnostics (d_* hist keys)")
     ap.add_argument(
         "--router-model-dir",
         default="/home/cvgluser/ros2_data/apt_g1/outputs/distill_final",
@@ -438,6 +443,17 @@ def main():
         "act_std": [],
         "post_update_kl": [],
     }
+    # E49 诊断步骤③：分项诊断（--diag-log 开启时启用）。vanilla env 无
+    # _last_rew_terms 快照，不支持。d_* 序列随 hist 整体序列化进 train_log.json。
+    DIAG_KEYS = ("track_xy", "track_yaw", "upright", "height", "stillness")
+    DIAG_HIST_KEYS = (
+        "d_track_xy", "d_track_yaw", "d_upright", "d_height", "d_stillness",
+        "d_vx_err", "d_cmd_vx", "d_stand_frac", "d_fwd_rate", "d_drift_rate",
+    )
+    diag = cli.diag_log and cli.env != "vanilla"
+    if diag:
+        for k in DIAG_HIST_KEYS:
+            hist[k] = []
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
 
@@ -452,6 +468,15 @@ def main():
         # 统计窗口不变：仍是本 iter 全部 T*N 个 reward 的算术均值，只在 iter 末
         # 的日志边界换算打印
         rew_sum = torch.zeros((), device="cuda:0")
+        if diag:
+            # E49 诊断：GPU 标量累积器（每 iter 重建；iter 末一次 .cpu() 换算，
+            # 热循环零同步）。diag_pos0 = 位移率差分基点。
+            diag_term_sum = {k: torch.zeros((), device="cuda:0") for k in DIAG_KEYS}
+            diag_abs_err = torch.zeros((), device="cuda:0")
+            diag_cmd_sum = torch.zeros((), device="cuda:0")
+            diag_stand = torch.zeros((), device="cuda:0")
+            diag_cnt = torch.zeros((), device="cuda:0")
+            diag_pos0 = env.robot.data.root_pos_w[:, :2].detach().clone()
         for t in range(T):
             act, logp, ent, val, _ = policy.act(obs)
             buf["obs"][t] = obs
@@ -504,6 +529,19 @@ def main():
                 )
             obs = obs_dict["policy"]
             rew_sum += rew.sum()
+            if diag:
+                # E49 诊断：本控制步的分项快照并入累积（与 rew_sum 同窗同方式；
+                # 快照缺失时跳过，不影响训练）
+                terms = getattr(env, "_last_rew_terms", None)
+                if terms is not None:
+                    for k in DIAG_KEYS:
+                        diag_term_sum[k] += terms[k].sum()
+                    diag_abs_err += terms["vx_err"].abs().sum()
+                    diag_cmd_sum += env._commands[:, 0].sum()
+                    diag_stand += (
+                        env.robot.data.root_lin_vel_b[:, 0].abs() < 0.05
+                    ).sum()
+                    diag_cnt += N
             if (
                 phase_labels_buf is not None
                 and it < (
@@ -560,6 +598,35 @@ def main():
         hist["clip_frac"].append(stats["clip_frac"])
         hist["act_std"].append(stats["act_std"])
         hist["post_update_kl"].append(stats["post_update_kl"])
+        dvals = None
+        if diag:
+            # E49 诊断口径（裁决 fix-s0 退化用的分项材料）：
+            # · 分项均值 / |vx-cmd| / cmd 均值 / 站立占比 = 本 iter 全部 T*N 步
+            #   的均值，与 mean_rew 同窗（窗口一致性是本诊断的核心）；
+            # · 位移率 = iter 首末 root_pos 差分 / 控制时长（T * sim.dt *
+            #   decimation），envs 各自算再平均（均值可交换，等价批内均值）。
+            #   注意口径：中途摔倒复位的 env 已被 _reset_idx 把 root_pos 清回
+            #   env 原点，其差分被低估甚至为负——有意保留的"含复位"粗口径，
+            #   fall_rate 已单列可对照判读；精确复位剔除需逐步掩码，非本诊断定位。
+            dur = T * env.cfg.sim.dt * env.cfg.decimation
+            dpos = env.robot.data.root_pos_w[:, :2].detach() - diag_pos0
+            vals = torch.stack([
+                *[diag_term_sum[k] for k in DIAG_KEYS],
+                diag_abs_err, diag_cmd_sum, diag_stand,
+            ]) / diag_cnt
+            vals = torch.cat([
+                vals,
+                (dpos[:, 0].mean() / dur).unsqueeze(0),
+                (dpos[:, 1].abs().mean() / dur).unsqueeze(0),
+            ])
+            vals = vals.cpu()  # iter 末唯一一次 GPU->CPU 同步
+            dvals = dict(zip(
+                ("track_xy", "track_yaw", "upright", "height", "stillness",
+                 "vx_err", "cmd_vx", "stand_frac", "fwd_rate", "drift_rate"),
+                vals.tolist(),
+            ))
+            for key, v in zip(DIAG_HIST_KEYS, vals.tolist()):
+                hist[key].append(v)
         if cli.speed_log_interval > 0 and (
             it % cli.speed_log_interval == 0 or it == cli.iters - 1
         ):
@@ -594,6 +661,17 @@ def main():
                 f"clip={stats['clip_frac']:.3f} std={stats['act_std']:.4f}",
                 flush=True,
             )
+            if diag:
+                # E49 诊断：紧凑一行（键与 hist d_* 对应）
+                print(
+                    f"    diag: d_xy={dvals['track_xy']:.3f} "
+                    f"d_yaw={dvals['track_yaw']:.3f} d_up={dvals['upright']:.3f} "
+                    f"d_h={dvals['height']:.3f} d_st={dvals['stillness']:.4f} "
+                    f"verr={dvals['vx_err']:.3f} cmd={dvals['cmd_vx']:.3f} "
+                    f"fwd_rate={dvals['fwd_rate']:.3f} "
+                    f"drift={dvals['drift_rate']:.3f} stand={dvals['stand_frac']:.3f}",
+                    flush=True,
+                )
         if (it + 1) % 50 == 0 or it == cli.iters - 1:
             ckpt = out_dir / f"policy_it_{it + 1}.pt"
             torch.save(policy.state_dict(), ckpt)
