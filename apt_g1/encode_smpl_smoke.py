@@ -209,7 +209,8 @@ def main():
     def prep(tf):
         if tf == "identity":
             return joints, root_q, trans_s
-        return perm_vec(joints), perm_quat(root_q), perm_vec(trans_s)
+        j3 = joints.reshape(len(joints), 24, 3)
+        return perm_vec(j3).reshape(len(joints), 72), perm_quat(root_q), perm_vec(trans_s)
 
     ref_path = float(np.linalg.norm(np.diff(trans_s, axis=0), axis=1).sum())
 
