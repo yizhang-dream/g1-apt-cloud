@@ -177,15 +177,31 @@ def main():
     quat_cur = quat30[0].copy()
     print("[ik] init: official quat (paired-validation mode); skel init kept as diagnostic")
 
+    # joint-name lookup for diagnostics + per-joint bounds from the official
+    # envelope (+/- 0.25 rad margin) -- kills the classic knee/ankle flip
+    # local minima of position-only IK
+    import mujoco as mjc
+    jname_by_qadr = {}
+    for i in range(m.njnt):
+        if m.jnt_type[i] == 3:  # hinge
+            jname_by_qadr[int(m.jnt_qposadr[i])] = m.joint(i).name
+    dof_names = [jname_by_qadr.get(int(a), f"dof{j}") for j, a in enumerate(qadr)]
+    lo = dof30[:n30].min(axis=0) - 0.25
+    hi = dof30[:n30].max(axis=0) + 0.25
+    print(f"[ik] bounds from official envelope: "
+          f"{[(dof_names[j], round(float(lo[j]), 2), round(float(hi[j]), 2)) for j in range(29)][:6]} ...")
+
     dof_ik = np.zeros((n, 29))
     quat_ik = np.zeros((n, 4))
     res_hist = []
     x = np.concatenate([quat_cur, DEFAULT_MJ])
+    lo_full = np.concatenate([np.full(4, -2.0), lo])
+    hi_full = np.concatenate([np.full(4, 2.0), hi])
     for t in range(n):
         sol = least_squares(residual, x, args=(root_pos30[t], targets[t]),
-                            method="lm", max_nfev=64, xtol=1e-8, ftol=1e-8)
+                            method="trf", max_nfev=80, xtol=1e-8, ftol=1e-8,
+                            bounds=(lo_full, hi_full))
         x = sol.x.copy()
-        x[4:] = np.clip(x[4:], -3.14, 3.14)
         dof_ik[t] = x[4:]
         quat_ik[t] = x[:4] / np.linalg.norm(x[:4])
         res_hist.append(float(np.sqrt(np.mean(sol.fun ** 2))))
@@ -220,7 +236,7 @@ def main():
         worst = np.argsort(-pj)[:5]
         res[f"dof_mae_{tag}_rad"] = round(float(mae.mean()), 4)
         res[f"dof_mae_{tag}_worst5_mujoco_dim"] = [
-            {"dim": int(j), "mae_rad": round(float(pj[j]), 4),
+            {"dim": int(j), "joint": dof_names[j], "mae_rad": round(float(pj[j]), 4),
              "isaac_dim": int(M2I[j]),
              "official_mean": round(float(dof30[:n30][:, j].mean()), 3),
              "ik_mean": round(float(dd[:n30][:, j].mean()), 3)} for j in worst]
