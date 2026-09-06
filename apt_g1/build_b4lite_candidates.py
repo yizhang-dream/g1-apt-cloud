@@ -16,6 +16,11 @@ owner 裁定（2026-09-07 固定，脚本内不许改）：
   - 演员桶: md5(actor_uid) mod 10，0-7 训练桶 / 8 开发桶 / 9 测试桶。
   - 边界段: walk_forward_grab_injured_L_leg_002__A005 登记 L3 保留 + t_role=boundary_ref。
 
+v2 修订（D045 fix，2026-09-07）：v1 用 is_neutral=1 一刀切排除，标定发现该旗标覆盖
+10 族候选 90.3%（标准语料总旗标，Dancing/Gestures 全覆盖），dance_rhythm/lateral/
+slow_walk 三族零入选。改为描述文本定向排除 box/系统攀爬/正障碍族（EXCLUDE_PATTERNS，
+命中原因 box_climb_desc），is_neutral 仅作审计字段保留；其余硬条件与选择规则不动。
+
 Usage (server, venv_isaac):
     cd ~/ros2_data/apt_g1 && python apt_g1/build_b4lite_candidates.py
 产物（--out-dir，默认 data/ds_bones/g1_b4lite/）:
@@ -44,6 +49,44 @@ FPS = 120  # G1 原生 CSV 帧率（D043）
 MIN_FRAMES, MAX_FRAMES = 360, 7200  # 3s–60s
 MAX_PER_ACTOR_FAM = 2  # 每演员每族上限（多样性）
 TSEG_MIN_PER_TRAIN_FAM = 3  # 训练族 T-seg 目标段数（测试演员桶）
+
+# D045 v2 修订（fix：三族零入选）：is_neutral 旗标不再单独排除。标定（seed_metadata_v004）：
+# 10 族候选 112,547/124,609（90.3%）带旗，category 横跨 Dancing/Gestures/Object Manipulation
+# 全部类别——该旗标是"标准动作语料"总标记，非 50cm box 族专用；dance_rhythm 14,155/14,161
+# 段带旗，抽查 macarena/moonwalk 均为普通舞蹈，一刀切导致 dance_rhythm/lateral/slow_walk
+# 三族零入选。协议本意（§2）=「50cm box 正障碍语料另用，不入首版」→ 改为描述文本定向排除
+# box/系统攀爬族。合并文本 = filename stem + content_name + 全部描述列（lower+下划线转空格）。
+EXCLUDE_PATTERNS: list[tuple[str, str]] = [
+    (r"50\s*cm\s*box", "50cm_box"),
+    (r"\bcome\s+(?:up|down)\b[^.;]{0,40}\bbox\b", "come_updown_box"),
+    # D043 记录名 neutral_come_up/down_50cm_box 在 v004 stem 实为 come_up/down_50cm_box_R
+    #（无 neutral 前缀），上一模式已覆盖；此条为防御性保留（标定 0 命中）。
+    (r"\bneutral\s+come\s+(?:up|down)\b", "neutral_come_updown"),
+    (r"\bget\s+(?:up\s+onto|down\s+from)\b[^.;]{0,40}\bbox\b", "get_ontofrom_box"),
+    (r"\bclimb\w*\b", "climb"),
+    # 以下两条为"拿不准宁可多排除"（quality_notes 登记）：obstacle=正障碍语料近邻
+    #（10 族内 1,464 段 push/avoid/jump over 系列）；jump*box=箱上/箱间跳跃（216 段）。
+    (r"\bobstacle\b", "obstacle"),
+    (r"\b(?:jump|leap)\w*[^.;]{0,30}\bbox\b|\bbox\b[^.;]{0,30}\b(?:jump|leap)\w*\b", "jump_box"),
+]
+EXCL_RE = [(re.compile(p, re.IGNORECASE), n) for p, n in EXCLUDE_PATTERNS]
+# 保护声明：dance_hiphop_box_step（舞步名含 box，86 段）不含 jump/come_updown/50cm，
+# 不被任何模式命中，不受排除影响。
+
+EXCL_TEXT_COLS = ("content_name", "content_short_description", "content_short_description_2",
+                  "content_technical_description", "content_natural_desc_1",
+                  "content_natural_desc_2", "content_natural_desc_3", "content_natural_desc_4")
+
+
+def excl_text(row: dict) -> str:
+    parts = [str(row.get(c)) for c in EXCL_TEXT_COLS if row.get(c) is not None]
+    parts.append(re.sub(r"_\d+__A\d+(_M)?$", "", str(row.get("filename") or "")))
+    return " ".join(parts).lower().replace("_", " ")
+
+
+def excl_pattern_hits(text: str) -> list[str]:
+    return [name for rx, name in EXCL_RE if rx.search(text)]
+
 
 TRAIN_FAMS = ["forward_walk", "fast_walk_run", "forward_jump", "dance_rhythm",
               "turn_walk", "start_stop_transition"]
@@ -241,7 +284,7 @@ def five_dim_labels(family: str, desc: str, row: dict) -> tuple[dict, dict, bool
 
 
 def hard_filter_reasons(row: dict) -> list[str]:
-    """L2 硬条件（逐段全部命中的原因）：时长/道具/中性。"""
+    """L2 硬条件（逐段全部命中的原因）：时长/道具/box-攀爬描述定向排除（D045 v2）。"""
     reasons = []
     n = int(row["move_duration_frames"])
     if n < MIN_FRAMES:
@@ -251,8 +294,8 @@ def hard_filter_reasons(row: dict) -> list[str]:
     props = str(row.get("content_props") or "").strip()
     if props not in ("", "0"):
         reasons.append("props")
-    if float(row.get("is_neutral") or 0.0) == 1.0:
-        reasons.append("neutral")
+    if row.get("_excl_hits"):
+        reasons.append("box_climb_desc")
     return reasons
 
 
@@ -322,7 +365,7 @@ def main() -> None:
     reason_primary: Counter = Counter()
     actor_mismatch: list[dict] = []
     parse_fail: list[str] = []
-    REASON_PRIORITY = ["neutral", "props", "duration_short", "duration_long"]
+    REASON_PRIORITY = ["box_climb_desc", "props", "duration_short", "duration_long"]
 
     for row in rows:
         stem = row["filename"]
@@ -353,6 +396,7 @@ def main() -> None:
         rec["actor_consistent"] = rec["actor_uid"] == parts["actor_from_name"] == (
             a_take or rec["actor_uid"])
         rec["actor_bucket"] = actor_bucket(rec["actor_uid"])
+        row["_excl_hits"] = excl_pattern_hits(excl_text(row))
         reasons = hard_filter_reasons(row)
         if reasons:
             primary = next(r for r in REASON_PRIORITY if r in reasons)
@@ -365,6 +409,7 @@ def main() -> None:
                 "detail": {"frames": rec["move_duration_frames"],
                            "props": rec["content_props"],
                            "is_neutral": rec["is_neutral"],
+                           "excl_patterns": row.get("_excl_hits") or [],
                            "confidence": rec["confidence"]},
             })
             continue
@@ -639,11 +684,31 @@ def main() -> None:
             "hard_filters": {
                 "duration_frames": f"[{MIN_FRAMES}, {MAX_FRAMES}]（3s–60s）",
                 "content_props": "非 '0'/非空 -> 排除进扩展池",
-                "is_neutral": "=1 排除（50cm box 标准动作族正障碍语料另用）",
+                "box_climb_desc": "描述文本定向排除 box/系统攀爬/正障碍族"
+                                  "（模式见 box_climb_patterns）；is_neutral 旗标"
+                                  "不单独排除（D045 v2 修订，依据见 quality_notes）",
                 "mirror": "同 take 选母不选镜像",
                 "per_actor_per_family": f"<={MAX_PER_ACTOR_FAM}",
                 "tfam_actor_disjoint": "T-fam 族演员与训练/开发 8 族选段演员零交集",
             },
+            "box_climb_patterns": {name: pat for pat, name in EXCLUDE_PATTERNS},
+            "quality_notes": [
+                "D045 v2 标定：is_neutral=1 覆盖 10 族候选 112,547/124,609（90.3%），"
+                "category 横跨 Dancing(11,006)/Gestures/Object Manipulation 全部类别"
+                "——标准语料总旗标而非 box 族专用；dance_rhythm 14,155/14,161 段带旗，"
+                "抽查 macarena_001__A545 / moonwalk_R_001__A533 / buckets_R_001__A531 "
+                "均为普通舞蹈应保留，一刀切系三族零入选根因。",
+                "50cm box 族 v004 确切模式：stem come_up_50cm_box_R / come_down_50cm_box_R"
+                "（+lift_crate 变体），sd='get up onto/down from 50 cm box || come up/down "
+                "50cm box'；D043 记录名 neutral_come_up/down_50cm_box 在 v004 无 neutral "
+                "前缀，neutral_come_updown 模式防御性保留（标定 0 命中）。",
+                "拿不准宁可多排除（记录）：obstacle 模式打中正障碍语料近邻 1,464 段"
+                "（push/avoid/jump over obstacle 系列，start_stop_transition 占 3,436 段带旗"
+                "中的大部分）；jump_box 模式打中箱上/箱间跳跃 216 段"
+                "（jump_form_box_to_safety_roll / jumping on a box 等）。",
+                "保护声明：dance_hiphop_box_step（舞步名含 box，86 段）不含 "
+                "jump/come_updown/50cm，不被任何模式命中。",
+            ],
             "label_rule_note": "五维标签=filename/metadata 双通道规则打标（manual=false 待人工抽看）；"
                                "temporal=整段粗标签（§7.2 fallback）",
             "t_pair_note": "T-pair=动作×地形组合测试，属训练发射后评测口径：本划分不单独切段，"
