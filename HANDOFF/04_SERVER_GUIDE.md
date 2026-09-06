@@ -138,3 +138,52 @@ nohup /home/cvgluser/ros2_data/.venv_mjlab/bin/python scripts/train.py \
   mujoco 3.5.0、warp-lang 1.12.0、rsl-rl-lib 5.0.1
 - GPU：NVIDIA RTX 3060 12GB（驱动 595.84，CUDA 13.2）
 - 网络：服务器可访问 pypi / github（已实测）
+
+## 7. CVGL 集群（算力主平台，2026-09-06 接入闭合）
+
+lab-ts 之外的第二计算平台，定位 = 算力主平台（owner 09-06 指令）；lab-ts
+保留给确定性复现/hash 对照（同 seed 跨硬件浮点不可逐位比，判读基准 run
+必须同硬件）。接入已全链闭合：迁移、Vulkan 冒烟、eval 数值对照均通过。
+
+- **登录**：`ssh cvgl` → 登录节点 `cvglloginnode`，用户 **zyz**（注意与
+  lab-ts 的 cvgluser 不同名，路径坑已由容器软链绕过，见下）。Determined
+  调度，det master = `10.0.1.66`，集群名 CVGL。
+- **det 认证**：密码可从登录节点 `~/.docker/config.json` 的 harbor 凭据
+  base64 解出（`zyz:...`，det 与 harbor 共用账号）；`det user login`
+  一次即持久化 token 于 `~/.det/auth.yaml`。
+- **磁盘**：登录节点根盘 384G 仅剩 ~30G（docker 盘小，**拉不动官方
+  isaac 容器**——这是迁移定调 venv 直搬的原因）；`/home/zyz` 本身是 NAS
+  挂载（`nas.cvgl.lab:/mnt/Peter/Workspace/zyz`，6.9T 可用 6.8T），数据
+  直接放 `~/gr00t/`；agent 节点同一 NAS 挂在 `/workspace/zyz/`，det
+  bind_mount 后容器内路径 = `/run/determined/workdir/home/`。备选
+  `/UNSAFE_SSD4`（12T，可写）。
+- **资源池**（8 agent × 8 slots）：`32c64t_256_3090`(node01)、
+  `48c96t_512_4090`(node02)、`48c96t_512_3090`(node03/04)、
+  `64c128t_512_4090`(node05)、`128c256t_1536_4090`(node06/07)、
+  `128c256t_1536_6000Ada`(node08, RTX 6000 Ada 48G)。
+- **数据布局（前会话已搬，勿重复 rsync）**：`~/gr00t/` 下 .venv_isaac
+  21G + GR00T-WholeBodyControl 20G（含 outputs 7G）+ apt_g1 64G（含
+  data 63G）+ uv_python 77M ≈ 105G；`token_stats_e49.npz` 已在。
+  增量同步在 lab-ts 上直接 `rsync -a --info=progress2 ~/ros2_data/...
+  cvgl:gr00t/...`（Tailscale 直连 `10.0.1.67:22332`，实测 29.3 MB/s，
+  ~50G 量级约 30 min）。
+- **venv 路径设计**：容器内 pyvenv.cfg/home 与 bin/python 软链已改写为
+  `/run/determined/workdir/home/gr00t/uv_python/...`；镜像内建软链
+  `/home/cvgluser/ros2_data → /run/determined/workdir/home/gr00t`，
+  使 lab-ts 风格绝对路径在容器内直接解析。**宿主机登录节点上 venv 不可
+  用**（软链指向容器路径，设计使然，勿在登录节点跑）。
+- **镜像**：`harbor.cvgl.lab/library/zyz-apt-gr00t:u2204-isaac-pip-v3`
+  （810MB，已推 harbor）；容器内 torch 2.5.1+cu124 CUDA OK。
+- **冒烟状态**：Vulkan 通过（Isaac 日志 "Graphics API: Vulkan"，
+  driver 590.48.01）；已知无害噪音 = GLFW headless 告警、iray 缺
+  libGLU.so.1（只影响 iray 渲染，物理 eval 不受影响；要 3D 视频需在
+  镜像补 libglu1-mesa）。
+- **eval 数值对照（闭合）**：4090 跑 `isaac_e49a_fix2_s0/policy_it_50.pt`
+  3 seeds：vx 0.696/0.688/0.698、disp 1.463/2.038/0.552、零摔；lab-ts
+  基线 vx 0.703/0.684/0.686、disp 0.515/2.074/0.744——vx 差 ±0.01，
+  disp 在 lab-ts 自身种子方差内（与 tracker E.md it_50 口径一致）。
+  完整日志：cvgl `~/gr00t/smoke_logs/{venv,diag,simapp,eval_cluster}.log`。
+- **任务模板**：本地仓 `tmp/cvgl_diag.yaml` / `cvgl_eval4.yaml` /
+  `cvgl_eval5.yaml`（eval 用 `128c256t_1536_4090` 池）。
+- **训练吞吐**：截至 09-06 尚无真训练数据（只有 eval），首次训练发射
+  后回填 step/s 与 3060 对比。
