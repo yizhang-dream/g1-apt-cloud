@@ -493,3 +493,21 @@ E49-B vs E45（仍混杂流形+维度，仅方向性参考）在后续归因阶�
   已有质量验证暂不扩大转换；地形泛化待平地净学习增益可复现后再上。
   eval 侧新增 `--sample`（采样模式，冒烟：it_50 采样鲁棒）；
   `--contract train` 训练契约短对照方案已定稿待落码。
+- **2026-09-06 D044 执行回写（B3' 门首轮全过，数据源升级兑现）**：CSV→obs
+  转换器（`convert_bones_g1_csv.py`）+ 门驱动（`isaac/b3p_gate_isaac.py`）
+  落地并登记 SCRIPT_MAP。①**欧拉轴序实测定案**：配对官方 pkl
+  （210531 walk_forward_amateur_001__A001，sample_data 30Hz 与 g1/csv 120fps
+  双格式并存）扫 6 内在欧拉约定——**i:zyx 误差 mean/p95/max 全 0.00°**，
+  且 dof MAE=0.0@lag0、trans 三轴差 0.0m（该配对逐位同源），关节序=语义名
+  断言映射、单位 deg/cm 全部实测闭合，转换器不再有任何假设项；②62 段抽样
+  （4 核心类，62 独立演员，排 `_M`）：lattice 违例全 0，离线回环 walk med
+  0.129 rad ≈ 官方 token 同 harness 0.136（D036 native 0.109 量级达成）；
+  ③**B3' 门四核心类全过**：dance 12/12、jump 11/11、run 12/12 均 100%，
+  walk 扩样后 24/25=96.0%（R1 10/11=90.9% FAIL → 唯一摔倒段
+  `walk_forward_grab_injured_L_leg_002__A005` 3-seed 系统性复现 @≈12.7s，
+  摔前 q 跟踪健康+路径超参考 2×=闭环空间漂移型，为受伤步态抓腿动作域的
+  执行难度，非转换器伪影/非抖动噪声）。**判定：B3' PASS（walk 贴线带唯一
+  系统性失败域已定性）→ M2 重定向困局正式关闭（被数据源升级绕开），
+  下游解锁：A1 代理标注器 → B4-lite 分层小集合（按演员划分 train/val）
+  → B4 类目主线**。产物 = `data/ds_bones/g1_b3p/`（calibration/npz×62/
+  manifest/gate 三 JSON）；事实源 = `tracker/D.md` D044 行。
