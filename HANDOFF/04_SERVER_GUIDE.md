@@ -186,7 +186,28 @@ lab-ts 之外的第二计算平台，定位 = 算力主平台（owner 09-06 指�
   基线 vx 0.703/0.684/0.686、disp 0.515/2.074/0.744——vx 差 ±0.01，
   disp 在 lab-ts 自身种子方差内（与 tracker E.md it_50 口径一致）。
   完整日志：cvgl `~/gr00t/smoke_logs/{venv,diag,simapp,eval_cluster}.log`。
-- **任务模板**：本地仓 `tmp/cvgl_diag.yaml` / `cvgl_eval4.yaml` /
-  `cvgl_eval5.yaml`（eval 用 `128c256t_1536_4090` 池）。
-- **训练吞吐**：截至 09-06 尚无真训练数据（只有 eval），首次训练发射
-  后回填 step/s 与 3060 对比。
+- **任务模板**：本地仓 `tmp/cvgl_train_tp.yaml`（训练，4090 池验证版）/
+  `cvgl_train_tp3090b.yaml`（node01 3090 池）/ `cvgl_eval4/5.yaml`（eval）。
+  提交：`det experiment create -f <yaml> ~/det_ctx_empty`（context 空目录即可）。
+  det 0.38 schema 三坑：资源写 `slots_per_trial: 1`（不认 `slots`）；
+  `searcher` 必填（最小 `single`+任意 metric 名）；**必须配
+  `checkpoint_storage`**（如 `/UNSAFE_SSD4/shared_fs` 的 shared_fs 块，
+  缺省挂载不存在会容器创建失败）。
+- **训练吞吐（2026-09-06 探针实测，Exp 10124）**：4090 池 = 0.636–0.667
+  s/it（1.498–1.573 it/s），**约为 lab-ts 3060（1.1–1.2 s/it）的 1.7–1.8
+  倍**；显存稳定 ~3.0 GB / 24 GB（单任务余量巨大）。3090 池
+  `48c96t_512_3090` **两次复现 Isaac 启动卡死**（09-06 凌晨 eval + 本次
+  探针，同签名：init 停在 No Viewport Window 行零推进 15 min+，CUDA ctx
+  仅 296 MiB）——该池训练排产不可用，用前需节点健康检查；另一 3090 池
+  `32c64t_256_3090`(node01) 测试中（结果回填此处）。6000Ada 按资源纪律
+  未测。容器内 NVIDIA_VISIBLE_DEVICES=all 会看到整节点卡，vram 采样须
+  `-i <自家GPU>`。
+- **CVGL 端代码版本坑（重要）**：`~/gr00t/` 的代码 = 09-06 凌晨快照，
+  **train_apt_isaac.py 旧于 E49-C 守卫实现（不认 `--kl-guard`）**。在
+  CVGL 跑守卫/后续新代码前，须先从 lab-ts 的 g1-apt-cloud-sync pull 最新
+  commit 后同步 `~/gr00t/apt_g1/`（rsync 或 cp；注意 CVGL 端不是 git
+  仓部署，与 lab-ts 执行根同模式）。
+- **det 判读口径**：任务日志 "allocation stopped early after all
+  resources exited ... zero exit code" 是正常完成不是故障，以 NAS 落盘
+  train.log 为准；Isaac 崩溃时 python 可能以 0 退出（sys.excepthook 被
+  kit 接管），退出码不可信，以 JSON/产物落盘为准。
