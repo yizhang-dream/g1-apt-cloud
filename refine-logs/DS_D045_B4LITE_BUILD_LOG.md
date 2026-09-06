@@ -6,7 +6,7 @@
 > 上游：纲领 `DS_TERRAIN_ADAPTER_CHARTER.md`（§4 阶段一）、
 > `DS_OFFICIAL_DATA_PLAN.md`（§3 流水线 B3' 门判据）｜事实源：
 > `tracker/D.md` D045 行（Run 数据唯一事实源；本文只放执行计划与进度判读）｜
-> 状态：**活跃（执行中；S1–S6 逐节滚动更新，D045 结算后本叶冻结、终态回填 D 行）**
+> 状态：**已冻结（2026-09-07 数据侧结算完成；S1–S6 与 §5 收账均已回填终态，Run 行见 `tracker/D.md` D045 行 DONE）**
 
 **这篇讲什么**：D045 = B4-lite 首版构建的开户执行日志。2026-09-07 主会话定
 9 小时四路并行执行计划、owner 批准三点默认裁定后 T0 发令。本文落盘：开户
@@ -64,43 +64,46 @@ stretch 冒烟 + 收账。
 
 ### S1 metadata 落位
 
-- 状态：（占位；待执行 → 开始后改 执行中/DONE/BLOCKED）
-- 产物路径：（占位；temporal_labels + seed_metadata_v004.parquet 服务器落位记录）
-- 判读：（占位；判据 = 142,220 段全量可查零缺失）
+- 状态：DONE
+- 产物路径：seed_metadata_v004.parquet 上服务器（lab-ts `~/ros2_data/apt_g1/data/ds_bones/`），**142,220 行×51 列核验**；temporal_labels 复验无有效 token（D043 revoke 后未恢复）
+- 判读：全量可查零缺失，判据达成；temporal_labels 缺失按风险预案①直落协议 §7.2 整段粗标签 fallback，标签置信度降级随映射层记录，非阻断
 
 ### S2 候选池与标签
 
-- 状态：（占位）
-- 产物路径：（占位；描述名→语义族映射表 / 五维标签 / 覆盖缺口表）
-- 判读：（占位；判据 = 映射抽验一致率达标〔协议 §7 R1〕+ owner 裁定点①②落定）
+- 状态：DONE（v1 缺陷修复后定稿，commit 8a2e665）
+- 产物路径：`desc_family_map.json`（lab-ts g1_b4lite/，本地镜像 tmp/g1_b4lite/）；候选池+五维标签（51 列官方标注驱动：移动/上肢/姿态/接触/时间）
+- 判读：归一 **4,067 描述类→owner 10 族，覆盖率 87.6%**（置信度 high/med/low 三档随映射落盘）；is_neutral 标定实为标准动作语料总旗标（**91.2%**）非 box 族专属 → v1 一刀切排除曾致 dance/slow_walk/lateral 三族零入选，改**描述名定向排除 box_climb** 后 10 族全覆盖；映射判据（协议 §7 R1）与裁定①②落定达成
 
 ### S3 三层清洗
 
-- 状态：（占位）
-- 产物路径：（占位；清洗台账，逐段原因）
-- 判读：（占位；判据 = L3 全部保留入能力边界集，执行失败≠脏数据）
+- 状态：DONE
+- 产物路径：清洗台账 ledger（逐段排除原因，lab-ts g1_b4lite/ledger/）
+- 判读：**L1 转换失败 0**；L2 排除合计 79,404 段——props 16,945 / duration_short 11,443 / box_climb_desc 5,342 / duration_long 498 / mirror_dedup 45,171 / L2_label_mismatch 5（Step_Rotate_Reaction_Idle_0135_001__A020、orange_justice_slow_001__A465、crawl_ff_start_180_R_001__A125/A126/A127，渲染复看+轨迹证据逐段裁定）；L3 全部保留入能力边界口径（执行失败≠脏数据，协议 §2 同款）
 
 ### S4 划分冻结
 
-- 状态：（占位）
-- 产物路径：（占位；划分清单 train/dev/test + 泄漏检查报告）
-- 判读：（占位；判据 = 泄漏检查零违例：同 take 派生跨集 = 0、同演员跨集 = 0；
-  演员×族交叉空格时调族不调规则）
+- 状态：DONE（v2 冻结）
+- 产物路径：split/ 划分清单 + leak/ 泄漏检查报告（lab-ts g1_b4lite/）
+- 判读：152 段入选 → 5 段 L2 移出 → **147 段冻结**：train 84 / T-seg 18 / dev 20 / T-fam 22（lateral 12+slow_walk 10）/ boundary_ref 3；演员 ID 哈希三桶（80/10/10）；**泄漏三项全 pass**（镜像同集 0 违例、T-fam 演员零交集 68 vs 14 演员）；判据「零违例、调族不调规则未触发」达成
 
 ### S5 编码与回放扩面
 
-- 状态：（占位）
-- 产物路径：（占位；npz + manifest.json + B3' 扩面回放 JSON + ≥10% 渲染抽看记录）
-- 判读：（占位；判据 = B3' 门逐族 ≥95% 存活独立判定；执行期四维评价纪律
-  （地形任务完成/动作保真/原技能保持/新增训练成本）随结果一并报告）
+- 状态：DONE
+- 产物路径：npz/×147 + gate_summary_d045.json + renders/×16 mp4（lab-ts g1_b4lite/；渲染抽看 16/152=10.5%，MuJoCo offscreen）
+- 判读：152→147 段**转换 0 失败**（lattice 违例全 0；roundtrip MAE mean 0.1468，A005=0.1136 与 D044 该段 0.114 复现一致）；B3' 双门 seed0：A 门 101/108=93.5%、B 门 43/44=97.7%；**3-seed 复现**——arc_jog_left_loop_002__A029、burning_start_R_001__A470、A005 各 3/3 系统性（A005=D044 边界段跨实验复现），Jump_002__A019 与 Jump_Left_001__A018 各 1/3=**seed-variance**（seed0 重跑通过，Isaac 非确定性实证，不判系统性）；渲染抽看 11 一致/4 存疑/1 轻矛盾（均已裁定处置）；lateral 族 12 段 locomotion 标签修正（前进→侧移，带前后 diff）入已知噪声
 
 ### S6 manifest 冻结
 
-- 状态：（占位）
-- 产物路径：（占位；冻结 manifest + 公布表 + `boundary_set.json`）
-- 判读：（占位；判据 = 四问逐段可答〔协议 §5〕）
+- 状态：DONE（冻结）
+- 产物路径：`manifest_v2.json` + `boundary_set.json`（A029/A470/A005 三段）+ `gate_summary_d045.json` + `publication_table_d045.json`（lab-ts g1_b4lite/）
+- 判读：逐族存活 **7 族全 PASS**——forward_walk 17/17、dance 18/18、turn 18/18、asym_upper 10/10、posture 10/10、lateral 12/12、slow_walk 10/10 全 100%；**3 FAIL 族如实保留**（系统性 fall 按协议保留族内计数）——fast_walk_run 17/18=94.4%、start_stop 14/15=93.3%、forward_jump 16/18=88.9%；**整体 142/147=96.6%**；T-seg 18/18、dev 20/20、T-fam 22/22 全存活；三表示参与声明 147 段统一；四问逐段可答判据达成（协议 §5）
 
-## 5. 收账（结算时回填）
+## 5. 收账（2026-09-07 数据侧结算）
 
-- 终态判读、产物索引、协议偏差与经验坑位：D045 结算后回填本节，并同步
-  `tracker/D.md` D045 行（状态 RUNNING → DONE/BLOCKED + Result 终态）。
+- **终态**：D045 数据侧 DONE。B4-lite 首版 **147 段冻结**（train 84 / T-seg 18 / dev 20 / T-fam 22 / boundary_ref 3），B3' **整体 142/147=96.6%**（7 族 PASS + 3 族 FAIL 如实保留），**边界集 3 段**（A029/A470/A005，均 3-seed 系统性复现），**T-seg 18/18、dev 20/20、T-fam 22/22 全存活**；seed-variance 2 段（Jump_002__A019、Jump_Left_001__A018，各 1/3，seed0 重跑通过=Isaac 非确定性实证）。
+- **产物索引**：服务器 lab-ts `~/ros2_data/apt_g1/data/ds_bones/g1_b4lite/`（npz/×147、manifest_v2.json、boundary_set.json、gate_summary_d045.json、publication_table_d045.json、desc_family_map.json、candidates/、split/、leak/、ledger/、renders/×16 mp4）；本地镜像 `tmp/g1_b4lite/`。
+- **协议偏差与坑位**：①temporal_labels 无有效 token（D043 revoke）→ 预案①启用，§7.2 粗标签 fallback+置信度降级；②is_neutral 一刀切缺陷（91.2% 总旗标误当 box 族）→ 描述名定向排除 box_climb 修复（commit 8a2e665），修复前 dance/slow_walk/lateral 三族零入选；③lateral 族 12 段 locomotion 标签修正（前进→侧移）带前后 diff 入已知噪声；④渲染复看 16/152=10.5%：11 一致 / 4 存疑 / 1 轻矛盾，均已裁定处置。
+- **提交链（8 笔，均未 push）**：9366bfa → c980528 → 6994963 → 7ab931c → 12433a5 → 8a2e665 → f352fbb → 37f05d3。
+- **未决事项**：①CVGL 3090 Isaac 复验 det 10167 仍排队（外部 8 卡任务占池，非本实验失败，另号跟踪）；②HANDOFF 同步留 owner 审后另步；③owner mp4 终审清单 3 段待看（终审 mp4 在 lab-ts `~/ros2_data/apt_g1/data/ds_bones/g1_b4lite/renders/`）：dance_basic_chaines_180_R_002__A310、Jump_002__A017、Loop_Forward_Walk_001__A017（弱）。
+
+下游：B4-lite VAE 训练（n_vbins 坑待验证）另号开户。
