@@ -11,6 +11,7 @@ MuJoCo attempts:
 
 from __future__ import annotations
 
+import copy
 import math
 
 import numpy as np
@@ -97,6 +98,11 @@ class AptPPOPolicy(nn.Module):
         ad = Normal(p["aux_mean"], p["aux_log_std"].exp())
         aux = ad.mean if deterministic else ad.sample()
         out = {"aux": aux}
+        # E49-C v2：分布参数随 act() 带出（detach 视图；真正 clone 快照由存储
+        # 侧做）。纯加键，eval 等只读 phase/aux/gate 的调用方向后兼容，RNG 路径
+        # 零变化
+        out["aux_mean"] = p["aux_mean"].detach()
+        out["aux_log_std"] = p["aux_log_std"].detach()
         if self.aux_executed:
             log_prob = ad.log_prob(aux).sum(-1)
             entropy = ad.entropy().sum(-1)
@@ -109,6 +115,9 @@ class AptPPOPolicy(nn.Module):
             out["phase"] = phase
             if self.latent_dim > 0:
                 out["latent"] = phase
+            # E49-C v2：phase 头分布参数一并带出（use_phase/latent 任一为真即存在）
+            out["phase_mean"] = p["phase_mean"].detach()
+            out["phase_log_std"] = p["phase_log_std"].detach()
             log_prob = log_prob + pd.log_prob(phase).sum(-1)
             entropy = entropy + pd.entropy().sum(-1)
         if self.gate_k > 0:
@@ -147,7 +156,9 @@ def kl_diag_gaussian(
 ) -> torch.Tensor:
     """对角高斯解析 KL，rsl_rl 口径 KL(new‖old)，逐样本（动作维已 sum）。
 
-    E49-C KL 信任域守卫用：old/new = optimizer.step 前后同一策略头的分布参数。
+    E49-C KL 信任域守卫用（v2 口径）：old = rollout 采样时存储的分布参数
+    （数据参照），new = optimizer.step 后的前向重算。v1 的 old 取步前 forward
+    结果已废弃——那是"单步前后"对比，连续小步相对采样策略可累计走远。
     """
     var_old = torch.exp(2.0 * old_log_std)
     var_new = torch.exp(2.0 * new_log_std)
@@ -327,6 +338,30 @@ class PPOTrainer:
         adv_f = adv.reshape(-1)
         ret_f = returns.reshape(-1)
         val_f = rollout["value"].reshape(-1)
+        # E49-C v2：KL 守卫 old 侧参照 = rollout 采样时的分布参数（训练侧仅在
+        # --kl-guard 开启时分配填充；log_std 已在存储时 clone，与策略参数无共享
+        # 存储）。展平顺序必须与 obs/logp 完全一致（[T,N,dim] -> [T*N,dim] 行主
+        # 序），minibatch 索引 [mb] 的逐元素配对才成立，错配是静默错误。守卫开
+        # 启而 rollout 缺 buffer = 调用方组装错误，宁可硬失败也不静默退回 v1 的
+        # 步内参照口径。
+        if self.kl_guard is not None:
+            _old_keys = (
+                "phase_mean_old",
+                "phase_log_std_old",
+                "aux_mean_old",
+                "aux_log_std_old",
+            )
+            _missing = [k for k in _old_keys if rollout.get(k) is None]
+            if _missing:
+                raise ValueError(
+                    "kl_guard enabled but rollout lacks old-distribution "
+                    f"buffers: {_missing} (train_apt_isaac.py allocates/fills "
+                    "them under --kl-guard)"
+                )
+            phase_mean_old = rollout["phase_mean_old"].reshape(T * N, -1)
+            phase_log_std_old = rollout["phase_log_std_old"].reshape(T * N, -1)
+            aux_mean_old = rollout["aux_mean_old"].reshape(T * N, -1)
+            aux_log_std_old = rollout["aux_log_std_old"].reshape(T * N, -1)
         # E49-C：价值解释方差（return 被 critic 解释的比例，1 = 完美拟合）。
         # 无条件记录的纯日志量，不影响训练与 RNG 路径
         with torch.no_grad():
@@ -441,33 +476,44 @@ class PPOTrainer:
                     nan_skip = 1.0
                 else:
                     if self.kl_guard is not None:
-                        # E49-C：step 前快照全模型（回滚 = 拒绝整步，TRPO 式回溯）
-                        snap = {
+                        # E49-C v2：step 前快照 policy 参数 **和** Adam 状态
+                        # （回滚 = 两者都还原；v1 只还原参数，被拒步留下的
+                        # exp_avg/exp_avg_sq 会污染后续接受步——旧注释"Adam
+                        # 动量不回滚（常规做法）"作废）。快照单次使用，下个
+                        # minibatch 重新快照。
+                        snap_p = {
                             k: v.detach().clone()
                             for k, v in self.policy.state_dict().items()
                         }
+                        snap_o = copy.deepcopy(self.optimizer.state_dict())
                     self.optimizer.step()
                     if self.kl_guard is not None:
                         with torch.no_grad():
-                            # old 分布 = loss 计算时的步前 forward 结果 p（detach），
-                            # new 分布 = 步后前向重算；解析对角高斯 KL，rsl_rl 口径
-                            # KL(new‖old)。两点局限：① decoder_ft 模式 old 分布用
-                            # forward 头近似（该模式实际 mean 走 policy.action_mean，
-                            # E49 不用该模式）；② Adam 动量不回滚（动量是估计量，
-                            # 常规做法）。gate 头为离散分布，不进本 KL。
+                            # E49-C v2：old 分布 = rollout 采样时存储的分布参数
+                            # （与策略参数无别名），new 分布 = 步后前向重算 →
+                            # 每个候选步测的是"当前策略 vs 产生数据的策略"：
+                            # 连续小步相对 rollout 参照的累计漂移单步即可见
+                            # （v1 用步前 forward 当 old，单步前后对比，逐步小
+                            # 步各自过阈但累计可走远），首 minibatch 无裁剪的洞
+                            # 也天然被覆盖。解析对角高斯 KL，rsl_rl 口径
+                            # KL(new‖old)。两点局限：① decoder_ft 模式 old 侧用
+                            # forward 头近似（该模式实际 mean 走
+                            # policy.action_mean，forward 的 aux_mean 是占位零
+                            # 张量，E49 不用该模式）；② gate 头为离散分布，不进
+                            # 本 KL。
                             p_new = self.policy.forward_actor(obs[mb])
                             kl_t = None
                             if phase is not None:
                                 kl_t = kl_diag_gaussian(
-                                    p["phase_mean"].detach(),
-                                    p["phase_log_std"].detach(),
+                                    phase_mean_old[mb],
+                                    phase_log_std_old[mb],
                                     p_new["phase_mean"],
                                     p_new["phase_log_std"],
                                 )
                             if aux_scored:
                                 kl_aux = kl_diag_gaussian(
-                                    p["aux_mean"].detach(),
-                                    p["aux_log_std"].detach(),
+                                    aux_mean_old[mb],
+                                    aux_log_std_old[mb],
                                     p_new["aux_mean"],
                                     p_new["aux_log_std"],
                                 )
@@ -475,8 +521,11 @@ class PPOTrainer:
                             if kl_t is not None:
                                 kl_mb = float(kl_t.mean().item())
                         if kl_mb > self.kl_guard:
-                            # 超阈：回滚本步 + 缩小 lr（TRPO 回溯惯例）
-                            self.policy.load_state_dict(snap)
+                            # 超阈：回滚本步（参数 + Adam 状态）+ 缩小 lr
+                            # （TRPO 回溯惯例）；load 再 deepcopy 一次防 torch
+                            # load_state_dict 把快照张量别名进 optimizer.state
+                            self.policy.load_state_dict(snap_p)
+                            self.optimizer.load_state_dict(copy.deepcopy(snap_o))
                             self._lr_now = max(
                                 1e-6, self._lr_now * self.kl_guard_shrink
                             )

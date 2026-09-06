@@ -137,6 +137,10 @@ def build_args():
                     help="E49-C: lr multiplier when KL < threshold/2 (1.0 = off)")
     ap.add_argument("--kl-guard-max-rolls", type=int, default=3,
                     help="E49-C: consecutive rollbacks before ending the update loop")
+    # E49-C v2：短探针迭代上限。只截短训练循环（含末 iter 日志/ckpt 边界），
+    # trainer.max_iters 仍 = --iters → expl_coef 等调度长度不被压缩（配方公平性）
+    ap.add_argument("--probe-iters", type=int, default=None,
+                    help="E49-C v2: cap training-loop iterations without shrinking schedules")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="outputs/isaac_apt_aux")
     ap.add_argument("--env", choices=["apt", "vanilla"], default="apt")
@@ -213,6 +217,7 @@ def main():
     # + token-stats 路径，便于日志取证）
     print(
         f"[CFG] out={cli.out} num_envs={cli.num_envs} iters={cli.iters} "
+        f"probe_iters={cli.probe_iters} "
         f"lr={cli.lr} ppo_epochs={cli.ppo_epochs} minibatch={cli.ppo_minibatch} "
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
@@ -448,6 +453,19 @@ def main():
         # E49: 复位前终末状态价值（超时步自举）；非 trunc 位被 ×trunc 清零
         "trunc_value": torch.zeros(T, N, device="cuda:0"),
     }
+    if cli.kl_guard is not None:
+        # E49-C v2：KL 守卫 old 侧参照 = rollout 采样时的分布参数。仅
+        # --kl-guard 开启时分配/填充（关闭 = 零额外显存、零行为差异）。log_std
+        # 是策略参数的 expand 视图，detach 不解除共享存储，必须 clone 后再存
+        # （v1 守卫恒报 0 的别名根因）；均值是 Linear 新输出，无别名问题。
+        # gate_sel/vanilla 无 phase 头（update 侧按 rollout["phase"] 是否为
+        # None 决定是否取用）、aux 在 latent/token 模式不被执行（update 侧按
+        # aux_scored 决定）——存储无害，照常分配。
+        phase_d = 64 if cli.token_mode else (16 if (cli.latent_mode or cli.decft) else 2)
+        buf["phase_mean_old"] = torch.zeros(T, N, phase_d, device="cuda:0")
+        buf["phase_log_std_old"] = torch.zeros(T, N, phase_d, device="cuda:0")
+        buf["aux_mean_old"] = torch.zeros(T, N, aux_dim, device="cuda:0")
+        buf["aux_log_std_old"] = torch.zeros(T, N, aux_dim, device="cuda:0")
     if cli.gate_sel:
         buf["gate"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
         buf["phase"] = None
@@ -490,7 +508,12 @@ def main():
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
 
-    for it in range(start_it, cli.iters):
+    # E49-C v2：probe 模式只截短训练循环（末 iter 的日志/ckpt 边界一并随上限，
+    # 保证短探针也产出末行日志与最终 ckpt）；trainer.max_iters 不变（=--iters，
+    # 调度长度不压缩）
+    iters_run = cli.probe_iters or cli.iters
+
+    for it in range(start_it, iters_run):
         t0 = time.time()
         if cli.disturbance_ramp_iters > 0:
             env.cfg.disturbance_prob = min(
@@ -511,7 +534,7 @@ def main():
             diag_cnt = torch.zeros((), device="cuda:0")
             diag_pos0 = env.robot.data.root_pos_w[:, :2].detach().clone()
         for t in range(T):
-            act, logp, ent, val, _ = policy.act(obs)
+            act, logp, ent, val, p_fwd = policy.act(obs)
             buf["obs"][t] = obs
             if cli.decft:
                 buf["phase"][t] = act["phase"].detach()
@@ -547,6 +570,17 @@ def main():
                     else:
                         action = torch.cat([act["phase"], act["aux"]], dim=1)
             buf["logp"][t] = logp.detach()
+            if cli.kl_guard is not None:
+                # E49-C v2：旧分布快照。log_std 必须 detach().clone()——它是
+                # 策略参数的 expand 视图，detach 不解除共享存储（见 buf 分配处
+                # 注释）；vanilla/gate_sel 无 phase 头，按键存在性跳过
+                if "phase_mean" in p_fwd:
+                    buf["phase_mean_old"][t] = p_fwd["phase_mean"].detach()
+                    buf["phase_log_std_old"][t] = (
+                        p_fwd["phase_log_std"].detach().clone()
+                    )
+                buf["aux_mean_old"][t] = p_fwd["aux_mean"].detach()
+                buf["aux_log_std_old"][t] = p_fwd["aux_log_std"].detach().clone()
             buf["value"][t] = val.detach()
             obs_dict, rew, term, trunc, _ = env.step(action)
             buf["reward"][t] = rew
@@ -669,7 +703,7 @@ def main():
             for key, v in zip(DIAG_HIST_KEYS, vals.tolist()):
                 hist[key].append(v)
         if cli.speed_log_interval > 0 and (
-            it % cli.speed_log_interval == 0 or it == cli.iters - 1
+            it % cli.speed_log_interval == 0 or it == iters_run - 1
         ):
             # 墙钟速度日志（单 iter 瞬时口径，与下方 dt 一致）
             print(
@@ -677,7 +711,7 @@ def main():
                 f"it_per_s={1.0 / max(it_time, 1e-9):.3f}",
                 flush=True,
             )
-        if it % 10 == 0 or it == cli.iters - 1:
+        if it % 10 == 0 or it == iters_run - 1:
             dec_dw = 0.0
             if cli.decft:
                 # E44: total weight drift of the fine-tuned decoder vs official
@@ -726,7 +760,7 @@ def main():
                     f"drift={dvals['drift_rate']:.3f} stand={dvals['stand_frac']:.3f}",
                     flush=True,
                 )
-        if (it + 1) % 50 == 0 or it == cli.iters - 1:
+        if (it + 1) % 50 == 0 or it == iters_run - 1:
             ckpt = out_dir / f"policy_it_{it + 1}.pt"
             torch.save(policy.state_dict(), ckpt)
             with open(out_dir / "train_log.json", "w") as f:
