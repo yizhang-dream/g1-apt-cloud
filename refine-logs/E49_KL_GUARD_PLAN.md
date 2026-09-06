@@ -582,3 +582,21 @@ nohup bash /tmp/run_apt_isaac.sh ~/ros2_data/apt_g1/isaac/train_apt_isaac.py \
   落 tracker（E 行 106→107）；**C2′ 以 `--kl-guard 0.03` 发射**
   （`isaac_e49c2p_guard_s0`，[CFG] 核对 kl_guard=0.03/probe_iters=None，
   发射前 ps 防撞车检查通过），蹲守+判读提取+8 组评测 watcher 在轨。
+- 2026-09-06（C2′ 完成终判，E49-C 收官）：训练 + 8 组评测全部完成——
+  **J1 FAIL（rew 1.6295 落 PARTIAL 带但 dxy 0.5544<0.65）/ J2 FAIL
+  （final 12/12 零摔满时长站立 disp≈0.09m、btail 36/36 零摔 0 行走格，
+  唯二准行走 4.611m/12.506m 均未达线）/ J3(a) 1225=1225 (b) 29.17% 贴线
+  (c) 骤降 0 次全 PASS**。终判 = **「信任域成立、学习被锁死」**（§B.6
+  分支 2 后半 + 新嫌疑）：守卫完全消除退化与灾难步（终态从 v1 的 3 秒
+  全摔变稳定站立），但 29% 回滚率 + lr 被自适应压至 1.5e-5 把策略与
+  critic 的有效学习率一起锁死（rew 峰 1.7495@it77 后平线、std 冻结）。
+  **新机制嫌疑 = 拒绝步恢复全模型 state_dict 含 critic → ev 全程 ≈0**
+  （vs fix2 后期 0.84；t010 lr 8.85e-5 ev 仍 ≈0 排除纯 lr 因子），判别
+  实验 = 回滚范围单变量（policy-only）。探针谱系（0.01 冻死/0.03 贴线/
+  0.1 动态最好但末段破地板）+ C2′ = 文献量级 KL 阈与可学习性在 64 维
+  小 σ 直出体系下存在结构性张力。Run 行 E49-C2p-guard-s0（DONE）+
+  结论 9 落 tracker（E 行 107→108/合计 250→251）。**下一干预四候选
+  归 owner**：a) thr 上探 0.05/0.1 长窗；b) 回滚范围单变量（policy-only，
+  直指 ev≈0）；c) critic lr 与守卫解耦；d) 接受守卫+低 lr 为稳定基线、
+  转回奖励结构。E49-C 两轮（v1 不充分 / v2 锁死）合起来把「退化-学习」
+  trade-off 两端都测到。
