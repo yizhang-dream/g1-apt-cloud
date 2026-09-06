@@ -64,6 +64,11 @@ def _load_split_and_candidates(d):
 # ------------------------------------------------------------------ bridge
 def mode_bridge(args):
     split, cand = _load_split_and_candidates(args.dir)
+    # owner 裁定排除段（S5 渲染复核 L2_label_mismatch）不进转换清单
+    n_excl = sum(1 for s in split if s.get("excluded"))
+    split = [s for s in split if not s.get("excluded")]
+    if n_excl:
+        print(f"[bridge] skip {n_excl} ruling-excluded stems (L2_label_mismatch)")
     bridge, csv_lines, bad = {}, [], []
     for s in split:
         stem = s["stem"]

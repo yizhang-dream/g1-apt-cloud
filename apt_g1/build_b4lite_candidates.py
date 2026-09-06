@@ -97,6 +97,30 @@ QUOTA = {**{f: 18 for f in TRAIN_FAMS}, **{f: 10 for f in DEV_FAMS},
          **{f: 12 for f in TFAM_FAMS}}
 BOUNDARY_STEM = "walk_forward_grab_injured_L_leg_002__A005"
 
+# owner 裁定（2026-09-07 S5 双门回放 + 渲染复核）：L2 label mismatch 移出首版 5 段。
+# 处理 = 逐段 cleaning_ledger L2 条目 + split/candidates excluded 标记 + manifest
+# b4lite.exclusion 字段语义（转换清单 152-5=147，不再转换）；fall 证据留 gate 原档。
+EXCLUDED_STEMS: dict[str, dict] = {
+    "Step_Rotate_Reaction_Idle_0135_001__A020": {
+        "reason": "L2_label_mismatch",
+        "detail": "渲染+轨迹复核：55s 净位移仅 0.03m，原地站立非前进行走（forward_walk 族误配）"},
+    "orange_justice_slow_001__A465": {
+        "reason": "L2_label_mismatch",
+        "detail": "渲染复核：orange justice 舞步（净位移 0）非 slow_walk 语义，防 T-fam 族语义泄漏"},
+    "crawl_ff_start_180_R_001__A125": {
+        "reason": "L2_label_mismatch",
+        "detail": "渲染复核：爬行动作（crawl 词面误配 start 关键词入 start_stop_transition 族），"
+                  "非双足启停语义；三连窗双门 seed0 全 fall（gate_A 原档留证）"},
+    "crawl_ff_start_180_R_001__A126": {
+        "reason": "L2_label_mismatch",
+        "detail": "渲染复核：爬行动作（crawl 词面误配 start 关键词入 start_stop_transition 族），"
+                  "非双足启停语义；三连窗双门 seed0 全 fall（gate_A 原档留证）"},
+    "crawl_ff_start_180_R_001__A127": {
+        "reason": "L2_label_mismatch",
+        "detail": "渲染复核：爬行动作（crawl 词面误配 start 关键词入 start_stop_transition 族），"
+                  "非双足启停语义；三连窗双门 seed0 全 fall（gate_A 原档留证）"},
+}
+
 NAME_RE = re.compile(r"^(?P<desc>.+?)_(?P<seq>\d+)__A(?P<actor>\d+)(?P<mir>_M)?$")
 CONF_RANK = {"high": 0, "med": 1, "low": 2, "other": 3}
 
@@ -206,6 +230,12 @@ def five_dim_labels(family: str, desc: str, row: dict) -> tuple[dict, dict, bool
         if movement == "前进" and hmove != 1:
             movement = "混合"  # 前进族但官方标注无水平位移 -> 归混合并在 signals 注明
         metadata_used = metadata_used or (hmove != 1 and MOVEMENT_DEFAULT[family] == "前进")
+
+    # D045 S5 渲染复核裁定（2026-09-07）：lateral 族 locomotion 恒「侧移」。
+    # filename 通道会因 jog/walk 词根误打「前进/混合」（jog_sideway 渲染复核实证），
+    # 族归属（L1a）即侧移语义真值，覆写之；signals 保留原命中供审计。
+    if family == "lateral":
+        movement = "侧移"
 
     # -- 上肢 {对称,非对称,小幅,大幅,最小}
     up_any = bool(UPPER_ANY_RE.search(text))
@@ -537,7 +567,9 @@ def main() -> None:
             "detail": {"note": "D044 实例：离线回环 0.114 rad 健康 + Isaac 闭环 3-seed "
                                "系统性摔倒 @≈12.7s = 闭环空间漂移型（协议 §2，执行失败≠脏数据）；"
                                f"L2 通道该段 props={boundary_rec['content_props']!r} 未过筛，"
-                               "不入首版配额，仅以 boundary_ref 登记",
+                               "不入首版配额，仅以 boundary_ref 登记；"
+                               "S5 渲染复核（2026-09-07）：首尾各 ~2 帧 T-pose 校准帧"
+                               "（原始数据自带，quality_notes 登记不做数据处理）",
                        "frames": boundary_rec["move_duration_frames"],
                        "actor_uid": boundary_rec["actor_uid"]},
         })
@@ -564,6 +596,14 @@ def main() -> None:
     all_selected = [label_rec(r) for r in all_selected]
     if boundary_rec is not None:
         all_selected.append(label_rec(boundary_rec))
+
+    # owner 裁定排除标注（L2_label_mismatch 5 段，移出首版；本脚本顶 EXCLUDED_STEMS）
+    for rec in all_selected:
+        ex = EXCLUDED_STEMS.get(rec["stem"])
+        rec["excluded"] = ex is not None
+        if ex:
+            rec["exclusion"] = {"layer": "L2", **ex}
+    n_excluded = sum(1 for r in all_selected if r["excluded"])
 
     # ---------------- 轨迹核实：每族抽 ≤5 段（均匀铺开）----------------
     traj_flags: Counter = Counter()
@@ -642,6 +682,7 @@ def main() -> None:
                             "check3_cross_set_actor_report"))
 
     # ---------------- stats ----------------
+    fam_excluded: Counter = Counter(r["family"] for r in all_selected if r["excluded"])
     fam_quota_table = {}
     for fam in ALL_FAMS:
         picked = selections[fam]
@@ -652,6 +693,8 @@ def main() -> None:
                      "dev" if fam in DEV_FAMS else "test(T-fam)"),
             "quota": QUOTA[fam],
             "selected": len(picked),
+            "excluded_ruling": fam_excluded.get(fam, 0),
+            "final_n": len(picked) - fam_excluded.get(fam, 0),
             "shortfall": QUOTA[fam] - len(picked),
             "actors": len({r["actor_uid"] for r in picked}),
             "tseg_selected": sum(1 for r in picked if r["t_role"] == "T-seg"),
@@ -708,16 +751,31 @@ def main() -> None:
                 "（jump_form_box_to_safety_roll / jumping on a box 等）。",
                 "保护声明：dance_hiphop_box_step（舞步名含 box，86 段）不含 "
                 "jump/come_updown/50cm，不被任何模式命中。",
+                "D045 S5 渲染复核标签修正（owner 裁定 2026-09-07）：lateral 族 "
+                "locomotion 恒「侧移」——filename 通道因 jog/walk 词根误打「前进/混合」"
+                "（jog_sideway 渲染复核实证），族归属即侧移语义真值；signals 保留原命中审计。",
+                "D045 S5 渲染复核排除 5 段（L2_label_mismatch，owner 裁定）：A020 原地站立"
+                "非前进行走 / A465 orange justice 舞步防 T-fam 泄漏 / A125-A127 爬行"
+                "误配 start 关键词（三连窗 seed0 全 fall 证据留 gate_A 原档）。",
+                "A005 观察项（S5 渲染复核）：首尾各 ~2 帧 T-pose 校准帧（原始数据自带），"
+                "quality_notes 登记不做数据处理。",
             ],
             "label_rule_note": "五维标签=filename/metadata 双通道规则打标（manual=false 待人工抽看）；"
-                               "temporal=整段粗标签（§7.2 fallback）",
+                               "temporal=整段粗标签（§7.2 fallback）；"
+                               "lateral 族 locomotion 恒「侧移」（S5 渲染复核覆写，2026-09-07）",
             "t_pair_note": "T-pair=动作×地形组合测试，属训练发射后评测口径：本划分不单独切段，"
                            "由 train 段的动作多样性支撑（五维标签覆盖表即其依据）",
         },
         "candidates_10fam_total": sum(1 for r in rows if r["family"] in ALL_FAMS),
         "pass_candidates_10fam": sum(len(v) for v in pools.values()),
-        "selected_total": len(all_selected) - (1 if boundary_rec else 0),
-        "selected_total_incl_boundary": len(all_selected),
+        "selected_total": sum(1 for r in all_selected if not r["excluded"])
+                          - (1 if boundary_rec else 0),
+        "selected_total_incl_boundary": sum(1 for r in all_selected if not r["excluded"]),
+        "excluded_ruling_L2_label_mismatch": {
+            "n": n_excluded, "stems": sorted(EXCLUDED_STEMS),
+            "note": "owner 裁定 2026-09-07（S5 双门回放+渲染复核）：移出首版，"
+                    "ledger L2 逐段 + split excluded 标记；fall 证据留 gate 原档",
+        },
         "quota_table": fam_quota_table,
         "shortfall_summary": {f: fam_quota_table[f]["shortfall"]
                               for f in ALL_FAMS if fam_quota_table[f]["shortfall"] > 0},
@@ -765,6 +823,7 @@ def main() -> None:
         "actor_bucket": r["actor_bucket"],
         "set_role": r["set_role"], "t_role": r["t_role"],
         "repr_participation": r["repr_participation"],
+        "excluded": r["excluded"], "exclusion": r.get("exclusion"),
     } for r in all_selected]
     split = {
         "_meta": {
@@ -777,6 +836,13 @@ def main() -> None:
         },
         "segments": split_segments,
     }
+    fam_by_stem = {r["stem"]: r["family"] for r in all_selected}
+    excluded_l2 = [{
+        "stem": stem, "family": fam_by_stem.get(stem), "layer": "L2",
+        "reason": ex["reason"], "all_reasons": [ex["reason"]],
+        "detail": {"note": ex["detail"],
+                   "disposition": "移出首版（S5 渲染复核 owner 裁定 2026-09-07）"},
+    } for stem, ex in sorted(EXCLUDED_STEMS.items())]
     ledger = {
         "_meta": {
             "script": "apt_g1/build_b4lite_candidates.py",
@@ -786,12 +852,16 @@ def main() -> None:
                           "L3 执行能力=保留不清洗（能力边界记录）",
         },
         "L1": [],
-        "L2": fail_entries + mirror_dedup,
+        "L2": fail_entries + mirror_dedup + excluded_l2,
         "L3": l3_entries,
         "summary": {
-            "L1": 0, "L2": len(fail_entries) + len(mirror_dedup), "L3": len(l3_entries),
-            "L2_by_primary_reason": dict(reason_primary),
-            "L2_by_any_reason": dict(reason_any),
+            "L1": 0,
+            "L2": len(fail_entries) + len(mirror_dedup) + len(excluded_l2),
+            "L3": len(l3_entries),
+            "L2_by_primary_reason": {**dict(reason_primary),
+                                     "L2_label_mismatch": len(excluded_l2)},
+            "L2_by_any_reason": {**dict(reason_any),
+                                 "L2_label_mismatch": len(excluded_l2)},
             "L2_mirror_dedup": len(mirror_dedup),
         },
     }
@@ -813,13 +883,16 @@ def main() -> None:
     w("leak_check.json", leak)
 
     print(f"\n[done] elapsed={stats['elapsed_sec']}s "
-          f"selected={stats['selected_total']}/152 (incl boundary {len(all_selected)})")
+          f"final={stats['selected_total']}/147 "
+          f"(raw picks={len(all_selected)} incl boundary, ruling-excluded={n_excluded})")
     for fam in ALL_FAMS:
         t = fam_quota_table[fam]
         print(f"  {fam:22s} [{t['role']:12s}] quota={t['quota']:3d} sel={t['selected']:3d} "
+              f"excl={t['excluded_ruling']:2d} final={t['final_n']:3d} "
               f"gap={t['shortfall']:3d} actors={t['actors']:3d} "
               f"pool={t['pool_pass_hard_filters']:5d}")
     print(f"  shortfall: {stats['shortfall_summary'] or 'none'}")
+    print(f"  excluded ruling: {sorted(EXCLUDED_STEMS)}")
     print(f"  cleaning L2 primary: {dict(reason_primary)}  mirror_dedup: {len(mirror_dedup)}")
     print(f"  traj flags: {dict(traj_flags)}")
     print(f"  leak pass_all: {leak['pass_all']}  "
