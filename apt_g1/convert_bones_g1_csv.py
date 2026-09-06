@@ -119,6 +119,7 @@ from encode_bones_smoke import (  # noqa: E402
     LATTICE_TOL,
     _heading,
     _heading_inv,
+    _qconj,
     _qn,
     _qmul,
     _quat_rotate_inverse,
