@@ -161,6 +161,9 @@ lab-ts 之外的第二计算平台，定位 = 算力主平台（owner 09-06 指�
   `48c96t_512_4090`(node02)、`48c96t_512_3090`(node03/04)、
   `64c128t_512_4090`(node05)、`128c256t_1536_4090`(node06/07)、
   `128c256t_1536_6000Ada`(node08, RTX 6000 Ada 48G)。
+  **资源使用纪律（owner 2026-09-06 指令）：不用 6000Ada 池（node08
+  留给他用）；尽量用弱卡——优先 3090 池（`32c64t_256_3090` /
+  `48c96t_512_3090`），不足再上 4090 池。**
 - **数据布局（前会话已搬，勿重复 rsync）**：`~/gr00t/` 下 .venv_isaac
   21G + GR00T-WholeBodyControl 20G（含 outputs 7G）+ apt_g1 64G（含
   data 63G）+ uv_python 77M ≈ 105G；`token_stats_e49.npz` 已在。
