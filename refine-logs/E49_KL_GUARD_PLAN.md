@@ -261,8 +261,11 @@ latent_kl_coef 2.5e-6、lr 3e-4、epochs 1、minibatch 512、clip 0.2、
   - (b) 未扼杀训练：it300–999 回滚步占比 ≤ 30%（>30% → 判「阈值过紧」，
     走 §B.6 分支④；参照 lr1e4 教训=更新被冻死也不行）；
   - (c) 灾难步减少：任意相邻 10-it 窗 rew 降幅 >0.5 的次数 ≤ fix2 同窗
-    （fix2 计数由分析脚本给出，写入本节回填栏：fix2 = `__` 次 /
-    C2 = `__` 次）；
+    （fix2 计数由分析脚本给出，写入本节回填栏：fix2 = `7` 次 /
+    C2 = `19` 次——反增 2.7×，FAIL【v1 守卫口径下的读数；口径 = i 从
+    10 起扫，max(rew[i-10:i]) − rew[i] > 0.5 记 1 次并跳 i+=10 不重叠；
+    前两事件 it51/it80 两 run 逐位同（it161 首次回滚前一致），分化始于
+    守卫首次干预后；v2 重跑时按同口径重算】）；
   - (d) 观测项（只记录不判）：act_std 轨迹、vloss/expl_var 轨迹、lr_now
     轨迹——A.3 两个嫌疑的直接证据，供下一轮裁决。
 
@@ -468,6 +471,35 @@ e49_run_a.sh 的 eval 逐字模板为基、旗标语义均经代码核验——�
 E49-C2-guard-s0）+ 结论 8 + `EXPERIMENT_TRACKER.md` 行数同步 → owner 裁决
 分支走向。
 
+### D.6 v2 流程逐字命令（09-06 深夜审计后；前置 = v2 三件套已部署执行根 + sha256 对账）
+
+```bash
+# P 探针 ×3（thr ∈ 0.01 / 0.03 / 0.1；dir 名 t001/t003/t010 相应替换）
+ssh lab-ts
+cd ~/ros2_data/GR00T-WholeBodyControl
+nohup bash /tmp/run_apt_isaac.sh ~/ros2_data/apt_g1/isaac/train_apt_isaac.py \
+  --num-envs 128 --iters 1000 --probe-iters 300 --env apt --token-mode \
+  --token-stats ~/ros2_data/apt_g1/outputs/e49/token_stats_e49.npz \
+  --lr 3e-4 --ppo-epochs 1 --seed 0 --diag-log --kl-guard 0.01 \
+  --out outputs/isaac_e49c_p2_t001_s0 \
+  > outputs/isaac_e49c_p2_t001_s0_train.log 2>&1 < /dev/null & disown
+# 三个探针串行（3060 12G 不并行多 Isaac 实例）；每个 ~8 min
+# 发射后核对日志头 [CFG] 行：iters=1000 probe_iters=300 kl_guard=<thr>
+
+# 定阈判读（三探针齐后）：rew 是否离开站立地板 1.64 上行（对照 fix2
+# 80–119 均值 1.586 / 峰 1.731@it100）+ 回滚率（kl_rolls 累计 / minibatch
+# 总数）+ kl_mb 分布；按 §B.3′-3 选最紧且可学习者
+
+# C2′（<thr> 换选定值；与 D.3 同形，无 --probe-iters）
+nohup bash /tmp/run_apt_isaac.sh ~/ros2_data/apt_g1/isaac/train_apt_isaac.py \
+  --num-envs 128 --iters 1000 --env apt --token-mode \
+  --token-stats ~/ros2_data/apt_g1/outputs/e49/token_stats_e49.npz \
+  --lr 3e-4 --ppo-epochs 1 --seed 0 --diag-log --kl-guard <thr> \
+  --out outputs/isaac_e49c2p_guard_s0 \
+  > outputs/isaac_e49c2p_guard_s0_train.log 2>&1 < /dev/null & disown
+# 评测 = D.4 命令把 isaac_e49c_guard_s0 换成 isaac_e49c2p_guard_s0
+```
+
 ---
 
 ## §E 数据与落账规矩
@@ -518,3 +550,12 @@ E49-C2-guard-s0）+ 结论 8 + `EXPERIMENT_TRACKER.md` 行数同步 → owner �
   跑至 it820 rew≈1.15、d_xy≈0.51——J1 注定 FAIL，按协议跑完取数（判读
   = 「v1 守卫不充分」，非「KL 约束无用」）。嫌疑队列重排：累计更新
   偏离 > 探索方差单调涨 > critic 早期 ev≈0 > 奖励设计（冻结待裁决）。
+- 2026-09-06（C2 完成收账）：C2 训练+8 组评测全部完成（final 四组
+  24/24 rollout 100% 摔、disp 0.001 原地踏频；btail=it800 四组 36
+  rollout 零摔但纯站漂移 60s disp 0.36–1.3 m）；J1 双 FAIL（0.9798
+  vs fix2 1.0818）、J3(a) 313=313（按 v1 判据量）、J3(b) 7.45%、
+  J3(c) 19 vs 7 反增——判读与 Run 行落 tracker/E.md（E49-C1-probe /
+  E49-C2-guard-s0 两行 + 结论 8，EXPERIMENT_TRACKER 104→106/247→249
+  同步）。§B.4(c) 回填 fix2=7 / C2=19（v1 口径）。§D.6 前置的「C2
+  评测跑完」条件已满足 → 下一步 = v2 三件套部署执行根（sha256 对账）
+  → P 探针 ×3 发射。

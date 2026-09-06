@@ -284,6 +284,8 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
 | E49-B-fix2-s0 | **归因臂：显式相位观测**（obs 追加 [sinφ,cosφ] 两维 =155d，A/B 单变量 = φ 可见性；fix2 冻结训练器逐字配方） | 128×1000，seed 0，`--token-mode --token-phase-obs --ppo-epochs 1 --diag-log` | 曲线+diag+双评（it_50/final，6 rollouts） | DONE | **it_50：6/6 零摔真直行 vx 0.450–0.453 / disp 23.7–24.3 m**（把 A-fix2 早期"有速度无净位移"改善为真直行，头段峰 it68 rew 1.7969 亦高于 fix2 的 1.7315）；**final：6/6 立即失败 disp≈0.001 m、h_min 0.201–0.229**。训练内两次退化形态不同：it170–260 KL 抬升期（akl 均值 352 ≈ 头段 7×，rew 降至 1.49）；it400 谷 0.302 即日恢复 1.41；**it575 低 KL 崩塌（akl 33.4，vx 0.53→1.75、drift 0.41→3.94，随后 fall 0.014–0.025）**；尾段 it999 rew 0.972、act_std 0.0299（四 run 最高）；clip 恒 0.83。**裁决（owner 09-06）：相位 = 有效表征变量（直行改善成立），非优化稳定器（未阻止退化）** |
 | E49-VAE-ref-fix2-s0 | **A/B 比较的 VAE 参照**（同修正训练器 latent 模式；E45–E47 降历史结果后的新归因参照；owner 09-06 中止） | 128×950（中止），seed 0，latent 模式 + `--diag-log` | 曲线+diag（未做终点评测） | **ABORTED@it950**（owner 中止；ckpt/日志保留；非跑满终态、不作完成结果——owner 09-06 钉死） | it301 峰 **rew 2.0781** 正常行走；**it460–470 首退化**：rew 1.88→0.715，akl 先塌 158.9→5.6→3.2，vx_fwd 转负 −0.54、drift 0.05→0.58，clip 全程唯一一次掉离 0.83（0.785），随后恢复 1.879；it690–760 二次退化（低 KL，akl 低至 1.09，rew 0.92–1.39，fall 峰值仅 0.001–0.004）；it880–949 恢复 1.684；**中止点 it949/950 = 1.832/1.861 零摔、akl 20–55、act_std 0.0258**。**判读：VAE 能缓冲直出 64d token 的退化（退化仍发生但幅度小/恢复快/近零摔），但不证其在修正训练器下长期稳定** |
 | E49-kl-guard-impl | **E49-C KL 信任域守卫实现与验证**（owner 09-06 裁决的下一干预；执行计划 = `refine-logs/E49_KL_GUARD_PLAN.md`） | `ppo_core.py`：构造器 4 kwargs + `kl_diag_gaussian`（解析对角高斯 KL，KL(new‖old)、执行维求和 batch 均值 = rsl_rl 口径）+ step 前全模型快照 / step 后超阈回滚整步 + lr×0.8（下限 1e-6）、KL<阈/2 回升×1.2（上限初始 lr）、连续 3 回滚断路；`train`：`--kl-guard{,-shrink,-grow,-max-rolls}` 四旗标 + hist 守卫量（kl_mb/kl_mb_all/kl_rolls/lr_now）+ vloss/expl_var 无条件落盘 + `[CFG]` 配置回显。**默认 None = 冻结版行为零回归**（diff 零删除；唯一新增执行 = expl_var 纯日志） | e49_kl_guard_test 6 用例 + e49_gae_test 回归（服务器） | DONE | **服务器 6/6 PASS**（公式对照 2.8e-14 / 默认关闭回归 / 极小阈全回滚+断路 rolls=2 提前结束 / 巨阈探针形态 / grow 恢复 4.1e-4→8.5e-4 / expl_var perfect=1.0 与 indep=−23.8）；**旧 e49_gae_test 复跑 10/10 零回归**；部署 sync 克隆 0d3500f→执行根 sha256 三对逐位一致（ppo_core 552849c1 / train d6682991 / test→594c11d 判据加固版）。case6(b) 首版判据把"期望 ≤0"当"单次样本 ≤0"（+0.0049 落 ±1/√N 噪声带 FAIL，实现无嫌疑）→ 改大方差独立 value 断言 <−1.0。**C1 探针 / C2 单 seed 待发射（E49_KL_GUARD_PLAN §D 逐字命令）** |
+| E49-C1-probe | **E49-C 步骤一：守卫阈值探针**（fix2 逐字配方 + `--kl-guard 1e9` 只测不拦，300 it；执行 = E49_KL_GUARD_PLAN §D.1 逐字） | 128×300，seed 0，`--token-mode --ppo-epochs 1 --diag-log --kl-guard 1e9`；产物 `outputs/isaac_e49c_probe_s0/`（服务器）；`[CFG]` 回显核对一致 | C1.5 定阈脚本（`kl_mb_all` 取 it≥10 全体 minibatch 分位数） | DONE | **thr = P95 = 45.1597**（P50 13.2371 / P90 38.0389 / P99 55.5393 / max 91.9314，n=1740）；合理带检查通过（thr≫1e-4 过紧下界、P95/P50=3.41 离散度充分）；全程 roll=0 与 1e9 语义自洽。【**09-06 深夜审计：thr=45.1597 作废**——失稳分布 P95 不构成安全阈 + `--iters 300` 压缩 expl 调度 = 探针配方不公平（train:375 max_iters=cli.iters）；本行数据保留作历史，v2 重定阈 = §B.3′（文献量级 {0.01,0.03,0.1} schedule-fair 探针）】 |
+| E49-C2-guard-s0 | **E49-C 步骤二：KL 信任域守卫单 seed（v1）**（fix2 逐字配方 + `--kl-guard 45.1597`，1000 it + final/btail 双 ckpt × 4 契约 8 组评测；对照 = E49-A-fix2-s0 同配方同 seed 不重跑） | 128×1000，seed 0，`--diag-log --kl-guard 45.1597`；产物 `isaac_e49c_guard_s0/` + `outputs/e49/eval_e49c_guard_s0_{final,btail}_{train,60s}_{det,sample}.json`（服务器）；`[CFG]` 回显一致、60it 中止规则通过（it120 rew 1.717） | 预注册 J1/J2/J3（E49_KL_GUARD_PLAN §B.4） | DONE | **J1 FAIL / J2 FAIL / J3(a)按自身判据量对账一致 (b)7.45% 非过紧 (c)FAIL → 分支 3 落定，判读 = 「v1 守卫不充分」（非「KL 约束无用」，owner 09-06 深夜审计口径）**。J1（it800–999 窗）：rew **0.9798** / d_xy 0.4525 / fall 0.0089 三线全不过（1.70/0.75/0.01），fix2 对照 1.0818/0.4719 同 FAIL 且守卫版还略差；J2：final（it1000）24/24 rollout **100% 摔**（fall_step 75–87 ≈3 s，disp 0.001 原地踏频 vx 0.68–0.81 零净位移）；btail（it800，[800,850) 窗均 1.0327 尾段最高）36 rollout 零摔但 vx≈−0.03 纯站漂移（60s disp 0.36–1.3 m）→ 0/6 行走格；J3(c) 骤降事件 **19 vs fix2 7 = 2.7× 反增**（口径 = max(rew[i-10:i])−rew[i]>0.5 不重叠计数；前两事件 it51/it80 两 run 逐位同，it161 首次回滚后分化）；J3(d) act_std 1.0188→1.0265 持续膨胀、ev −0.007→−0.006→0.495→0.840（critic 晚熟）、lr 每步回弹无累积。**判读受限声明（§A′）**：v1 判据量三缺陷（步内参照 ppo_core:450-466 与 rollout 策略脱钩 / log_std expand_as 别名 std 盲 :82 仅方差变时真 KL 0.685 报 0 / thr 来源不成立）→ "313=313 对账"仅证明守卫按自身（有缺陷的）判据量执行一致；"退化在低 KL 区/拦错对象"等机制叙事基于 v1 不完整观测，正式裁决待 v2（rollout 参照含累计效应）。回滚簇 it393–469/503–603/614–703/726–829/882–993 与震荡段重合、it400 整 iter 全回滚（kl_g 210.9）为 v1 口径下的描述性事实。**C2 数据保留作 v1 对照，v2 流程（§B.3′/§D.6）接续**。评测期间出现非本会话派发的 bt800/smp 同 ckpt 评测产物（疑似 owner 并行操作，未并入判读） |
 
 **E49-A 结论（A 问已答 + 新问题 = 训练崩坏，修复调研中）**：
 
@@ -371,3 +373,30 @@ kl 56→100，z 漂离 walk 流形），复现 E28–E30 的 ~0.35 m/s 上限—
    log_std/熵全部冻结不混做），协议预注册于 E49_KL_GUARD_PLAN §B；
    提取数据件在本地 `tmp/e49_investigation/`（gitignored，含四 run 关键
    窗口 CSV 与服务器路径索引）。
+8. **E49-C KL 信任域守卫 v1 轮判读（09-06，C1→C1.5→C2 全链完成 + 深夜
+   审计修正；权威口径 = E49_KL_GUARD_PLAN §A′）**：① C2（v1 守卫，
+   thr=45.1597）结果——J1 双 FAIL（guard 0.98 / fix2 1.08，线 1.70，
+   守卫版略差）、final ckpt 24/24 全摔（≈3 s，原地踏频零净位移）、
+   J3(c) 骤降事件 19 vs fix2 7 反增 2.7×、J3(b) 回滚率 7.45% 非过紧、
+   J3(a) 超阈 313 = 回滚 313 按自身判据量对账一致；② **判读 =「v1
+   守卫不充分」，H-C 未被否定**——owner 深夜审计实锤 v1 三缺陷：步内
+   参照（KL 旧侧 = 本 minibatch loss 前后而非 rollout 策略，连续小步
+   可累计走远而每步过阈）、log_std `expand_as` 别名 std 盲（仅方差
+   变化时恒报 0，服务器复现真 KL 0.685 / v1 报 0）、thr 来源不成立
+   （失稳分布 P95 非安全阈 + 探针 `--iters 300` 压缩 expl 调度 = 配方
+   不公平）→ thr=45.1597 作废、旧流程作废，C2 数据保留作 v1 对照；
+   ③ 审计连带修正（对结论 7 的增补）：§A.1 时序否决**降级**（只能否决
+   「尖峰即时打崩」，不能排除「持续累计偏离」机制——且 v1 的 KL 观测
+   std 盲使既有 KL 数据不完整）；§A.2「裁剪完全失效」改「未提供足够
+   约束」（三 run 区间均值 82.9–83.3%）；「探针 ev 0.97 = critic 健康」
+   **撤回**（探针全程均值 0.409、C2 前 300 it ≈0 = critic 早期不健康/
+   晚熟，嫌疑维持但不能单独定因退化）；④ **守卫 v2 已实现并验证**
+   （rollout 参照含累计效应 + 拒绝步恢复参数与 Adam 状态 + `--probe-iters`
+   调度公平；单测证据链：旧代码 6/9 三 FAIL = v1 缺陷直接复现 → 新代码
+   9/9 PASS + gae 10/10 零回归；隔离目录验证未碰执行根；e190dee/8451f7f）；
+   ⑤ 嫌疑队列（本轮冻结口径，§A′-7）：**① PPO 更新长期偏离采样策略
+   （累计机制）② 探索方差单调增长（熵 0.001 + expl 0.01 同推一个动作
+   头）③ critic 早期 expl_var≈0 ④ 奖励设计（冻结待①②裁决）**；下一
+   流程 = §B.3′ 文献量级 {0.01, 0.03, 0.1} schedule-fair 探针 ×3 → 定阈
+   → C2′（§D.6 逐字命令）。CVGL 集群接入闭合（4090 训练吞吐 = 3060 的
+   1.7–1.8×、显存 3GB/24GB）备 seed 扩展，见 HANDOFF/04 §7。
