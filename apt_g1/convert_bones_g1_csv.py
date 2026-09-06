@@ -35,6 +35,14 @@ Outputs (server): one npz per segment under --out-dir with
   trans_m (n,3) | jv_isaac (n,29) | meta json string
 and a manifest.json (consumed by isaac/b3p_gate_isaac.py for the B3' gate).
 
+D045 (B4-lite protocol §5, refine-logs/DS_B4LITE_ACTION_SPLIT_PLAN.md):
+every successful meta additionally carries a nested "b4lite" block --
+source / frames / actor_group / semantics / kinematics / quality / split /
+exclusion / flat_replay (the four-question manifest). Defaults are
+null/pass; --labels-json merges semantics hits; --tar-version stamps the
+source archive. flat_replay is backfilled from the B3' gate result by
+backfill_b4lite_manifest.py and frozen there.
+
 Usage (server, mjlab venv, cwd=~/ros2_data/apt_g1):
   # 1) calibrate Euler axis order against the paired pkl (once):
   python convert_bones_g1_csv.py --calibrate \
@@ -238,9 +246,12 @@ def parse_stem(path):
 
 
 def load_csv(path):
-    """Returns (dof_deg_mj, quat_wxyz, trans_m, n_frames, warnings).
+    """Returns (dof_deg_mj, euler_deg, trans_m, n_frames, frame_start,
+    frame_end, warnings).
 
     Order is BY NAME (never positional); units deg+cm per D043.
+    frame_start/frame_end are the raw Frame-column first/last values
+    (D045 B4-lite manifest "frames" question).
     """
     with open(path) as f:
         header = f.readline().strip().split(",")
@@ -262,7 +273,79 @@ def load_csv(path):
     dof_deg_mj = raw[:, 7:][:, csv2mj] * DEG2RAD  # -> MuJoCo order, rad
     euler_deg = raw[:, 4:7]
     trans_m = raw[:, 1:4] / 100.0
-    return dof_deg_mj, euler_deg, trans_m, len(raw), warn
+    return (dof_deg_mj, euler_deg, trans_m, len(raw),
+            float(frame[0]), float(frame[-1]), warn)
+
+
+# --------------------------------------------- B4-lite manifest block (D045)
+B4LITE_DEFAULT_TAR_VERSION = "g1.tar.gz@D043-scp-bitwise-verified"
+
+
+def kinematics_stats(trans_m):
+    """v_med / v_p90 (m/s @50 Hz) + total heading change (rad), from the npz
+    trans_m via transl differencing (D040 M1 method).
+
+    Zero-displacement segments are legal (in-place actions -> v_med = 0);
+    heading accumulation skips sub-mm steps so atan2 noise on stationary
+    frames cannot inflate the total.
+    """
+    d = np.diff(np.asarray(trans_m)[:, :2], axis=0)
+    step = np.linalg.norm(d, axis=1)
+    v = step * FPS_ENC
+    moving = step > 1e-3
+    if moving.sum() >= 2:
+        h = np.arctan2(d[moving, 1], d[moving, 0])
+        dh = np.abs((np.diff(h) + np.pi) % (2.0 * np.pi) - np.pi)
+        heading_total = float(dh.sum())
+    else:
+        heading_total = 0.0
+    return float(np.median(v)), float(np.percentile(v, 90)), heading_total
+
+
+def build_b4lite_block(stem, mirror, csv_path, csv_root, tar_version,
+                       frame_start, frame_end, trans_m, labels=None):
+    """D045: B4-lite protocol §5 four-question manifest fields, nested as a
+    single meta["b4lite"] sub-dict (D044 top-level fields untouched -> old
+    readers, e.g. b3p_gate_isaac.py, stay source-compatible). Everything
+    defaults to null/pass; --labels-json hits (JSON keyed by stem) merge
+    into semantics. quality is S3's, split is S4's, flat_replay is
+    backfilled from gate_result.json by backfill_b4lite_manifest.py --
+    the npz-embedded meta stays the fact source (D044 pitfall #1)."""
+    v_med, v_p90, heading_total = kinematics_stats(trans_m)
+    semantics = {
+        "family": None,
+        "labels_5dim": {"locomotion": None, "upper_body": None,
+                        "posture": None, "contact": None, "temporal": None},
+        "label_confidence": None,
+        "label_sources": {"filename": None, "trajectory": None, "manual": None},
+    }
+    if labels:
+        for k, v in labels.items():  # shallow merge; sub-dicts update key-wise
+            if isinstance(semantics.get(k), dict) and isinstance(v, dict):
+                semantics[k].update(v)
+            else:
+                semantics[k] = v
+    try:
+        csv_relpath = os.path.relpath(csv_path, csv_root)
+    except ValueError:  # e.g. different drive -- keep the absolute path
+        csv_relpath = csv_path
+    return {
+        "source": {"csv_relpath": csv_relpath, "tar_version": tar_version},
+        "frames": {"frame_start": frame_start, "frame_end": frame_end},
+        "actor_group": {"parent_take": stem[:-2] if mirror else stem},
+        "semantics": semantics,
+        "kinematics": {"v_med": v_med, "v_p90": v_p90,
+                       "heading_change_total": heading_total},
+        "quality": {"layer1": "pass", "layer2": "pass", "layer3": "none",
+                    "boundary_set": False, "quality_notes": []},
+        "split": {"set_role": None, "t_role": None,
+                  "repr_participation": {"vae": None, "norm_stats": None,
+                                         "sonic_pretrain": "not_excludable"}},
+        "exclusion": {"excluded": False, "reason": None},
+        # 占位：gate_result.json 回填后冻结（backfill_b4lite_manifest.py，
+        # 协议 §5「平地回放结果」问）；回填前保持 null，不伪造
+        "flat_replay": None,
+    }
 
 
 # ------------------------------------------------------------- encoder chain
@@ -390,7 +473,7 @@ def calibrate(args):
     csv_path = os.path.join(args.csv_root, date_dir, stem + ".csv")
     if not os.path.isfile(csv_path):
         raise FileNotFoundError(f"paired CSV not found: {csv_path}")
-    dof_csv_mj, euler_csv, trans_csv_m, n_rows_csv, warn = load_csv(csv_path)
+    dof_csv_mj, euler_csv, trans_csv_m, n_rows_csv, _fs, _fe, warn = load_csv(csv_path)
 
     # CSV -> pkl rate for frame-aligned comparison
     dof_csv_rs = resample(dof_csv_mj, FPS_SRC, fps_pkl)
@@ -474,6 +557,13 @@ def main():
     ap.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
     ap.add_argument("--roundtrip", action="store_true")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--tar-version", default=B4LITE_DEFAULT_TAR_VERSION,
+                    help="source archive version string for the B4-lite "
+                         "manifest (D045, protocol §5 source/version)")
+    ap.add_argument("--labels-json", default=None,
+                    help="JSON {stem: {family/labels_5dim/label_confidence/"
+                         "label_sources}} merged into the b4lite semantics "
+                         "block when the stem hits (D045)")
     args = ap.parse_args()
 
     if args.calibrate:
@@ -508,6 +598,11 @@ def main():
 
     npz_dir = os.path.join(args.out_dir, "npz")
     os.makedirs(npz_dir, exist_ok=True)
+    labels = {}
+    if args.labels_json:
+        with open(args.labels_json) as f:
+            labels = json.load(f)
+        print(f"[b4lite] labels json: {len(labels)} stems")
     dec_bundle = None
     if args.roundtrip:
         env = MujocoG1FlatEnv(NoQuantDecoder(
@@ -534,7 +629,7 @@ def main():
             skipped += 1
             continue
         try:
-            dof_mj, euler, trans_m, n_src, warn = load_csv(path)
+            dof_mj, euler, trans_m, n_src, f_start, f_end, warn = load_csv(path)
             seg = encode_segment(dof_mj, euler, trans_m, conv, enc, ins[0].name,
                                  m2i, default_mj, dec_bundle=dec_bundle)
         except Exception as e:
@@ -552,6 +647,12 @@ def main():
             "path_len_m": float(np.linalg.norm(np.diff(seg["trans_m"][:, :2], axis=0), axis=1).sum()),
             "npz_path": os.path.abspath(npz_path),
             "warnings": warn,
+            # D045: B4-lite §5 four-question fields, nested (backwards
+            # compatible); npz meta + manifest are written from this same
+            # dict so the two stay isomorphic (D044 pitfall #1).
+            "b4lite": build_b4lite_block(
+                stem, mirror, path, args.csv_root, args.tar_version,
+                f_start, f_end, seg["trans_m"], labels=labels.get(stem)),
         }
         np.savez(npz_path,
                  tokens=seg["tokens"], jp_isaac=seg["jp_isaac"], jp_mj=seg["jp_mj"],
