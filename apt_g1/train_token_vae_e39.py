@@ -33,6 +33,14 @@ D039 实测（lab-ts 3060，10ep）：原始路径 52-54k samples/s > 全显存+
 测试安全旗标：--epochs（默认 30）/ --out-dir（默认 outputs/token_vae_e39，
 测试重定向沙箱，避免覆盖生产 vae.pt）。
 另增 [SPEED] 每 epoch 墙钟/吞吐日志与训练结束总结行，不影响任何数值。
+【2026-09-07 D046 扩展（全部向后兼容，默认=原始行为）】
+  --data-dir       数据目录参数化（原硬编码 data/exp_all3）
+  --ckpt-every N   每 N epochs 存 vae_epNNN.pt + heads_epNNN.pt 快照（0=关）
+  --bin0-forward   dbin_meta.json 标注改写为 bin0=前向（D046 B4-lite 约定）
+  segment_bounds.npy 若存在于数据目录则启用段边界掩码：向后窗（帧 i 用
+  tok[i-9..i]）绝不跨段，跨段窗口帧从 train/val 采样中剔除；缺省文件时
+  行为与原始完全一致。训练结束额外保存 heads.pt（dir/speed head 权重，
+  原版不落盘导致无法跨集评测；不影响 vae.pt 格式）。
 """
 
 from __future__ import annotations
@@ -153,12 +161,18 @@ def main():
                     help="训练 epoch 数（默认 30，与原硬编码一致）")
     ap.add_argument("--out-dir", type=str, default="outputs/token_vae_e39",
                     help="输出目录（默认 outputs/token_vae_e39；测试可重定向沙箱避免覆盖生产 vae.pt）")
+    ap.add_argument("--data-dir", type=str, default="data/exp_all3",
+                    help="数据目录（含 token/mode/angle_bin.npy；可选 segment_bounds.npy 启用不跨段窗口）")
+    ap.add_argument("--ckpt-every", type=int, default=0,
+                    help="每 N epochs 存 vae/heads 快照（0=关，只保留 best vae.pt）")
+    ap.add_argument("--bin0-forward", action="store_true", default=False,
+                    help="dbin_meta 标注 bin0=前向（D046 B4-lite 约定；默认 bin4=前向=exp_all3）")
     args = ap.parse_args()
     torch.manual_seed(0)
     np.random.seed(0)
     adv_dir = 3.0
     adv_spd = 3.0
-    data_dir = "data/exp_all3"
+    data_dir = args.data_dir
     out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)
 
@@ -182,17 +196,35 @@ def main():
     with open(os.path.join(out_dir, "dbin_meta.json"), "w") as f:
         json.dump({"n_bins": 8,
                    "bin_counts": [int(c) for c in np.bincount(db, minlength=8)],
-                   "bin4_is_forward": True}, f, indent=1)
+                   **({"bin0_is_forward": True, "bin4_is_forward": False}
+                      if args.bin0_forward else {"bin4_is_forward": True})},
+                  f, indent=1)
 
     phase2 = np.stack([np.sin(phi), np.cos(phi)], axis=1).astype(np.float32)
     window, latent_dim, hidden = 10, 16, 256
     x = build_windows(tok, window)
     y = tok
     n = len(tok)
+    # D046: 段边界掩码（向后窗：帧 i 用 tok[i-window+1..i]，段首须有 window-1
+    # 帧历史）——数据目录有 segment_bounds.npy 时窗口绝不跨段，跨段窗口帧
+    # 从 train/val 采样剔除；无该文件时 valid 全真 = 原始行为。
+    bounds_path = os.path.join(data_dir, "segment_bounds.npy")
+    if os.path.exists(bounds_path):
+        bounds = np.load(bounds_path).astype(np.int64)
+        seg_start = np.zeros(n, dtype=np.int64)
+        for s0, e0 in bounds:
+            seg_start[s0:e0] = s0
+        valid = (np.arange(n) - seg_start) >= (window - 1)
+        print(f"segment bounds {len(bounds)}: valid frames {int(valid.sum())}/{n} "
+              f"(cross-segment windows dropped)", flush=True)
+    else:
+        valid = np.ones(n, dtype=bool)
     ntr = int(n * 0.9)
     rng = np.random.default_rng(0)
     perm = rng.permutation(n)
     tr_idx, va_idx = perm[:ntr], perm[ntr:]
+    tr_idx = tr_idx[valid[tr_idx]]
+    va_idx = va_idx[valid[va_idx]]
     # 性能补丁：数据整体搬显存（GPU 张量不能被 worker 子进程 pickle，
     # 故 num_workers=0/pin_memory=False；shuffle 随机序列与种子不变 → batch 索引不变）
     data_on_gpu = args.data_on_gpu
@@ -304,6 +336,12 @@ def main():
               f"spd_acc={spd_acc/spd_cnt:.3f}", flush=True)
         print(f"[SPEED] epoch={ep+1}/{epochs} wall={ep_dt:.1f}s iters={n_iter} "
               f"it_s={n_iter / ep_dt:.2f} throughput={cnt / ep_dt:.0f} samples/s", flush=True)
+        if args.ckpt_every and (ep + 1) % args.ckpt_every == 0:
+            torch.save(model.state_dict(),
+                       os.path.join(out_dir, f"vae_ep{ep + 1:03d}.pt"))
+            torch.save({"dir_head": dir_head.state_dict(),
+                        "speed_head": speed_head.state_dict()},
+                       os.path.join(out_dir, f"heads_ep{ep + 1:03d}.pt"))
         if va_mse < best:
             best = va_mse
             torch.save(model.state_dict(), os.path.join(out_dir, "vae.pt"))
@@ -313,7 +351,7 @@ def main():
           f"throughput={total_train_samples / _total_dt:.0f}samples/s", flush=True)
 
     with torch.no_grad():
-        idx = np.where(mode == 2)[0]
+        idx = np.where((mode == 2) & valid)[0]
         xw = torch.from_numpy(x[idx]).cuda()
         pw = torch.from_numpy(phase2[idx]).cuda()
         zw = model.encode(xw)[0].cpu().numpy()
@@ -326,6 +364,10 @@ def main():
         fin_spd = (speed_head(mu_all).argmax(1).cpu() == torch.from_numpy(vb[va_idx])).float().mean().item()
     print(f"final dir_head acc (want ~0.125): {fin_dir:.3f}")
     print(f"final speed_head acc (want ~0.333): {fin_spd:.3f}")
+    # D046: heads 权重落盘（原版不保存，无法跨集评测；不影响 vae.pt 格式）
+    torch.save({"dir_head": dir_head.state_dict(),
+                "speed_head": speed_head.state_dict()},
+               os.path.join(out_dir, "heads.pt"))
     with open(os.path.join(out_dir, "meta.json"), "w") as f:
         json.dump({"window": window, "latent_dim": latent_dim, "hidden": hidden,
                    "token_dim": 64, "phase_dim": 2, "n_vbins": 3, "n_dbins": 8,
