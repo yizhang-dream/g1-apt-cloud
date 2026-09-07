@@ -144,6 +144,7 @@ def main():
             env._oracle_idx = 0
             xy0 = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy().copy()
             traj = [xy0]
+            traj_pb = [xy0]  # D047 口径注记：播放相路径单列（见 playback_path_m）
             h_min, h_end, fall_step, steps_done = float("inf"), None, None, 0
             q_err_ref, q_err_pd = [], []
             for t in range(total):
@@ -159,8 +160,10 @@ def main():
                     h = float(env.robot.data.root_pos_w[0, 2].item())
                     h_min = min(h_min, h)
                     h_end = h
-                    traj.append(env.robot.data.root_pos_w[0, :2].detach().cpu().numpy().copy())
+                    xy_now = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy().copy()
+                    traj.append(xy_now)
                     if t < n_rows:  # token playback phase
+                        traj_pb.append(xy_now)
                         q_des_s = env._q_des[0].detach().cpu().numpy()
                         q_act_s = env.robot.data.joint_pos[0, env._body_idx].detach().cpu().numpy()
                         q_err_pd.append(float(np.abs(q_act_s - q_des_s).mean()))
@@ -177,6 +180,15 @@ def main():
             dur = steps_done / 50.0
             completed = fall_step is None and steps_done >= total
             ref_path = float(np.linalg.norm(np.diff(seg["trans_m"][:, :2], axis=0), axis=1).sum())
+            # D047 path-ratio 口径注记：realized_path_ratio 的分子累计到播放+hold
+            # 结束/摔倒，与完整参考（如 A101 参考 258 步 vs 实际 500/199 步）不同
+            # 时间窗，不可直接当同窗比值读。以下分列播放相路径与 hold 期位移，
+            # 供未来门做同窗比值；不回刷历史 run（D047 存活裁决保留）。
+            traj_pb = np.asarray(traj_pb)
+            playback_path = (float(np.linalg.norm(np.diff(traj_pb, axis=0), axis=1).sum())
+                             if len(traj_pb) > 1 else 0.0)
+            hold_disp = (float(np.linalg.norm(traj[-1] - traj_pb[-1]))
+                         if steps_done > n_rows else None)
             key = f"{seg['stem']}__seed{seed}"
             results[key] = {
                 "class": seg["class"], "actor": seg["actor"], "stem": seg["stem"],
@@ -192,6 +204,10 @@ def main():
                 "disp_norm_m": round(float(np.linalg.norm(disp_vec)), 2),
                 "mean_speed_mps": round(path_len / dur, 3) if dur > 0 else None,
                 "realized_path_ratio": round(path_len / ref_path, 3) if ref_path > 0.5 else None,
+                "playback_path_m": round(playback_path, 2),
+                "playback_path_ratio": (round(playback_path / ref_path, 3)
+                                        if ref_path > 0.5 else None),
+                "hold_disp_m": round(hold_disp, 2) if hold_disp is not None else None,
                 "q_track_mae_vs_ref_rad": round(float(np.mean(q_err_ref)), 4) if q_err_ref else None,
                 "q_track_mae_pd_rad": round(float(np.mean(q_err_pd)), 4) if q_err_pd else None,
             }
