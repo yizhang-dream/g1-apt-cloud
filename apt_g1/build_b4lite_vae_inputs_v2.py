@@ -1,7 +1,7 @@
-"""D046 v2 训练输入构建：SONIC mode 词表 + UL 正交轴（v1 复用 + 增轴）。
+"""D046 v2/v2.1 训练输入构建：SONIC mode 词表 + UL 正交轴（v1 复用 + 增轴）。
 
-读 build_b4lite_mode_map.py 的 candidates_v2.json（133 段 = 121 mode 段 + 12
-intermediate 材料），npz 双目录解析（v1 g1_b4lite/npz/ 只读 + v2 专用
+读 build_b4lite_mode_map.py 的 candidates_v21.json（v2.1：+IDLE 枢纽 mode，
+段数见池 meta），npz 双目录解析（v1 g1_b4lite/npz/ 只读 + v2 专用
 g1_b4lite_v2conv/npz/），产出 train_token_vae_e39_v2.py 的四件套
 {token, mode_id, ul, angle_bin}.npy + segment_bounds + window_keep_mask +
 norm_stats（只算训练段）。
@@ -9,17 +9,18 @@ norm_stats（只算训练段）。
 与 v1（build_b4lite_vae_inputs.py，D046 v1 基线）的关系：
   - 复用其 frame_speed / angle_bins / wrap_pi 代码路径（import，单一实现）；
   - bin 规则同款：dt=0.02、5 帧平滑、v_thresh=0.05、theta0_k=10、bin0=段首前向；
-  - mode 轴从 10 语义族改为 SONIC 27-mode 子集（embed idx 表落 build_meta）；
+  - mode 轴从 10 语义族改为 SONIC 27-mode 子集（embed idx 表落 build_meta；
+    v2.1 起含 IDLE=hpp 0，embed idx 按 hpp id 升序）；
   - 新增 UL 轴（none=0/sym=1/asym=2，段级常量）；
   - intermediate 连通性材料：不参与 mode 预算平衡，窗口级 keep 概率 0.3
     （window_keep_mask.npy，seed=0，owner 倾向的低权重进训练落法）；
-  - 过采样预算按 train mode 平衡（STEALTH_WALK 池薄将按因子复制，如实记录）。
+  - 过采样预算按 train mode 平衡（池薄 mode 按因子复制，如实记录）。
 
 用法（服务器 .venv_isaac python）：
   python build_b4lite_vae_inputs_v2.py                # train + dev + tfam 全建
-产出 data/ds_bones/g1_b4lite/vae_inputs_v2/：
+产出 data/ds_bones/g1_b4lite/vae_inputs_v21/：
   {token,mode_id,ul,angle_bin,segment_bounds,window_keep_mask}.npy
-  norm_stats_d046v2.npz  build_meta.json  dev/  tfam/
+  norm_stats_d046v21.npz  build_meta.json  dev/  tfam/
 """
 from __future__ import annotations
 
@@ -35,9 +36,9 @@ from build_b4lite_vae_inputs import angle_bins, frame_speed
 
 HOME = os.path.expanduser("~")
 BASE = f"{HOME}/ros2_data/apt_g1/data/ds_bones/g1_b4lite"
-DEFAULT_CAND = f"{BASE}/mode_map_v2/candidates_v2.json"
+DEFAULT_CAND = f"{BASE}/mode_map_v21/candidates_v21.json"
 DEFAULT_NPZ_DIRS = [f"{BASE}/npz", f"{BASE}/../g1_b4lite_v2conv/npz"]
-DEFAULT_OUT = f"{BASE}/vae_inputs_v2"
+DEFAULT_OUT = f"{BASE}/vae_inputs_v21"
 
 # embed idx 表：in-subset mode 按 hpp id 升序，intermediate 殿后（idx 最大）
 INTERMEDIATE_NAME = "intermediate"
@@ -54,7 +55,10 @@ def mode_table(in_subset: list[str]) -> list[dict]:
     return tabs
 
 
+# v2.1：+IDLE(hpp 0)。embed 表 = 9 子集 mode 按 hpp id 升序（IDLE=idx 0，
+# WALK=idx 2）+ intermediate 殿后（idx 9）-> n_modes = max_id+1 = 10 座位
 MODE_HPPO = {
+    "IDLE": 0,
     "SLOW_WALK": 1, "WALK": 2, "RUN": 3, "FORWARD_JUMP": 17,
     "STEALTH_WALK": 18, "INJURED_WALK": 19, "LEDGE_WALKING": 20,
     "HAPPY_DANCE_WALK": 23,
@@ -187,7 +191,7 @@ def main() -> None:
     cand = json.load(open(args.cand))
     segs_all = cand["segments"]
     in_subset = cand["_meta_in_subset"] if "_meta_in_subset" in cand else None
-    # candidates_v2.json 的 in_subset 在 quota_table 键里（铁定来源）
+    # candidates_v21.json 的 in_subset 在 quota_table 键里（铁定来源）
     in_subset = sorted(cand["quota_table"].keys(),
                        key=lambda n: MODE_HPPO.get(n, 999))
     table = mode_table(in_subset)
@@ -219,7 +223,7 @@ def main() -> None:
     # norm stats：只算训练段（过采样前原始帧）
     tok_tr = built["train"]["token"]
     mean, std = tok_tr.mean(0), tok_tr.std(0) + 1e-6
-    np.savez(os.path.join(args.out_dir, "norm_stats_d046v2.npz"),
+    np.savez(os.path.join(args.out_dir, "norm_stats_d046v21.npz"),
              mean=mean, std=std)
 
     keep = window_keep_mask(train_os["bounds"], train_os["materials"],
@@ -247,7 +251,7 @@ def main() -> None:
 
     walk_idx = idx_by_name["WALK"]
     meta = {
-        "experiment": "D046(v2)",
+        "experiment": "D046(v2.1)",
         "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "seed": args.seed,
         "candidates": args.cand,
@@ -268,7 +272,7 @@ def main() -> None:
                       "train_kept": int(keep.sum()),
                       "dev": n_valid_windows(built["dev"]["bounds"], args.window),
                       "tfam": n_valid_windows(built["tfam"]["bounds"], args.window)},
-        "norm_stats": "norm_stats_d046v2.npz（只算训练段原始帧，过采样前；"
+        "norm_stats": "norm_stats_d046v21.npz（只算训练段原始帧，过采样前；"
                       "E39 canonical 不做输入归一化，本统计为审计与探针用）",
         "per_split_census": {
             name: {str(i): int(c) for i, c in enumerate(np.bincount(

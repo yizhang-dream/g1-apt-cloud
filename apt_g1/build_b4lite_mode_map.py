@@ -1,7 +1,13 @@
-"""D046 v2：条件轴锚定 SONIC 27-mode 词表 + 上肢正交轴——全量重标 + 候选池 + 划分。
+"""D046 v2/v2.1：条件轴锚定 SONIC 27-mode 词表 + 上肢正交轴——全量重标 + 候选池 + 划分。
+
+v2.1（owner 2026-09-07 二次裁定）：IDLE(0) 静态例外入集，定位 = mode 间转换公共
+枢纽——纯站立段（stand/idle/wait 类描述且无移动词）-> mode=IDLE；站立+上肢段
+-> (IDLE, UL=sym/asym)；启停段裁定：有明确"走完停住站立"叙事（start/stop/halt
+词）保持 intermediate（过渡材料），纯站立无前置动作归 IDLE。产物目录 version
+后缀 v21（mode_map_v21/），不覆盖 v2 产物。
 
 与 D045 十族标签（v1 基线，build_b4lite_map_labels.py / build_b4lite_candidates.py）
-的关系：本脚本不改 v1 任何产物，另立 mode_map_v2/ 目录，产出与 v1 147 段的对照。
+的关系：本脚本不改 v1 任何产物，另立 mode_map_v21/ 目录，产出与 v1 147 段的对照。
 
 设计事实源：gear_sonic_deploy .../localmotion_kplanner.hpp 的 27 值 LocomotionMode
 枚举（id 0-26；is_static_motion_mode 六个静态；get_*_motion_modes 四个 motion set）。
@@ -14,15 +20,19 @@
             + ②非静态（hpp is_static_motion_mode）
             + ③纲领范围（无物体接触的移动/姿态动作优先；道具交互类 out_scope）。
   27 个逐个裁：in_subset / out_static / out_scope / out_no_data，理由逐条落 meta。
+  v2.1 修订（owner 2026-09-07）：静态类仅 IDLE(0) 入集（mode 间转换公共枢纽）；
+  IDEL_SQUAT / IDEL_KNEEL* / IDEL_LYING_FACE_DOWN / IDEL_BOXING 维持排除。
 
 映射规则（描述类 -> {mode_id | intermediate | none} x UL in {none,sym,asym}）：
   - 分解优先：上肢是正交轴不是 mode。walk_forward_grab_* -> (WALK, UL=asym)；
-    clap_while_walking 类 -> (WALK, UL=sym)；纯站立上肢段 -> none（剔除，子集内
-    无 gesture mode）。
+    clap_while_walking 类 -> (WALK, UL=sym)；纯站立上肢段 v2 判 none 剔除，
+    v2.1 反转 -> (IDLE, UL=sym/asym)。
   - 锚：SLOW_WALK<-slow+loco 段；WALK<-forward_walk/turn_walk(转向=WALK×db 轴)/
     lateral(侧移=hpp movement_direction 单位向量可表达)；RUN<-jog/run/sprint；
-    FORWARD_JUMP<-jump；HAPPY_DANCE_WALK<-dance；start_stop/过渡类->intermediate
-    （保留作连通性材料，不占 mode）；posture(kneel/crouch/bend/...)->intermediate。
+    FORWARD_JUMP<-jump；HAPPY_DANCE_WALK<-dance；IDLE<-纯站立（stand/idle/wait
+    类词且无 loco 词，v2.1 新增）；start_stop/过渡类->intermediate（保留作连通性
+    材料，不占 mode；v2.1：stop-and-stand 启停段按 owner 裁定保持 intermediate）；
+    posture(kneel/crouch/bend/...)->intermediate。
   - 置信度三档照 D045（high=名称单规则/med=名称多规则取更具体/low=仅描述字段/
     other）；命中多个 mode 取优先级序更小（更具体）者。
   - 判别性检查：规则按优先级序互斥解析（每类恰一 target）；调整记录见脚本 meta
@@ -37,11 +47,11 @@ mode 12）如实记录；T-fam 留出 2 mode（预注册退路梯子 TFAM_LADDER
 照 D045；泄漏检查三项照 D045（镜像同集 / T-fam 演员零交集 / 跨 set 报告）。
 
 Usage (server, venv_isaac):
-    cd ~/ros2_data/apt_g1 && python apt_g1/build_b4lite_mode_map.py
-产物（data/ds_bones/g1_b4lite/mode_map_v2/）:
+    cd ~/ros2_data/apt_g1 && python build_b4lite_mode_map.py
+产物（data/ds_bones/g1_b4lite/mode_map_v21/）:
     mode_map.json relabel_per_segment.csv relabel_stats.json
-    candidates_v2.json split_v2.json leak_check_v2.json
-    csv_list_v2.txt labels_v2.json   （新段转换器输入，v2 专用不碰 v1 npz/）
+    candidates_v21.json split_v21.json leak_check_v21.json
+    csv_list_v21.txt labels_v21.json   （新段转换器输入，v2.1 专用不碰 v1 npz/）
 """
 from __future__ import annotations
 
@@ -59,7 +69,7 @@ HOME = os.path.expanduser("~")
 DS_DIR = f"{HOME}/ros2_data/apt_g1/data/ds_bones"
 DEFAULT_PARQUET = f"{DS_DIR}/seed_metadata_v004.parquet"
 DEFAULT_SEG_CSV = f"{DS_DIR}/g1_b4lite/desc_family_per_segment.csv"
-DEFAULT_OUT_DIR = f"{DS_DIR}/g1_b4lite/mode_map_v2"
+DEFAULT_OUT_DIR = f"{DS_DIR}/g1_b4lite/mode_map_v21"
 DEFAULT_NPZ_DIR = f"{DS_DIR}/g1_b4lite/npz"
 DEFAULT_SPLIT_JSON = f"{DS_DIR}/g1_b4lite/split_assignments.json"
 
@@ -139,7 +149,9 @@ COVERAGE_PATTERNS: dict[str, str] = {
     "RANDOM_PUNCH": r"\bpunch(?:es|ing|ed)?\b",
     "LEFT_HOOK": r"\bleft\b[^.;]{0,20}\bhook\w*\b|\bhook\w*[^.;]{0,20}\bleft\b",
     "RIGHT_HOOK": r"\bright\b[^.;]{0,20}\bhook\w*\b|\bhook\w*[^.;]{0,20}\bright\b",
-    "IDLE": r"\bidle\b|\bneutral\s+stand\w*\b",
+    # v2.1（owner 2026-09-07）：IDLE 关键词扩为纯站立词表；映射规则带 no_loco 门
+    # （有移动词不归 IDLE，防 walk-then-stand 类叙事误入）
+    "IDLE": r"\bstand(?:s|ing|ed)?\b|\bidle\w*\b|\bwait(?:s|ing|ed)?\b|\bstill\b|\bstationary\b|\bneutral\b",
 }
 COV_COMPILED = {k: re.compile(v) for k, v in COVERAGE_PATTERNS.items()}
 
@@ -151,8 +163,9 @@ LOCO_WORD_RE = re.compile(
     r"\bturn\w*\b|\bpivot\w*\b|\bspin(?:s|ning|ned)?\b|\bsneak\w*\b|\btiptoe\w*\b|"
     r"\bcreep\w*\b|\bstealth\w*\b|\blimp(?:s|ing|ed)?\b|\bstagger\w*\b|\bstumbl\w*\b")
 
-# 映射规则表（优先级序=具体度序；名称通道；上方先胜；need_loco=需 loco 词共现）
-MODE_RULES: list[tuple[str, str, bool]] = [
+# 映射规则表（优先级序=具体度序；名称通道；上方先胜；need_loco=True 需 loco 词
+# 共现 / "no_loco" 需无 loco 词（v2.1 IDLE：纯站立无移动词））
+MODE_RULES: list[tuple[str, str, object]] = [
     ("FORWARD_JUMP", COVERAGE_PATTERNS["FORWARD_JUMP"], False),
     ("HAPPY_DANCE_WALK", COVERAGE_PATTERNS["HAPPY_DANCE_WALK"], False),
     ("INJURED_WALK", COVERAGE_PATTERNS["INJURED_WALK"], True),
@@ -171,12 +184,40 @@ MODE_RULES: list[tuple[str, str, bool]] = [
     ("GUN_WALK", COVERAGE_PATTERNS["GUN_WALK"], False),
     ("OBJECT_CARRYING", COVERAGE_PATTERNS["OBJECT_CARRYING"], False),
     ("intermediate", r"\bstart(?:s|ing|ed)?\b|\bstop(?:s|ping|ped)?\b|\btransition\w*\b|\bbegin(?:s|ning)?\b|\bhalt(?:s|ing|ed)?\b", False),
-    ("intermediate", r"\bkneel(?:s|ing|ed)?\b|\bcrouch(?:es|ing|ed)?\b|\bbend(?:s|ing|ed)?\b|\blean(?:s|ing|ed)?\b|\btilt(?:s|ing|ed)?\b|\bsquat(?:s|ing|ted)?\b|\bstoop(?:s|ing|ed)?\b|\bsit(?:s|ting)?\b|\bstand(?:ing)?\s+up\b|\bget(?:ting)?\s+up\b", False),
+    ("intermediate", r"\bkneel(?:s|ing|ed)?\b|\bcrouch(?:es|ing|ed)?\b|\bbend(?:s|ing|ed)?\b|\blean(?:s|ing|ed)?\b|\btilt(?:s|ing|ed)?\b|\bsquat(?:s|ing|ted)?\b|\bstoop(?:s|ing|ed)?\b|\bsit(?:s|ting)?\b|\bstand(?:s|ing)?\s+up\b|\bget(?:s|ting)?\s+up\b", False),
+    # v2.1 规则⑤反转：纯站立（stand/idle/wait 类词且无 loco 词）-> IDLE（公共枢纽）；
+    # 置于两条 intermediate 规则之下 => stop-and-stand 启停段（start/stop/halt 词）
+    # 与 stand-up/posture 段按 owner 裁定保持 intermediate，纯站立归 IDLE
+    ("IDLE", COVERAGE_PATTERNS["IDLE"], "no_loco"),
     ("RUN", COVERAGE_PATTERNS["RUN"], False),
     ("SLOW_WALK", COVERAGE_PATTERNS["SLOW_WALK"], True),   # 判别性调整：slow 需 loco 共现
     ("WALK", COVERAGE_PATTERNS["WALK"], False),
 ]
 COMPILED_RULES = [(t, re.compile(p), need) for t, p, need in MODE_RULES]
+
+# v2.1 IDLE 纯站立否决集（全文本口径）：组合文本（名称+全部描述字段）命中下列
+# 任一词则非纯站立，撤 IDLE 命中——一切移动/其他 mode 词（need=False 规则）+
+# posture 词；起止/过渡词（start/stop/transition/begin/halt）不否决（owner 预期
+# 效果②：idle_to_idle 类纯站立叙事段转 IDLE；walk-then-stand 类由 loco 词否决
+# 保持 intermediate）。首跑实测修正：crutches_idle（crutch 词）/mohak_idle_loop
+# （crawl 词）/neutral_alone（描述含 walk）曾被 name 通道 IDLE 抢占。
+IDLE_TARGET = "IDLE"
+_IDLE_VETO_RULES = [
+    (t, rx) for t, rx, need in COMPILED_RULES
+    if t != IDLE_TARGET and need is False
+    and not (t == "intermediate" and rx.pattern.startswith(r"\bstart"))
+]
+
+
+def _idle_veto(text: str) -> bool:
+    if LOCO_WORD_RE.search(text):
+        return True
+    return any(rx.search(text) for _, rx in _IDLE_VETO_RULES)
+
+
+def desc_fields_text(row: dict) -> str:
+    return _word(" ".join(str(row.get(f)) for f in UL_DESC_FIELDS
+                          if isinstance(row.get(f), str)))
 
 # 方向旗（不占 mode；relabel CSV direction 列审计用）
 DIR_LATERAL_RE = re.compile(r"\bstrafe\w*\b|\blateral(?:ly)?\b|\bsideways?\b|\bsidestep\w*\b|\bside\s+(?:step|walk|ways)\b")
@@ -237,7 +278,21 @@ DISCRIMINABILITY_ADJUSTMENTS = [
     "asym——防 arc_walk_left_loop 类路径方向词污染 UL 轴（v1 五维标签已知噪声源）",
     "调整⑤ 纯站立上肢段（gesture 无移动词）-> target=none 剔除：子集内无 gesture "
     "mode（IDLE/IDEL_BOXING 静态排除），满足 owner『既不匹配 mode 也不匹配中间态"
-    "则剔除』",
+    "则剔除』（v2.1 已反转，见下条）",
+    "v2.1 修订⑥（2026-09-07 owner 裁定，规则⑤反转）：IDLE(0) 静态例外入集作 "
+    "mode 间转换公共枢纽——纯站立段（stand/idle/wait/still/stationary/neutral 类"
+    "描述且无移动词）-> mode=IDLE；站立+上肢段 -> (IDLE, UL=sym/asym)，UL 词"
+    "共现规则沿用调整④；启停段裁定：有明确『走完停住站立』叙事保持 intermediate"
+    "（过渡材料）——实现为 IDLE 规则置于两条 intermediate 规则之下 + 纯站立门"
+    "（_idle_veto：名称+全字段合文本含 loco/其他 mode/posture 词即否决 IDLE；"
+    "起止/过渡词不否决）；描述字段通道中 IDLE 不参与字段级循环，仅作无任何其他"
+    "命中时的同门口径兜底。首跑两处实测修正记录：①字段级 IDLE 抢跑"
+    "（on_the_edge 240 段 LEDGE 等被字段序抢占）→ IDLE 退出字段循环；②名称通道 "
+    "IDLE 抢占（crutches_idle/mohak_idle_loop/neutral_alone 类合文本含移动词）"
+    "→ 加纯站立否决集；idle_to_idle 类（仅起止/过渡词）按 owner 预期效果②转 IDLE",
+    "v2.1 附带修正：posture intermediate 规则 stand/get up 补第三人称单数形式"
+    "（stand(?:s|ing)?\\s+up / get(?:s|ting)?\\s+up）——stands up/gets up 类起身段"
+    "v2 曾漏判为 none，v2.1 若不补将误入 IDLE 枢纽",
     "判别性结论：规则优先级序互斥解析保证每个归一描述类恰映射一个 target；任意两个 "
     "in-subset mode 的有效关键词集经调整后无交叠（交叠案例均被更高具体度规则吸收或"
     "预剔除）",
@@ -271,7 +326,9 @@ def match_name(desc: str) -> tuple[list[str], list[str]]:
     has_loco = bool(LOCO_WORD_RE.search(words))
     hits, kws = [], []
     for target, rx, need_loco in COMPILED_RULES:
-        if need_loco and not has_loco:
+        if need_loco is True and not has_loco:
+            continue
+        if need_loco == "no_loco" and has_loco:
             continue
         found = rx.findall(words)
         if found:
@@ -295,7 +352,11 @@ def match_desc_fields(row: dict) -> tuple[list[str], str]:
         words = _word(val)
         has_loco = bool(LOCO_WORD_RE.search(words))
         for target, rx, need_loco in COMPILED_RULES:
-            if need_loco and not has_loco:
+            if target == "IDLE":
+                continue  # v2.1：IDLE 不参与描述字段级循环（兜底见 classify）
+            if need_loco is True and not has_loco:
+                continue
+            if need_loco == "no_loco" and has_loco:
                 continue
             if rx.search(words) and target not in hits:
                 hits.append(target)
@@ -311,6 +372,11 @@ def classify(desc: str | None, row: dict) -> dict:
                 "matched": [], "direction": "none"}
     words = _word(desc)
     hits, kws = match_name(desc)
+    if hits and "IDLE" in hits:
+        # v2.1 纯站立门：组合文本（名称+全部描述字段）含移动/其他 action 词或
+        # posture 词则撤 IDLE 命中，回落描述通道（v2 行为）；起止/过渡词不否决
+        if _idle_veto(words + " " + desc_fields_text(row)):
+            hits = [h for h in hits if h != "IDLE"]
     if hits:
         target = hits[0]
         conf = "high" if len(hits) == 1 else "med"
@@ -320,7 +386,13 @@ def classify(desc: str | None, row: dict) -> dict:
             target, conf = d_hits[0], "low"
             kws = [f"desc:{src}"]
         else:
-            target, conf, kws = "none", "other", []
+            # v2.1 IDLE 描述通道兜底（最低优先）：同纯站立门口径
+            fields_text = desc_fields_text(row)
+            if not _idle_veto(words + " " + fields_text) and \
+                    COV_COMPILED["IDLE"].search(fields_text):
+                target, conf, kws = "IDLE", "low", ["desc:idle_stand_fallback"]
+            else:
+                target, conf, kws = "none", "other", []
     dirs = []
     if DIR_LATERAL_RE.search(words):
         dirs.append("lateral")
@@ -436,9 +508,22 @@ def main() -> None:
         entry = {"id": m["id"], "set": m["set"], "static": m["static"],
                  "coverage_union_segments": cov,
                  "coverage_name_channel_only": cov_name.get(name, 0)}
-        if m["static"]:
+        if m["static"] and name != "IDLE":
             entry.update(verdict="out_static",
-                         reason="hpp is_static_motion_mode（静态姿态，规则②排除）")
+                         reason="hpp is_static_motion_mode（静态姿态，规则②排除；"
+                                "v2.1 修订 2026-09-07：仅 IDLE 静态例外入集）")
+        elif name == "IDLE":
+            # v2.1 owner 修订：静态类仅 IDLE 入集（mode 间转换公共枢纽），
+            # 仍须过规则①覆盖门
+            if cov >= SUBSET_MIN_SEG:
+                entry.update(verdict="in_subset",
+                             reason="v2.1 修订（2026-09-07）：静态例外入集——"
+                                    "mode 间转换公共枢纽；规则①覆盖过门")
+                in_subset.append(name)
+            else:
+                entry.update(verdict="out_no_data",
+                             reason=f"v2.1 静态例外仍须规则①：覆盖 {cov} < "
+                                    f"{SUBSET_MIN_SEG} 段")
         elif name in PRE_SCOPE_EXCLUDED:
             entry.update(verdict="out_scope", reason=PRE_SCOPE_EXCLUDED[name])
         elif name in PRE_DISCRIM_EXCLUDED:
@@ -642,7 +727,7 @@ def main() -> None:
         "forward_walk": "WALK", "fast_walk_run": "RUN",
         "forward_jump": "FORWARD_JUMP", "dance_rhythm": "HAPPY_DANCE_WALK",
         "turn_walk": "WALK", "start_stop_transition": "intermediate",
-        "asym_upper": "*（walk 词根->WALK，纯站立->none）",
+        "asym_upper": "*（walk 词根->WALK，纯站立->v2 none / v2.1 IDLE）",
         "posture_change": "intermediate", "lateral": "WALK(+lateral 方向旗)",
         "slow_walk": "SLOW_WALK",
     }
@@ -686,7 +771,7 @@ def main() -> None:
     leak = {
         "_meta": {
             "script": "apt_g1/build_b4lite_mode_map.py",
-            "experiment": "D046(v2)",
+            "experiment": "D046(v2.1)",
             "bucket_rule": "md5(actor_uid) mod 10: 0-7 训练桶 / 8 开发桶 / 9 测试桶（D045 同）",
             "tfam_modes": tfam_modes,
             "tfam_reasons": tfam_reasons,
@@ -719,15 +804,20 @@ def main() -> None:
     # ---------------- 落盘 ----------------
     meta_common = {
         "script": "apt_g1/build_b4lite_mode_map.py",
-        "experiment": "D046(v2)",
+        "experiment": "D046(v2.1)",
         "owner_instruction": "2026-09-07：条件轴锚定 SONIC 27-mode 词表 + 上肢正交轴；"
-                             "标签必须能区分所用 mode；既不匹配 mode 也不匹配中间态的段剔除",
+                             "标签必须能区分所用 mode；既不匹配 mode 也不匹配中间态的段剔除；"
+                             "v2.1 同日二次裁定：IDLE 站立作为 mode 间转换的常用基础 mode 入集"
+                             "（静态类仅 IDLE(0)），纯站立段归 IDLE、站立+上肢段 (IDLE, UL)",
         "hpp_source": "gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/"
                       "localmotion_kplanner.hpp LocomotionMode（27 值）",
         "direction_semantics": "MovementState.movement_direction = [x,y,z] 单位向量"
                                "（hpp L62）-> 侧移/转向可表达，归 WALK×方向不单设 mode",
         "subset_rule": f"①覆盖(union)>={SUBSET_MIN_SEG} + ②非静态 + ③纲领范围"
-                       "（道具 out_scope；爬行域按 D045 证据 out_scope）",
+                       "（道具 out_scope；爬行域按 D045 证据 out_scope）；"
+                       "v2.1 修订（2026-09-07）：静态类仅 IDLE(0) 入集"
+                       "（mode 间转换公共枢纽），IDEL_SQUAT/IDEL_KNEEL*/"
+                       "IDEL_LYING_FACE_DOWN/IDEL_BOXING 维持排除",
         "discriminability_adjustments": DISCRIMINABILITY_ADJUSTMENTS,
         "confidence_def": "high=名称单规则/med=名称多规则取更具体/low=仅描述字段/other",
         "intermediate_material": {"n": INTERMEDIATE_MATERIAL_N,
@@ -820,19 +910,19 @@ def main() -> None:
                                         "intermediate 材料->train(0.3 权重)"},
              "segments": [{k: v for k, v in r.items() if k != "_desc_text"}
                           for r in all_selected]}
-    with open(os.path.join(args.out_dir, "candidates_v2.json"), "w",
+    with open(os.path.join(args.out_dir, "candidates_v21.json"), "w",
               encoding="utf-8") as f:
         json.dump(candidates, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(args.out_dir, "split_v2.json"), "w",
+    with open(os.path.join(args.out_dir, "split_v21.json"), "w",
               encoding="utf-8") as f:
         json.dump(split, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(args.out_dir, "leak_check_v2.json"), "w",
+    with open(os.path.join(args.out_dir, "leak_check_v21.json"), "w",
               encoding="utf-8") as f:
         json.dump(leak, f, ensure_ascii=False, indent=1)
 
-    # 新段转换清单 + labels（v2 专用目录，不碰 v1 npz/ 与 manifest.json）
+    # 新段转换清单 + labels（v2.1 专用目录，不碰 v1 npz/ 与 manifest.json）
     need_conv = [r for r in all_selected if not r["has_npz"]]
-    with open(os.path.join(args.out_dir, "csv_list_v2.txt"), "w",
+    with open(os.path.join(args.out_dir, "csv_list_v21.txt"), "w",
               encoding="utf-8") as f:
         for r in need_conv:
             f.write(os.path.join(DS_DIR, r["move_g1_path"]) + "\n")
@@ -846,7 +936,7 @@ def main() -> None:
                                             "metadata": r["confidence"] == "low",
                                             "manual": False}}
              for r in all_selected}
-    with open(os.path.join(args.out_dir, "labels_v2.json"), "w",
+    with open(os.path.join(args.out_dir, "labels_v21.json"), "w",
               encoding="utf-8") as f:
         json.dump(labels, f, ensure_ascii=False, indent=1)
 

@@ -1,23 +1,27 @@
-"""D046 v2 评测探针（owner 判据更正版，2026-09-07）。
+"""D046 v2/v2.1 评测探针（owner 判据更正版，2026-09-07；v2.1 适配 IDLE 入集）。
 
 判据（更正后生效）：
   J1  dev 重建 <=1.5x train；另做 v1 同款域偏移定性（tfam(T-fam 留出 mode) 重建
       vs dev/train 相对水平 -> 区分记忆 vs 域偏移）。
   J2' 条件通路可控性探针（替代作废的原 J2 head 阈值）：dev mu(>=200 窗) 固定，
       遍历条件 bin 解码，与 train 前向按条件分组的 token 质心做最近质心判定。
-      PASS: db(8) 每条件命中 >=25%（2x 随机）、vb(3) >=66%、mode(7 个已训练值)
-      每条件 >=2/7。head acc 降级为描述性统计。
+      PASS: db(8) 每条件命中 >=25%（2x 随机）、vb(3) >=66%、mode(已训练值)
+      每条件 >=2x 随机。head acc 降级为描述性统计。
   J5  生成侧 mode 最近质心混淆矩阵：任意两 in-subset mode 不得互相合并（对角
       占优：每行 argmax == 自身条件）。
-  J6  UL 轴同法：3 条件矩阵 + asym vs none 二分区分率（>=2x 随机线报告）。
+  J6' UL 轴同法：v2.1 起站立段回归（IDLE+UL），sym 池非空则 3 条件矩阵可测
+      （sym 分支=本次新增可测项）；另 asym/sym vs none 二分区分率。
   J7  全程零 NaN/Inf。
   J8  留出 mode（T-fam: SLOW_WALK/INJURED_WALK）重建单列（流形连续性基线）。
+  J9  （v2.1 新增）IDLE 枢纽指标：IDLE 重建 MSE（train/dev 单列）+ mode 扫描
+      IDLE 对角命中——hub 状态重建质量 = 将来 A->IDLE->B 切换链的底座指标，
+      只报数不下结论。
 
 Usage (server, venv_isaac):
-  python probe_vae_v2.py --run-dir data/ds_bones/g1_b4lite/vae_v2/run1 \
-      --inputs-dir data/ds_bones/g1_b4lite/vae_inputs_v2 \
+  python probe_vae_v2.py --run-dir data/ds_bones/g1_b4lite/vae_v21/run1 \
+      --inputs-dir data/ds_bones/g1_b4lite/vae_inputs_v21 \
       --snapshot vae_ep100.pt
-产出 <run-dir>/metrics_d046v2.json
+产出 <run-dir>/metrics_d046v21.json
 """
 from __future__ import annotations
 
@@ -34,6 +38,7 @@ from train_token_vae_e39_v2 import (DirSpeedPhaseTokenVAE, build_windows_bounded
 HOME = os.path.expanduser("~")
 BASE = f"{HOME}/ros2_data/apt_g1/data/ds_bones/g1_b4lite"
 V1_RUN = f"{BASE}/vae_v1/run1"
+V2_RUN = f"{BASE}/vae_v2/run1"
 
 
 def load_split(d: str, use_ul: bool):
@@ -83,8 +88,8 @@ def sweep_decode(model, mu: torch.Tensor, phase: torch.Tensor,
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run-dir", default=f"{BASE}/vae_v2/run1")
-    ap.add_argument("--inputs-dir", default=f"{BASE}/vae_inputs_v2")
+    ap.add_argument("--run-dir", default=f"{BASE}/vae_v21/run1")
+    ap.add_argument("--inputs-dir", default=f"{BASE}/vae_inputs_v21")
     ap.add_argument("--snapshot", default="vae_ep100.pt")
     ap.add_argument("--batch", type=int, default=4096)
     args = ap.parse_args()
@@ -276,22 +281,32 @@ def main() -> None:
              "pass_line": round(2 / 3, 4), "n_dev_windows": int(n_dev),
              "pass": bool(all(r >= 2 / 3 for r in vb_rates))}
 
-    # J6
+    # J6'（UL 轴；v2.1 起 sym 池非空则 3 条件可测，sym 分支为新增可测项）
     ul_rates, ul_mat = run_sweep("ul", ul_values, ul_cents)
     ul_names = {0: "none", 1: "sym", 2: "asym"}
-    # asym vs none 二分区分：两条件解码分别对 {none, asym} 两质心判定
-    sub_idx = [v for v in (0, 2) if v in ul_values]
-    cents2 = np.stack([ul_cents[v] for v in sub_idx])
-    cent_t = torch.from_numpy(cents2).float().to(dev)
-    bin_hits = {}
-    with torch.no_grad():
-        for c in sub_idx:
-            out = model.decode(dev_mu_t, dev_pb_t, dev_vb_t, dev_db_t,
-                               dev_mb_t, torch.full_like(dev_ub_t, c))
-            pred = torch.cdist(out, cent_t).argmin(1).cpu().numpy()
-            bin_hits[c] = float((pred == sub_idx.index(c)).mean())
-    bin_asym_hit = bin_hits.get(2)
-    bin_none_hit = bin_hits.get(0)
+    # 二分区分（条件 c vs none）：两条件解码分别对 {none, c} 两质心判定
+    bin_tests: dict[str, dict] = {}
+    for tname, (c_pos, c_neg) in (("asym_vs_none", (2, 0)),
+                                  ("sym_vs_none", (1, 0))):
+        sub_idx = [v for v in (c_pos, c_neg) if v in ul_values]
+        if len(sub_idx) < 2:
+            bin_tests[tname] = None
+            continue
+        cents2 = np.stack([ul_cents[v] for v in sub_idx])
+        cent_t = torch.from_numpy(cents2).float().to(dev)
+        hits = {}
+        with torch.no_grad():
+            for c in sub_idx:
+                out = model.decode(dev_mu_t, dev_pb_t, dev_vb_t, dev_db_t,
+                                   dev_mb_t, torch.full_like(dev_ub_t, c))
+                pred = torch.cdist(out, cent_t).argmin(1).cpu().numpy()
+                hits[c] = float((pred == sub_idx.index(c)).mean())
+        bin_tests[tname] = {
+            f"{ul_names[c_pos]}_cond_hit": round(hits[c_pos], 4),
+            f"{ul_names[c_neg]}_cond_hit": round(hits[c_neg], 4),
+            "random_line_binary": 0.5,
+            "pass_line_binary_2x": 1.0,
+        }
     j6 = {"per_condition_hit": {ul_names[v]: round(float(r), 4)
                                 for v, r in zip(ul_values, ul_rates)},
           "matrix": ul_mat.tolist(),
@@ -299,19 +314,18 @@ def main() -> None:
           "random_line_3way": round(1 / len(ul_values), 4),
           "pass_line_3way": round(2 / len(ul_values), 4),
           "zero_support_values": [ul_names[v] for v in zero_support["ul"]],
-          "zero_support_note": "v2 池 UL=sym 训练窗为 0（clap/crossed 类描述在 "
-                               "BONES 中几乎全是站立姿态 -> target=none 被剔除）："
-                               "sym 无质心不可探，J6 实测为 none/asym 二元",
-          "asym_vs_none": {"asym_cond_hit": (round(bin_asym_hit, 4)
-                                             if bin_asym_hit is not None else None),
-                           "none_cond_hit": (round(bin_none_hit, 4)
-                                             if bin_none_hit is not None else None),
-                           "random_line_binary": 0.5,
-                           "pass_line_binary_2x": 1.0},
+          "zero_support_note": ("v2.1 站立段回归（IDLE+UL）后 sym 有训练窗，"
+                                "J6' 三元矩阵含 sym 分支（本次新增可测项）"
+                                if 1 in ul_values else
+                                "sym 无训练窗不可探（v2 教训：站立 clap 类描述"
+                                "被剔），J6 实测为 none/asym 二元"),
+          "asym_vs_none": bin_tests["asym_vs_none"],
+          "sym_vs_none": bin_tests["sym_vs_none"],
           "ul_train_counts": {ul_names[v]: int((ub == v).sum())
                               for v in ul_values},
           "pass": bool(all(r >= 2 / len(ul_values) for r in ul_rates)
-                       and (bin_asym_hit is not None and bin_asym_hit >= 1.0))}
+                       and bin_tests["asym_vs_none"] is not None
+                       and bin_tests["asym_vs_none"]["asym_cond_hit"] >= 1.0)}
 
     # J8（tfam 按 mode 分桶 + 域偏移定性）
     per_mode = {}
@@ -324,6 +338,31 @@ def main() -> None:
           "reference": {"train_mse": tr_mse, "dev_mse": dv_mse},
           "note": "流形连续性基线，不设阈值；tfam <= dev 量级则 dev 偏移定性为"
                   "域偏移而非过拟合（v1 先例口径）"}
+
+    # J9（v2.1 新增）：IDLE 枢纽指标——重建 MSE + mode 扫描对角命中，只报数不下结论
+    idle_idx = next((t["embed_idx"] for t in build_meta["mode_table"]
+                     if t["mode_name"] == "IDLE"), None)
+    if idle_idx is not None:
+        tr_sel = mb == idle_idx
+        dv_sel = dmb == idle_idx
+        j9 = {
+            "idle_embed_idx": idle_idx,
+            "train_mse_idle": (round(float(train_mse[tr_sel].mean()), 6)
+                               if tr_sel.any() else None),
+            "n_train_windows_idle": int(tr_sel.sum()),
+            "dev_mse_idle": (round(float(dev_mse[dv_sel].mean()), 6)
+                             if dv_sel.any() else None),
+            "n_dev_windows_idle": int(dv_sel.sum()),
+            "tfam_has_idle": bool((tmb == idle_idx).any()),
+            "mode_sweep_idle_hit": j5["per_condition_hit"].get("IDLE"),
+            "mode_sweep_idle_row": (mode_mat[trained_modes.index(idle_idx)].tolist()
+                                    if idle_idx in trained_modes else None),
+            "reference": {"train_mse_all": tr_mse, "dev_mse_all": dv_mse},
+            "note": "hub 底座指标（将来 A->IDLE->B 切换链的重建质量/条件可控性"
+                    "基线），只报数不下结论",
+        }
+    else:
+        j9 = {"note": "本 run 无 IDLE 座位（非 v2.1 产物？）"}
 
     # J7
     j7 = {"all_finite": bool(fin_tr and fin_dev and fin_tf
@@ -361,12 +400,32 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001
         v1_block = {"error": str(e)}
 
+    # v2 对照块（v2.1 vs v2 对照表数据源；v2 池 sym 0 窗、IDLE 未入集）
+    v2_block = None
+    try:
+        v2e = json.load(open(os.path.join(V2_RUN, "metrics_d046v2.json")))
+        v2_block = {
+            "run": V2_RUN,
+            "J1": v2e.get("J1"),
+            "J5_per_condition_hit": (v2e.get("J5") or {}).get("per_condition_hit"),
+            "J5_diagonal_dominant": (v2e.get("J5") or {}).get("diagonal_dominant"),
+            "J6_per_condition_hit": (v2e.get("J6") or {}).get("per_condition_hit"),
+            "J6_zero_support_note": (v2e.get("J6") or {}).get("zero_support_note"),
+            "J8_tfam": v2e.get("J8"),
+            "J2p": {k: v for k, v in (v2e.get("J2p") or {}).items()
+                    if k in ("db", "vb")},
+            "train_windows": (v2e.get("_meta") or {}).get("train_windows"),
+            "n_dev_windows": (v2e.get("_meta") or {}).get("n_dev_windows"),
+        }
+    except Exception as e:  # noqa: BLE001
+        v2_block = {"error": str(e)}
+
     out = {
-        "_meta": {"script": "apt_g1/probe_vae_v2.py", "experiment": "D046(v2)",
+        "_meta": {"script": "apt_g1/probe_vae_v2.py", "experiment": "D046(v2.1)",
                   "snapshot": sd_path, "n_dev_windows": int(n_dev),
                   "train_windows": int(len(x)), "tfam_windows": int(len(tx)),
                   "zero_support": zero_support,
-                  "criteria": "owner 更正版 J1/J2'/J5(生成侧)/J6/J7/J8"},
+                  "criteria": "owner 更正版 J1/J2'/J5(生成侧)/J6'/J7/J8 + v2.1 新增 J9(IDLE 枢纽)"},
         "J1": j1,
         "J2p": {"db": j2_db, "vb": j2_vb,
                 "mode_controllability": {
@@ -380,17 +439,19 @@ def main() -> None:
         "J6": j6,
         "J7": j7,
         "J8": j8,
+        "J9": j9,
         "descriptive": descriptive,
         "curves": meta.get("curves"),
         "train_wall_sec": meta.get("train_wall_sec"),
         "v1_comparison": v1_block,
+        "v2_comparison": v2_block,
     }
-    out_path = os.path.join(args.run_dir, "metrics_d046v2.json")
+    out_path = os.path.join(args.run_dir, "metrics_d046v21.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
     print(f"[write] {out_path}")
-    print(json.dumps({k: out[k] for k in ("J1", "J2p", "J5", "J6", "J7", "J8")},
-                     ensure_ascii=False, indent=1)[:3000])
+    print(json.dumps({k: out[k] for k in ("J1", "J2p", "J5", "J6", "J7", "J8", "J9")},
+                     ensure_ascii=False, indent=1)[:3500])
 
 
 if __name__ == "__main__":
