@@ -1,4 +1,4 @@
-"""D046b 交叉 z 探针 v3（单轴交叉转向矩阵，owner 评审二轮修正版）——判别 v2.1
+"""D046b 交叉 z 探针 v3.1（单轴交叉转向矩阵，owner 评审三轮修正版）——判别 v2.1
 VAE 条件通路「真琴键 vs 贴纸」。
 
 背景：v2.1 探针（probe_vae_v2.py）显示 locomotion 窗 z + 条件 IDLE 解码不向 IDLE
@@ -43,14 +43,30 @@ v2 修正（owner 代码级评审 2026-09-07 五项发现，v1 数值矩阵仍�
      z 的均值/方差也不能证明其含任务相关信息）：verdict 分支名统一
      *_on_readout / readout_unidentifiable；z_diag 解读收窄为「未观察到所测
      top-8 投影上的方差塌缩」，不构成 z 含任务相关信息的证明。
+  ⑨ [v3.1] 留出分组改按源原始段（owner 评审三轮 P1：v3 按过采样后段序号奇偶
+     分半，而构建器过采样按 mode 预算整段/截段复制原始片段——v21 材料
+     99 原始段展开 215 段、39 个原始段跨两侧（服务器实证，复制 token 逐位
+     一致），同源窗相关性抬高留出识别）。v3.1 按源原始段下标（stem 升序）
+     奇偶分半，副本继承源段组别，同源窗必不跨半；身份来源=构建器落盘
+     segment_source.npy（build_b4lite_vae_inputs_v2 v3.1 起新材料），现役
+     材料无该文件则从 build_meta 的 oversample_plan 确定性重放（copies 计数
+     +逐段帧数+总帧数三重 checksum，不符即报错）；另附 stem_hash /
+     stem_halves 两个固定对照分组作敏感性波动报告（预注册门只认主分组）。
+     源段分组仍是片段级而非演员独立终评，仅消除同片段泄漏。
+  ⑩ [v3.1] 留出识别门加覆盖检查（owner 评审三轮 P2：v3 缺类时静默缩小分类
+     任务（feas_t 只留两侧皆有窗的类）、随机线仍按原类数 K——8 类仅 2 类
+     可留出且 token 全同会以宏识别 0.5 ≥ 2/8 误放行）。任一目标类无双侧窗
+     → verdict=readout_unidentifiable（留出覆盖不足，缺类单列），缩小任务
+     的宏识别只作描述、不得对完整任务随机线放行。
 
 预注册判读量（owner 指令 2026-09-07；z_follow 按 ① 修正实现；v3 增补第一道门）：
   cond_follow = 逐轴 off-diagonal (i≠j) 的 P(命中 j) 均值
   z_follow    = 逐轴 off-diagonal (i≠j) 的 P(命中 i) 均值
   baseline    = off-diagonal (i≠j) 的 P(命中 j | z_i, cond_i) 均值（v2 增补）
   chance      = 1/k
-  判定（逐轴，按序，v3 修订）：真 token 段级留出宏识别 < 2*chance ->
-  readout_unidentifiable（该轴指标不可判读，不进入下列三选一）；
+  判定（逐轴，按序，v3.1 修订）：任一目标类无双侧留出窗 ->
+  readout_unidentifiable（覆盖不足）；elif 真 token 源段留出宏识别 <
+  2*chance -> readout_unidentifiable（该轴指标不可判读，不进入下列三选一）；
   elif cond_follow >= 2*chance -> cond_available_on_readout；
   elif z_follow >= 3*cond_follow -> z_dominant_on_readout；else ->
   partial_on_readout。措辞只允许到「该指标下响应强弱」，不做机制实锤断言
@@ -74,8 +90,9 @@ Usage (CVGL det 容器或 lab-ts venv_isaac，纯 torch 前向，分钟级):
   python probe_vae_cross.py \
     --run-dir /home/cvgluser/ros2_data/g1_b4lite_probe/vae_v21/run1 \
     --inputs-dir /home/cvgluser/ros2_data/g1_b4lite_probe/vae_inputs_v21
-产出 <run-dir>/../probe_cross_v3/{metrics_d046b_v3.json, summary_d046b_v3.txt}
-（v1/v2 产物在 probe_cross/、probe_cross_v2/ 不覆盖，append-only 对照）
+产出 <run-dir>/../probe_cross_v3_1/{metrics_d046b_v3_1.json, summary_d046b_v3_1.txt}
+（v1/v2/v3 产物在 probe_cross/、probe_cross_v2/、probe_cross_v3/ 不覆盖，append-only
+对照；v3 留出数字系副本跨侧泄漏口径，以其 stem_hash 敏感性/R3 重跑为准）
 """
 from __future__ import annotations
 
@@ -88,6 +105,12 @@ import torch
 
 from train_token_vae_e39_v2 import (DirSpeedPhaseTokenVAE, build_windows_bounded,
                                     per_frame_labels, phi_rate_from)
+try:                      # 服务器执行根平铺 import / 仓库根包 import 双兼容
+    from holdout_ident import (derive_segment_sources, holdout_splits,
+                               nearest_centroid_holdout)
+except ImportError:
+    from apt_g1.holdout_ident import (derive_segment_sources, holdout_splits,
+                                      nearest_centroid_holdout)
 
 UL_NAMES = {0: "none", 1: "sym", 2: "asym"}
 
@@ -180,6 +203,28 @@ def main() -> None:
     N = len(x)
     assert len(seg_ids) == N, "window_seg_ids 与窗枚举错位"
     print(f"[data] train windows N={N}", flush=True)
+
+    # ---- [v3.1⑨] 过采样身份：每个过采样后段 -> 源原始段下标（留出按源段分组，
+    # 过采样副本继承源段组别；v3 按过采样后段序号奇偶，副本跨两侧，已废弃） ----
+    src_path = os.path.join(args.inputs_dir, "segment_source.npy")
+    if os.path.isfile(src_path):
+        src_idx = np.load(src_path).astype(np.int64)
+        if len(src_idx) != len(bnd):
+            raise RuntimeError("segment_source.npy 与 segment_bounds 段数不符")
+        orig_stems = [d["stem"] for d in
+                      sorted(build_meta["segment_detail"]["train"],
+                             key=lambda d: d["stem"])]
+        provenance = "segment_source.npy(构建器落盘)"
+    else:
+        src_idx, orig_stems = derive_segment_sources(bnd, build_meta)
+        provenance = "oversample_plan_replay(三重checksum通过)"
+    w_src = src_idx[seg_ids]
+    splits_map = holdout_splits(w_src, orig_stems)
+    half_primary = splits_map["stem_parity"]
+    sens_splits = {k: splits_map[k] for k in ("stem_hash", "stem_halves")}
+    print(f"[ident-src] 身份={provenance}；过采样后段 {len(src_idx)} = 原始段 "
+          f"{len(orig_stems)} + 副本 {len(src_idx) - len(orig_stems)}；主分组="
+          f"源段奇偶（同源窗不跨半），对照分组={list(sens_splits)}", flush=True)
 
     def batches(*arrays):
         for i in range(0, N, args.batch):
@@ -285,60 +330,51 @@ def main() -> None:
         cents = np.stack([tok_y[labels == v].mean(0) for v in values])
         cent_t = torch.from_numpy(cents).float().to(dev)
 
-        # [修正⑦] 真 token 可辨识性校准（同一最近质心读出，对真实 train 窗末
-        # token）：resub=全体窗对全窗质心；holdout=段级留出（seg_id 奇偶两半，
-        # 同段窗不跨半，防同段窗相关虚高），质心=留入半。留出宏识别是该读出在
+        # [修正⑦→v3.1⑨⑩] 真 token 可辨识性校准（同一最近质心读出，对真实
+        # train 窗末 token）：resub=全体窗对全窗质心；holdout=源原始段分组留出
+        # （过采样副本继承源段组别，同源窗必不跨半——v3 按过采样后段序号奇偶，
+        # 副本跨两侧抬高识别，owner 评审三轮 P1），质心=留入半；覆盖门=任一
+        # 目标类无双侧窗即不可估计（⑩，不得静默缩小任务后放行）；stem_hash /
+        # stem_halves 固定对照分组只作敏感性波动报告。留出宏识别是该读出在
         # 真值上的保守上限：连真值都识别不好的轴，decode 侧低命中不可归因于
-        # 条件通路（owner 评审二轮 P1-2）。
+        # 条件通路（owner 评审二轮 P1-2）。源段分组仍是片段级而非演员独立终评。
         chance = 1.0 / K
-        def _nearest(c: np.ndarray, p: np.ndarray) -> np.ndarray:
-            # argmin ||p-c||^2 = argmax(p·c - 0.5||c||^2)
-            return np.argmax(p @ c.T - 0.5 * (c ** 2).sum(1)[None, :], axis=1)
-
-        half_a = (seg_ids % 2 == 0)
-        ident_resub = {}
-        for t, v in enumerate(values):
-            mv = labels == v
-            pr = _nearest(cents, tok_y[mv])
-            ident_resub[row_names[t]] = round(float((pr == t).mean()), 4)
-        feas_t = [t for t in range(K)
-                  if ((labels == values[t]) & half_a).any()
-                  and ((labels == values[t]) & ~half_a).any()]
-        ident_hold = {row_names[t]: None for t in range(K)}
-        conf_hold = np.full((K, K), np.nan)
-        if feas_t:
-            cents_a = np.stack([tok_y[(labels == values[t]) & half_a].mean(0)
-                                for t in feas_t])
-            for pos, t in enumerate(feas_t):
-                mh = (labels == values[t]) & ~half_a
-                ph = _nearest(cents_a, tok_y[mh])
-                ident_hold[row_names[t]] = round(float((ph == pos).mean()), 4)
-                for p2, t2 in enumerate(feas_t):
-                    conf_hold[t, t2] = (ph == p2).mean()
-        feas = [ident_hold[row_names[t]] for t in feas_t]
-        holdout_macro = round(float(np.mean(feas)), 4) if feas else None
-        resub_macro = (round(float(np.mean(list(ident_resub.values()))), 4)
-                       if ident_resub else None)
-        ident_ok = (holdout_macro is not None and len(feas) >= 2
-                    and holdout_macro >= 2 * chance)
+        ident = nearest_centroid_holdout(tok_y, labels, values, half_primary,
+                                         row_names)
+        holdout_macro = ident["holdout_macro_recall"]
+        resub_macro = ident["resub_macro_recall"]
+        ident_ok = ident["readout_identifiable"]
+        sensitivity = {}
+        for nm, hm in sens_splits.items():
+            r = nearest_centroid_holdout(tok_y, labels, values, hm, row_names)
+            sensitivity[nm] = {"holdout_macro_recall": r["holdout_macro_recall"],
+                               "coverage": r["coverage"]}
         real_ident = {
             "readout": "nearest-centroid（与主矩阵同读出）对真实 train 窗末 token",
-            "holdout_split": "段级 seg_id 奇偶两半，同段窗不跨半；质心=留入半",
+            "holdout_split": "[v3.1] 源原始段分组（stem 升序奇偶，过采样副本继承"
+                             "源段组别，同源窗不跨半）；质心=留入半；v3 按过采样"
+                             "后段序号奇偶（副本跨侧）已废弃",
+            "source_provenance": provenance,
+            "sensitivity_fixed_splits": sensitivity,
             "resub_macro_recall": resub_macro,
-            "resub_per_class": ident_resub,
+            "resub_per_class": ident["resub_per_class"],
             "holdout_macro_recall": holdout_macro,
-            "holdout_per_class": ident_hold,
-            "holdout_confusion_rowtrue": [[None if not np.isfinite(x_) else
-                                           round(float(x_), 4) for x_ in r_]
-                                          for r_ in conf_hold],
-            "n_segments_per_class": {row_names[t]: int(len(np.unique(seg_ids[labels == values[t]])))
-                                     for t in range(K)},
-            "n_classes_feasible_holdout": len(feas),
+            "holdout_per_class": ident["holdout_per_class"],
+            "holdout_confusion_rowtrue": ident["holdout_confusion_rowtrue"],
+            "coverage": ident["coverage"],
+            "classes_missing_holdout": ident["classes_missing_holdout"],
+            "reduced_chance": ident["reduced_chance"],
+            "n_source_segments_per_class": {
+                row_names[t]: int(len(np.unique(w_src[labels == values[t]])))
+                for t in range(K)},
             "readout_identifiable": ident_ok,
+            "not_identifiable_reason": ident["reason"],
         }
-        print(f"[ident] 真 token 校准: resub_macro={resub_macro} "
-              f"holdout_macro={holdout_macro}（2*chance={round(2 * chance, 3)}）-> "
-              f"{'identifiable' if ident_ok else 'NOT identifiable'}", flush=True)
+        print(f"[ident] 真 token 校准(源段留出): resub_macro={resub_macro} "
+              f"holdout_macro={holdout_macro}（2*chance={round(2 * chance, 3)}，"
+              f"coverage={ident['coverage']}）-> "
+              f"{'identifiable' if ident_ok else 'NOT identifiable: ' + str(ident['reason'])}",
+              flush=True)
 
         # [修正③] 基线：同 z 不改条件（自条件前向 recs）对同一质心集的命中分布
         base = np.zeros((K, K), dtype=np.float64)   # base[i,j]=P(pred==j | z_i, cond_i)
@@ -404,10 +440,15 @@ def main() -> None:
         base_follow = float(base[off].mean())    # [修正③] 基线 off-diag
         mean_delta = cond_follow - base_follow   # [修正③] 交叉 − 基线
         diag_ident = float(np.diag(M).mean())    # [修正③] 同条件可辨识率
-        # [修正⑦⑧] 第一道门=真 token 留出识别（读出不可辨识则该轴指标不可判
-        # 读）；措辞只到「该指标下响应强弱」（v1「架构问题证实」撤回）
-        if not ident_ok:
-            verdict = (f"readout_unidentifiable(真token留出宏识别={holdout_macro} "
+        # [修正⑦⑧→v3.1⑩] 第一道门=真 token 源段留出识别（缺类判覆盖不足；
+        # 读出不可辨识则该轴指标不可判读）；措辞只到「该指标下响应强弱」
+        #（v1「架构问题证实」撤回）
+        if ident["coverage"] != "full":
+            verdict = (f"readout_unidentifiable(留出覆盖不足："
+                       f"{','.join(ident['classes_missing_holdout'])} 类无双侧窗，"
+                       f"识别任务不可估计；缩小任务宏识别={holdout_macro} 只作描述)")
+        elif not ident_ok:
+            verdict = (f"readout_unidentifiable(真token源段留出宏识别={holdout_macro} "
                        f"< 2*chance={round(2 * chance, 3)}，该轴指标不可判读；"
                        f"低交叉命中不可归因)")
         elif cond_follow >= 2 * chance:
@@ -592,7 +633,7 @@ def main() -> None:
               f"std_ratio(idle/loco)={z_diag['std_ratio_idle_over_loco_mean']}",
               flush=True)
 
-    out_dir = args.out_dir or os.path.join(args.run_dir, "..", "probe_cross_v3")
+    out_dir = args.out_dir or os.path.join(args.run_dir, "..", "probe_cross_v3_1")
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     overall = {}
@@ -610,7 +651,7 @@ def main() -> None:
                       "verdict": ra["verdict"]}
     out = {
         "_meta": {"script": "apt_g1/probe_vae_cross.py", "experiment": "D046b",
-                  "version": "v3 (owner 评审二轮修正版 2026-09-07)",
+                  "version": "v3.1 (owner 评审三轮修正版 2026-09-07)",
                   "snapshot": sd_path, "device": str(dev),
                   "train_windows": int(N), "min_win": args.min_win,
                   "design": "单轴交叉：z 取条件值 i 的训练窗 mu，被测轴置 j，"
@@ -628,21 +669,32 @@ def main() -> None:
                                         "（R1 二元 (mode,UL) 低估 OOD：IDLE 进入列"
                                         " 5,263 窗仅 465 窗四元有支持）；四轴全分层；"
                                         "IDLE 归因只引用 trained 格且覆盖过薄判不可识别",
-                      "readout_calibration": "[v3 增补⑦] 真 token 段级留出识别门："
+                      "readout_calibration": "[v3 增补⑦→v3.1⑨] 真 token 留出识别门："
                                              "留出宏识别 <2*chance -> "
                                              "readout_unidentifiable；resub 与"
-                                             "留出双口径落盘",
+                                             "留出双口径落盘；v3.1 留出改按源原始"
+                                             "段分组（v3 按过采样后段序号奇偶，副本"
+                                             "跨两侧——v21 材料 99 原始段展开 215 段、"
+                                             "39 段跨两侧，同源窗抬高识别），并附 "
+                                             "stem_hash/stem_halves 敏感性",
+                      "holdout_coverage_gate": "[v3.1⑩] 缺类判覆盖不足（缺类单列，"
+                                               "verdict=readout_unidentifiable），"
+                                               "不得静默缩小分类任务后对原任务"
+                                               "随机线放行（v3 反例：8 类仅 2 类"
+                                               "可留出且 token 全同以 0.5 误放行）",
                       "verdict_wording": "[v3 修正⑧] 撤回「架构问题证实」机制断言，"
                                          "verdict 只到该指标响应强弱；z_diag 收窄为"
                                          "「未观察到所测投影方差塌缩」",
                       "db_bin0": "bin0=段首方向±22.5°=前向（build_b4lite_vae_inputs.py）；"
                                  "v1 台账「db5=前向邻域」表述有误",
                   },
-                  "criteria": "预注册（v3 修订）：真 token 段级留出宏识别<2*chance->"
-                              "readout_unidentifiable（不可判读）；elif "
-                              "cond_follow>=2*chance->cond_available_on_readout；"
-                              "elif z_follow>=3*cond_follow->z_dominant_on_readout；"
-                              "else partial_on_readout；措辞只到「该指标下响应强弱」",
+                  "criteria": "预注册（v3.1 修订）：任一目标类无双侧留出窗->"
+                              "readout_unidentifiable(覆盖不足)；elif 真token源段"
+                              "留出宏识别<2*chance->readout_unidentifiable（不可"
+                              "判读）；elif cond_follow>=2*chance->"
+                              "cond_available_on_readout；elif z_follow>=3*cond_"
+                              "follow->z_dominant_on_readout；else "
+                              "partial_on_readout；措辞只到「该指标下响应强弱」",
                   "mode_axis_note": "SLOW_WALK(1)/INJURED_WALK(6) 为 T-fam 零训练窗，"
                                     "mode 轴按 >=150 窗实况取值（8 度）"},
         "mode_ul_support": {
@@ -672,12 +724,12 @@ def main() -> None:
         "z_diag_idle_vs_loco": z_diag,
         "verdict_overall": overall,
     }
-    jp = os.path.join(out_dir, "metrics_d046b_v3.json")
+    jp = os.path.join(out_dir, "metrics_d046b_v3_1.json")
     with open(jp, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
-    sp = os.path.join(out_dir, "summary_d046b_v3.txt")
+    sp = os.path.join(out_dir, "summary_d046b_v3_1.txt")
     with open(sp, "w", encoding="utf-8") as f:
-        f.write(f"D046b 交叉 z 探针 v3 summary（owner 评审二轮修正版）\nsnapshot={sd_path}\nN={N}\n")
+        f.write(f"D046b 交叉 z 探针 v3.1 summary（owner 评审三轮修正版）\nsnapshot={sd_path}\nN={N}\n")
         f.write("\n(mode,UL) train-window 支持矩阵（0=缺席）：\n")
         f.write("mode\\UL    ".ljust(11) + "".join(UL_NAMES[u].rjust(9) for u in range(3)) + "\n")
         for m, rn_ in zip(sup_rows, sup_row_names):
@@ -700,10 +752,14 @@ def main() -> None:
                     f"z/c={r['z_over_cond_ratio']} cond/chance={r['cond_over_chance']}"
                     f"\nverdict: {r['verdict']}\n")
             ri = r["real_token_identification"]
-            f.write(f"真token校准: resub={ri['resub_macro_recall']} "
+            f.write(f"真token校准(源段留出): resub={ri['resub_macro_recall']} "
                     f"holdout={ri['holdout_macro_recall']}"
-                    f"（2*chance={round(2 * r['chance'], 3)}）identifiable="
-                    f"{ri['readout_identifiable']}\n")
+                    f"（2*chance={round(2 * r['chance'], 3)}，"
+                    f"coverage={ri['coverage']}）identifiable="
+                    f"{ri['readout_identifiable']}"
+                    f"（{ri['not_identifiable_reason']}）\n")
+            f.write(f"  敏感性固定分组: {ri['sensitivity_fixed_splits']}"
+                    f"（身份={ri['source_provenance']}）\n")
             f.write(f"  holdout_per_class: {ri['holdout_per_class']}\n")
             f.write("values 核对: " + str(list(zip(r["values"], r["row_names"]))) + "\n")
             f.write("M_hit_j (P(pred==j | z_i, cond_j)):\n")

@@ -20,6 +20,7 @@ norm_stats（只算训练段）。
   python build_b4lite_vae_inputs_v2.py                # train + dev + tfam 全建
 产出 data/ds_bones/g1_b4lite/vae_inputs_v21/：
   {token,mode_id,ul,angle_bin,segment_bounds,window_keep_mask}.npy
+  segment_source.npy（v3.1/D046b-R3：过采样后段 -> 源原始段下标，留出分组身份）
   norm_stats_d046v21.npz  build_meta.json  dev/  tfam/
 """
 from __future__ import annotations
@@ -32,7 +33,10 @@ import os
 import numpy as np
 
 # v1 代码路径复用（帧速度/方向 bin/角度 wrap 单一实现，D046 v1 基线脚本）
-from build_b4lite_vae_inputs import angle_bins, frame_speed
+try:                      # 服务器执行根平铺 import / 仓库根包 import 双兼容
+    from build_b4lite_vae_inputs import angle_bins, frame_speed
+except ImportError:
+    from apt_g1.build_b4lite_vae_inputs import angle_bins, frame_speed
 
 HOME = os.path.expanduser("~")
 BASE = f"{HOME}/ros2_data/apt_g1/data/ds_bones/g1_b4lite"
@@ -102,7 +106,12 @@ def build_split(segs: list[dict], args, split: str) -> dict:
 
 
 def oversample_by_mode(arrs: dict, table: list[dict]) -> tuple[dict, dict]:
-    """v1 同款预算平铺：按 train mode 补齐到最大 mode 帧预算（stem 排序轮转整段复制）。"""
+    """v1 同款预算平铺：按 train mode 补齐到最大 mode 帧预算（stem 排序轮转整段复制）。
+
+    v3.1（D046b-R3）起返回 source_idx：过采样后每段 -> 源原始段下标（原始段=
+    自身下标，副本=源段下标）——留出评估按源段分组（副本继承源段组别）的
+    身份依据，落盘 segment_source.npy。
+    """
     tok, mode, ul, ab = arrs["token"], arrs["mode_id"], arrs["ul"], arrs["angle_bin"]
     bounds, stems, materials = arrs["bounds"], arrs["stems"], arrs["materials"]
     mode_frames: dict[int, int] = {}
@@ -117,6 +126,7 @@ def oversample_by_mode(arrs: dict, table: list[dict]) -> tuple[dict, dict]:
     new_tok, new_mode, new_ul, new_ab = [tok], [mode], [ul], [ab]
     new_bounds = [[int(b[0]), int(b[1])] for b in bounds]
     new_materials = [int(v) for v in materials]
+    new_src = list(range(len(stems)))
     off = len(tok)
     copies_plan = {}
     for m in sorted(mode_frames):
@@ -138,6 +148,7 @@ def oversample_by_mode(arrs: dict, table: list[dict]) -> tuple[dict, dict]:
                     new_ab.append(ab[bounds[i][0]:bounds[i][0] + take])
                     new_bounds.append([off, off + take])
                     new_materials.append(int(materials[i]))
+                    new_src.append(i)
                     off += take
                     added += take
                     plan["copies"][stems[i]] = plan["copies"].get(stems[i], 0) + 1
@@ -146,6 +157,7 @@ def oversample_by_mode(arrs: dict, table: list[dict]) -> tuple[dict, dict]:
     return {"token": np.concatenate(new_tok), "mode_id": np.concatenate(new_mode),
             "ul": np.concatenate(new_ul), "angle_bin": np.concatenate(new_ab),
             "bounds": np.asarray(new_bounds, dtype=np.int64),
+            "source_idx": np.asarray(new_src, dtype=np.int64),
             "stems": stems, "materials": np.asarray(new_materials, dtype=np.int64),
             "n_orig_segments": len(stems)}, copies_plan
 
@@ -244,6 +256,9 @@ def main() -> None:
         np.save(os.path.join(out, "segment_bounds.npy"), d["bounds"])
         if with_mask:
             np.save(os.path.join(out, "window_keep_mask.npy"), keep)
+            # v3.1（D046b-R3）：过采样身份落盘——留出评估按源原始段分组（副本
+            # 继承源段组别），probe_vae_cross v3.1 优先读本文件
+            np.save(os.path.join(out, "segment_source.npy"), d["source_idx"])
 
     save_arrays(train_os, args.out_dir, with_mask=True)
     for name in ("dev", "tfam"):
@@ -282,10 +297,20 @@ def main() -> None:
         "segment_detail": {
             name: [{"stem": s["stem"], "target": s["target"],
                     "mode_id_hpp": s.get("mode_id"), "ul": s["ul"],
+                    "actor": s.get("actor"),
                     "set_role": s["set_role"], "t_role": s["t_role"],
                     "n_frames": s.get("n_frames"), "speed_med": s.get("speed_med"),
                     "npz_path": s.get("npz_path")} for s in splits[name]]
             for name in splits},
+        "oversample_identity": {
+            "note": "v3.1（D046b-R3）：过采样身份落盘——segment_source.npy 每行 = "
+                    "过采样后段 -> 源原始段下标（原始段=自身下标、副本=源段；"
+                    "build 顺序=stem 升序）。留出评估按源段分组，同一原始动作及"
+                    "其派生副本必须同组；演员身份见 segment_detail.actor"
+                    "（池数据含 actor 字段时非空）",
+            "segment_source_stems": [built["train"]["stems"][i]
+                                     for i in train_os["source_idx"]],
+        },
     }
     with open(os.path.join(args.out_dir, "build_meta.json"), "w",
               encoding="utf-8") as f:

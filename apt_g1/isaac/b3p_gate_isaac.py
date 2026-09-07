@@ -27,6 +27,14 @@ v2 aggregation (owner 评审二轮修正 2026-09-07，D047 教训落实；历史
   - playback_path_ratio 改同窗比值：分子=播放相实际有效步数路径（done 步不计），
     分母=参考轨迹截断到同一有效步数；两侧步数 playback_t_used/playback_t_total
     落盘。旧口径（分子截断/分母全长）在提前摔倒时系统性低估，不再可比。
+  - [v3] 同窗比值再修正（owner 评审三轮 P2，D046b-R3）：v2 完整播放时实际
+    n_pb 个间隔 vs 参考最多 n_pb-1 个（重置→首步的沉降间隔无参考对应帧），
+    系统性偏高 ~1/(n_rows-1)（100 步匀速例 100/99≈1.0101）。v3 双侧同取
+    n_pb-1 个间隔：实际侧扣除首间隔（playback_first_step_m 单列留存，
+    playback_intervals 落盘），参考侧 trans_m[:n_pb]；时间对应=token 行 t 在
+    第 t 步消费、step 后状态 ↔ 参考行 t（与 q_track_mae_vs_ref_rad 同口径）。
+    计算收入 numpy-only 模块 playback_window.py（无 Isaac 回归测试可打现役
+    函数）。历史 run 不回刷。
 
 Usage (lab-ts, Isaac wrapper, cwd=GR00T-WholeBodyControl):
   nohup bash /tmp/run_apt_isaac.sh \
@@ -110,6 +118,7 @@ def main():
 
     from apt_g1.isaac.apt_flat_env import AptFlatG1Env, AptFlatG1EnvCfg
     from apt_g1.isaac.eval_apt_isaac import jitter_and_reset
+    from apt_g1.isaac.playback_window import playback_same_window_ratio
 
     class BonesReplayEnv(AptFlatG1Env):
         """Token oracle (D034 pattern, same subclass shape as
@@ -194,14 +203,14 @@ def main():
             # D047 path-ratio 口径注记：realized_path_ratio 的分子累计到播放+hold
             # 结束/摔倒，与完整参考不同时间窗，不可当同窗比值读；不回刷历史 run。
             traj_pb = np.asarray(traj_pb)
-            playback_path = (float(np.linalg.norm(np.diff(traj_pb, axis=0), axis=1).sum())
-                             if len(traj_pb) > 1 else 0.0)
-            # v2 同窗比值（owner 评审二轮 P2-4）：播放相实际有效步数 n_pb（done 步
-            # 不计入），参考轨迹截断到 trans_m[:n_pb+1]；两侧步数落盘。
-            n_pb = len(traj_pb) - 1
-            ref_pb_pts = seg["trans_m"][:min(n_pb + 1, n_rows), :2]
-            ref_path_pb = (float(np.linalg.norm(np.diff(ref_pb_pts, axis=0), axis=1).sum())
-                           if len(ref_pb_pts) > 1 else 0.0)
+            # v3 同窗比值（owner 评审三轮 P2，D046b-R3）：双侧同取 n_pb-1 个间隔
+            # ——重置位姿无参考对应帧，首间隔（抖动起步沉降）双侧均不计（单列
+            # playback_first_step_m 留存）；v2 完整播放时实际 n_pb 个间隔 vs 参考
+            # n_pb-1 个，系统性偏高 ~1/(n_rows-1)。时间对应=token 行 t 第 t 步
+            # 消费、step 后状态 ↔ 参考行 t（q_track_mae_vs_ref_rad 同口径）。
+            first_step = (float(np.linalg.norm(traj_pb[1] - traj_pb[0]))
+                          if len(traj_pb) > 1 else 0.0)
+            pw = playback_same_window_ratio(traj_pb, seg["trans_m"][:, :2])
             hold_disp = (float(np.linalg.norm(traj[-1] - traj_pb[-1]))
                          if steps_done > n_rows else None)
             key = f"{seg['stem']}__seed{seed}"
@@ -219,12 +228,14 @@ def main():
                 "disp_norm_m": round(float(np.linalg.norm(disp_vec)), 2),
                 "mean_speed_mps": round(path_len / dur, 3) if dur > 0 else None,
                 "realized_path_ratio": round(path_len / ref_path, 3) if ref_path > 0.5 else None,
-                "playback_path_m": round(playback_path, 2),
-                "playback_ref_path_m": round(ref_path_pb, 2),
-                "playback_t_used": int(n_pb),
+                "playback_path_m": round(pw["robot_path_m"], 2),
+                "playback_first_step_m": round(first_step, 2),
+                "playback_ref_path_m": round(pw["ref_path_m"], 2),
+                "playback_intervals": int(pw["n_intervals"]),
+                "playback_t_used": int(pw["playback_t_used"]),
                 "playback_t_total": int(n_rows),
-                "playback_path_ratio": (round(playback_path / ref_path_pb, 3)
-                                        if ref_path_pb > 0.5 else None),
+                "playback_path_ratio": (round(pw["ratio"], 3)
+                                        if pw["ratio"] is not None else None),
                 "hold_disp_m": round(hold_disp, 2) if hold_disp is not None else None,
                 "q_track_mae_vs_ref_rad": round(float(np.mean(q_err_ref)), 4) if q_err_ref else None,
                 "q_track_mae_pd_rad": round(float(np.mean(q_err_pd)), 4) if q_err_pd else None,
