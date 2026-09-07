@@ -42,7 +42,8 @@ class AptPPOPolicy(nn.Module):
         self.latent_dim = latent_dim
         # E49：False = aux 头采样后丢弃（latent/token/to42 模式 action=act["phase"]）。
         # 此时 act() 与 update() 的 log_prob/entropy 都不得含 aux 项——
-        # 两处必须是同一约定，否则 ratio 全错。
+        # 两处必须是同一约定，否则 ratio 全错。例外：latent_residual 的 aux
+        # 头是 29d 残差执行动作，恒 True。
         self.aux_executed = True
         self.encoder = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
@@ -379,7 +380,7 @@ class PPOTrainer:
 
         # E49：aux_executed=False（latent/token/to42）时 aux 项不进 log_prob/
         # entropy；decft 的 aux 是 29d 实际动作，恒参与（DecFtPolicy 无此属性，
-        # getattr 默认 True）
+        # getattr 默认 True）；latent_residual 的 aux 同为 29d 执行动作，恒参与
         aux_scored = getattr(self.policy, "aux_executed", True)
 
         losses = []

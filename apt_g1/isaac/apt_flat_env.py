@@ -287,6 +287,7 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
 
     # terminations
     fall_height: float = 0.2
+    # negative value = penalty subtracted on termination (MuJoCo ref: reward -= 10.0)
     termination_penalty: float = -10.0
     reset_grace_steps: int = 25  # ignore falls right after reset (terrain init collisions)
 
@@ -1076,7 +1077,7 @@ class AptFlatG1Env(DirectRLEnv):
             reward = reward - self.cfg.aux_rate_scale * (self._aux_rate ** 2).sum(-1)
         if self.cfg.res_l2_scale > 0.0 and self.cfg.latent_residual:
             reward = reward - self.cfg.res_l2_scale * (self._last_res ** 2).sum(-1)
-        reward = reward - self.cfg.termination_penalty * self.reset_terminated.float()
+        reward = reward + self.cfg.termination_penalty * self.reset_terminated.float()
         # E49 诊断步骤③：分项快照，return 前一次性存（GPU tensor 原样引用，
         # 纯记录不改计算图/数值；heading/progress/yaw_rate 等默认 0 的分支不记）。
         # 未开启 diag 时每步被覆盖，无累积开销。vx_err = 当时口径的 cmd 跟踪误差。

@@ -174,6 +174,7 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
 
     # terminations
     fall_height: float = 0.2
+    # negative value = penalty subtracted on termination (MuJoCo ref: reward -= 10.0)
     termination_penalty: float = -10.0
     reset_grace_steps: int = 25  # ignore falls right after reset (terrain init collisions)
 
@@ -544,7 +545,7 @@ class AptFlatG1Env(DirectRLEnv):
             reward = reward - self.cfg.aux_l2_scale * (self._last_aux ** 2).sum(-1)
         if self.cfg.aux_rate_scale > 0.0:
             reward = reward - self.cfg.aux_rate_scale * (self._aux_rate ** 2).sum(-1)
-        reward = reward - self.cfg.termination_penalty * self.reset_terminated.float()
+        reward = reward + self.cfg.termination_penalty * self.reset_terminated.float()
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:

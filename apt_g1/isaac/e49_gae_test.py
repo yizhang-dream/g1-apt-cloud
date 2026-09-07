@@ -410,6 +410,42 @@ def case10_trunc_values_none_regression() -> bool:
                    ok, f"max_abs_err={(got - exp_t).abs().max():.2e}")
 
 
+def case11_residual_aux_executed() -> bool:
+    """用例 11（评审 P1-B 回归）：latent_residual 的 aux 头是 29d 残差执行
+    动作（action=[z(16), res(29)] 两颗头都执行），aux_executed 必须保持 True：
+    train 侧模式->flag 映射不得把 residual 落进 False 分支，且 logp/entropy
+    = latent+aux 两项之和、策略梯度可达 aux 头。"""
+    torch.manual_seed(11)
+    obs = torch.randn(5, 8)
+    pol = AptPPOPolicy(obs_dim=8, aux_dim=29, use_phase=False, latent_dim=16, gate_k=0)
+    # train_apt_isaac.py 的模式->flag 映射（residual 场景的 cli 值）
+    latent_mode, latent_residual, token_mode, to42_active = True, True, False, False
+    if (latent_mode and not latent_residual) or token_mode or to42_active:
+        pol.aux_executed = False
+    ok = pol.aux_executed is True
+
+    # (i) logp/entropy 逐项等于 latent(16)+aux(29) 两项之和
+    out, lp, ent, _, p = pol.act(obs)
+    ldist = Normal(p["phase_mean"], p["phase_log_std"].exp())
+    adist = Normal(p["aux_mean"], p["aux_log_std"].exp())
+    ok &= torch.allclose(
+        lp,
+        ldist.log_prob(out["phase"]).sum(-1) + adist.log_prob(out["aux"]).sum(-1),
+        atol=1e-6,
+    )
+    ok &= torch.allclose(
+        ent, ldist.entropy().sum(-1) + adist.entropy().sum(-1), atol=1e-6
+    )
+
+    # (ii) 策略梯度可达 aux（残差）头：logp 反传后 aux_mean 有非零梯度
+    pol.zero_grad()
+    _, lp2, _, _, _ = pol.act(obs)
+    lp2.sum().backward()
+    ok &= pol.aux_mean.weight.grad is not None
+    ok &= float(pol.aux_mean.weight.grad.abs().sum()) > 0.0
+    return _report("case11 residual aux executed (logp含aux项+梯度可达)", ok)
+
+
 def main() -> int:
     print("=== E49 PPO-trainer fix tests (pure torch, CPU) ===", flush=True)
     results = [
@@ -423,6 +459,7 @@ def main() -> int:
         case8_done_beats_trunc(),
         case9_last_step_trunc_priority(),
         case10_trunc_values_none_regression(),
+        case11_residual_aux_executed(),
     ]
     print(f"=== {sum(results)}/{len(results)} cases PASS ===", flush=True)
     return 0 if all(results) else 1

@@ -358,9 +358,12 @@ def main():
                        and not cli.token_mode),
             latent_dim=64 if cli.token_mode else (16 if cfg.latent_mode else 0),
         ).to("cuda:0")
-        if cli.latent_mode or cli.token_mode or to42_active:
+        if (cli.latent_mode and not cli.latent_residual) or cli.token_mode or to42_active:
             # E49：这些模式 action = act["phase"]（aux 采样后丢弃），aux 头
-            # 不进 PPO log_prob/entropy —— 与 update() 的重算同一约定
+            # 不进 PPO log_prob/entropy —— 与 update() 的重算同一约定。
+            # 例外：latent_residual 的 aux 头就是 29d 残差执行动作
+            # （action = [z, res]，两颗头都执行），必须保持 True 让残差头
+            # 收到策略梯度
             policy.aux_executed = False
     latent_prior_mean = None
     if cli.latent_mode and cli.latent_kl_prior == "walk":
