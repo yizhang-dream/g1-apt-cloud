@@ -290,6 +290,7 @@ def main() -> None:
         # 同段窗不跨半，防同段窗相关虚高），质心=留入半。留出宏识别是该读出在
         # 真值上的保守上限：连真值都识别不好的轴，decode 侧低命中不可归因于
         # 条件通路（owner 评审二轮 P1-2）。
+        chance = 1.0 / K
         def _nearest(c: np.ndarray, p: np.ndarray) -> np.ndarray:
             # argmin ||p-c||^2 = argmax(p·c - 0.5||c||^2)
             return np.argmax(p @ c.T - 0.5 * (c ** 2).sum(1)[None, :], axis=1)
@@ -403,7 +404,6 @@ def main() -> None:
         base_follow = float(base[off].mean())    # [修正③] 基线 off-diag
         mean_delta = cond_follow - base_follow   # [修正③] 交叉 − 基线
         diag_ident = float(np.diag(M).mean())    # [修正③] 同条件可辨识率
-        chance = 1.0 / K
         # [修正⑦⑧] 第一道门=真 token 留出识别（读出不可辨识则该轴指标不可判
         # 读）；措辞只到「该指标下响应强弱」（v1「架构问题证实」撤回）
         if not ident_ok:
