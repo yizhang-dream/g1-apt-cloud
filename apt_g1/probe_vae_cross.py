@@ -148,7 +148,7 @@ def main() -> None:
     ap.add_argument("--min-win", type=int, default=150)
     ap.add_argument("--n-pc", type=int, default=8)
     ap.add_argument("--out-dir", default=None,
-                    help="缺省 <run-dir>/../probe_cross_v3")
+                    help="缺省 <run-dir>/../probe_cross_v3_1")
     args = ap.parse_args()
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[env] device={dev}", flush=True)

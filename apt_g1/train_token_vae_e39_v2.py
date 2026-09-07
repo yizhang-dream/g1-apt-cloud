@@ -294,8 +294,10 @@ def main():
         dtok = np.load(os.path.join(dev_dir, "token.npy")).astype(np.float32)
         dbnd = np.load(os.path.join(dev_dir, "segment_bounds.npy"))
         dmode = np.load(os.path.join(dev_dir, "mode_id.npy")).astype(np.int64)
-        dul = (np.load(args.ul_labels or os.path.join(dev_dir, "ul.npy"))
-               .astype(np.int64)) if use_ul else np.zeros(len(dtok), dtype=np.int64)
+        # --ul-labels 只覆盖 train 侧；dev 恒读 inputs-dir/dev/ul.npy，
+        # 否则 train 长度的标签会在 dev 段界上切出错误标签且不报错
+        dul = (np.load(os.path.join(dev_dir, "ul.npy")).astype(np.int64)
+               ) if use_ul else np.zeros(len(dtok), dtype=np.int64)
         dangle = np.load(os.path.join(dev_dir, "angle_bin.npy")).astype(np.int64)
         dx, dy = build_windows_bounded(dtok, dbnd, window)
         dmb = per_frame_labels(dmode, dbnd, window)
@@ -459,13 +461,20 @@ def main():
     # z_walk：WALK 条件窗的 mu 均值（v2 用 train 窗的 WALK 子集；原版 mode==2 同义）
     with torch.no_grad():
         if use_inputs:
+            if walk_idx is None:
+                raise ValueError(
+                    "use_inputs 且 walk_idx=None：z_walk 无法定位 WALK 窗"
+                    "（mb==None 恒 False 会静默落盘 NaN 均值），检查 --n-modes 配置")
             wmask = (mb == walk_idx)
         else:
             wmask = (np.asarray(mode_id) == 2)
+        if not wmask.any():
+            raise ValueError("z_walk: WALK 掩码为空，拒绝对空数组取均值落盘 NaN")
         xw = torch.from_numpy(x[wmask]).cuda()
         zw = model.encode(xw)[0].cpu().numpy()
     np.save(os.path.join(out_dir, "z_walk.npy"), zw.mean(0).astype(np.float32))
-    print("val recon MAE:", float(np.sqrt(best)))
+    # 实为 RMSE（sqrt of best val MSE）；json 键 val_mae 为历史口径，不改
+    print("val recon RMSE (json key val_mae):", float(np.sqrt(best)))
 
     # 终态 head acc（描述性统计；owner 更正后不作为 PASS 判据）
     with torch.no_grad():

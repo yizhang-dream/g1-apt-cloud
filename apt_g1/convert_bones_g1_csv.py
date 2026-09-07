@@ -557,6 +557,9 @@ def main():
     ap.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
     ap.add_argument("--roundtrip", action="store_true")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--fresh-manifest", action="store_true",
+                    help="不合并旧 manifest，整体重写（默认按 stem 合并，"
+                         "防分批转换覆盖丢失先前段的条目，D044 坑①）")
     ap.add_argument("--tar-version", default=B4LITE_DEFAULT_TAR_VERSION,
                     help="source archive version string for the B4-lite "
                          "manifest (D045, protocol §5 source/version)")
@@ -665,6 +668,20 @@ def main():
               f"lat={seg['lattice_rate']:.1e}{rt}", flush=True)
 
     mpath = os.path.join(args.out_dir, "manifest.json")
+    # 默认与旧 manifest 按 stem 合并（本 run 条目覆盖同名，其余保留）；
+    # skipped-existing 的分批转换不再整体覆盖丢失先前段
+    if os.path.exists(mpath) and not args.fresh_manifest:
+        try:
+            with open(mpath) as f:
+                old = json.load(f)
+            new_stems = {m.get("stem") for m in manifest}
+            old_keep = [e for e in old
+                        if isinstance(e, dict) and e.get("stem") not in new_stems]
+            manifest = old_keep + manifest
+            print(f"[manifest] merged with previous run: kept {len(old_keep)}, "
+                  f"total {len(manifest)}")
+        except (OSError, ValueError) as exc:
+            print(f"[manifest] WARN: merge failed ({exc}); overwriting")
     with open(mpath, "w") as f:
         json.dump(manifest, f, indent=1)
     print(f"[manifest] {len(manifest)} entries -> {mpath}")

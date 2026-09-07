@@ -200,9 +200,14 @@ def apply_split(manifest, split_path):
             ex = s.get("exclusion") or {}
             b4["exclusion"] = {"excluded": True, "reason": ex.get("reason")}
             excluded_in_manifest += 1
-        if s.get("t_role") == "boundary_ref":
-            b4.setdefault("quality", {}).setdefault("quality_notes", []).append(
-                A005_TPOSE_NOTE)
+        # T-pose 观测只属于 A005 这个 stem（原始数据自带的校准帧），不按
+        # t_role==boundary_ref 泛化挂载：backfill 会预填 boundary_ref（S4 可改），
+        # 预填值混进再生的 split_assignments 时会把 note 错挂到其他摔倒段。
+        # 幂等：已登记过不重复 append。
+        if e.get("stem", "").endswith("__A005"):
+            notes = b4.setdefault("quality", {}).setdefault("quality_notes", [])
+            if A005_TPOSE_NOTE not in notes:
+                notes.append(A005_TPOSE_NOTE)
         filled += 1
     print(f"[split] filled {filled} entries from {split_path} "
           f"(excluded-in-manifest defence hits: {excluded_in_manifest})")

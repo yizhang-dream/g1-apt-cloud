@@ -105,7 +105,7 @@ def build_split(segs: list[dict], args, split: str) -> dict:
             "materials": np.asarray(materials, dtype=np.int64)}
 
 
-def oversample_by_mode(arrs: dict, table: list[dict]) -> tuple[dict, dict]:
+def oversample_by_mode(arrs: dict) -> tuple[dict, dict]:
     """v1 同款预算平铺：按 train mode 补齐到最大 mode 帧预算（stem 排序轮转整段复制）。
 
     v3.1（D046b-R3）起返回 source_idx：过采样后每段 -> 源原始段下标（原始段=
@@ -228,7 +228,7 @@ def main() -> None:
         print(f"[{name}] segments={len(segs)} frames={len(built[name]['token'])}")
 
     # train 过采样（mode 预算平衡）
-    train_os, copies_plan = oversample_by_mode(built["train"], table)
+    train_os, copies_plan = oversample_by_mode(built["train"])
     print(f"[train-oversample] frames {len(built['train']['token'])} -> "
           f"{len(train_os['token'])}")
 

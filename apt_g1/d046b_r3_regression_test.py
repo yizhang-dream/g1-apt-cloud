@@ -81,7 +81,7 @@ arrs = {"token": np.concatenate(toks).astype(np.float32),
         "angle_bin": np.concatenate(abs_), "bounds": np.asarray(bnds, np.int64),
         "stems": [s[0] for s in SEGS], "materials": np.asarray(mats, np.int64)}
 
-os_res, plan = oversample_by_mode(arrs, [])
+os_res, plan = oversample_by_mode(arrs)
 POST = os_res["bounds"]
 PLAN_META = {
     "mode_table": [{"embed_idx": 0, "mode_name": "M0"},

@@ -356,7 +356,8 @@ def main():
         pw = torch.from_numpy(phase2[idx]).cuda()
         zw = model.encode(xw)[0].cpu().numpy()
     np.save(os.path.join(out_dir, "z_walk.npy"), zw.mean(0).astype(np.float32))
-    print("val recon MAE:", float(np.sqrt(best)))
+    # 实为 RMSE（sqrt of best val MSE）；json 键 val_mae 为历史口径，不改
+    print("val recon RMSE (json key val_mae):", float(np.sqrt(best)))
     # final in-game adversarial accs (random baselines: dir 1/8, speed 1/3)
     with torch.no_grad():
         mu_all, _ = model.encode(torch.from_numpy(x[va_idx]).cuda())

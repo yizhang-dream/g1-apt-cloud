@@ -198,6 +198,9 @@ def main():
             path_len = float(seg_len.sum())
             disp_vec = traj[-1] - traj[0]
             dur = steps_done / 50.0
+            # completed=复合能力口径（预注册）：steps_budget 含播放后的末段
+            # 站姿 hold，hold 相摔倒同样计入存活失败；播放相摔倒另由
+            # fall_during_playback 单列，主判不据此放宽
             completed = fall_step is None and steps_done >= total
             ref_path = float(np.linalg.norm(np.diff(seg["trans_m"][:, :2], axis=0), axis=1).sum())
             # D047 path-ratio 口径注记：realized_path_ratio 的分子累计到播放+hold
