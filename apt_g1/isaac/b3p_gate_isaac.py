@@ -17,6 +17,17 @@ budget, never truncating longer segments; the token index clamps at the last
 row exactly like D034/D037 (hold phase after token end). fall_step is
 recorded so falls during playback vs hold can be separated post hoc.
 
+v2 aggregation (owner 评审二轮修正 2026-09-07，D047 教训落实；历史 run 不回刷):
+  - 类级聚合改按唯一 stem 计片段：n_segments=唯一片段数，n_replays=回放条数
+    分列。旧版把 {stem}__seed{seed} 每条回放当一个片段（look 4 段 x3 seed 曾被
+    记 n_segments=12 gate=true），加 seed 即可跨过 >=10 段门槛，违反预注册。
+  - 主判 seed = min(seeds)（预注册缺省 seeds="0" 即 seed0 主判）：类级存活率
+    只按片段在主判 seed 下是否 completed 计；全 seed 存活片段数与逐 seed 回放
+    存活另列（描述性，不入门）。
+  - playback_path_ratio 改同窗比值：分子=播放相实际有效步数路径（done 步不计），
+    分母=参考轨迹截断到同一有效步数；两侧步数 playback_t_used/playback_t_total
+    落盘。旧口径（分子截断/分母全长）在提前摔倒时系统性低估，不再可比。
+
 Usage (lab-ts, Isaac wrapper, cwd=GR00T-WholeBodyControl):
   nohup bash /tmp/run_apt_isaac.sh \
     /home/cvgluser/ros2_data/apt_g1/isaac/b3p_gate_isaac.py \
@@ -181,12 +192,16 @@ def main():
             completed = fall_step is None and steps_done >= total
             ref_path = float(np.linalg.norm(np.diff(seg["trans_m"][:, :2], axis=0), axis=1).sum())
             # D047 path-ratio 口径注记：realized_path_ratio 的分子累计到播放+hold
-            # 结束/摔倒，与完整参考（如 A101 参考 258 步 vs 实际 500/199 步）不同
-            # 时间窗，不可直接当同窗比值读。以下分列播放相路径与 hold 期位移，
-            # 供未来门做同窗比值；不回刷历史 run（D047 存活裁决保留）。
+            # 结束/摔倒，与完整参考不同时间窗，不可当同窗比值读；不回刷历史 run。
             traj_pb = np.asarray(traj_pb)
             playback_path = (float(np.linalg.norm(np.diff(traj_pb, axis=0), axis=1).sum())
                              if len(traj_pb) > 1 else 0.0)
+            # v2 同窗比值（owner 评审二轮 P2-4）：播放相实际有效步数 n_pb（done 步
+            # 不计入），参考轨迹截断到 trans_m[:n_pb+1]；两侧步数落盘。
+            n_pb = len(traj_pb) - 1
+            ref_pb_pts = seg["trans_m"][:min(n_pb + 1, n_rows), :2]
+            ref_path_pb = (float(np.linalg.norm(np.diff(ref_pb_pts, axis=0), axis=1).sum())
+                           if len(ref_pb_pts) > 1 else 0.0)
             hold_disp = (float(np.linalg.norm(traj[-1] - traj_pb[-1]))
                          if steps_done > n_rows else None)
             key = f"{seg['stem']}__seed{seed}"
@@ -205,8 +220,11 @@ def main():
                 "mean_speed_mps": round(path_len / dur, 3) if dur > 0 else None,
                 "realized_path_ratio": round(path_len / ref_path, 3) if ref_path > 0.5 else None,
                 "playback_path_m": round(playback_path, 2),
-                "playback_path_ratio": (round(playback_path / ref_path, 3)
-                                        if ref_path > 0.5 else None),
+                "playback_ref_path_m": round(ref_path_pb, 2),
+                "playback_t_used": int(n_pb),
+                "playback_t_total": int(n_rows),
+                "playback_path_ratio": (round(playback_path / ref_path_pb, 3)
+                                        if ref_path_pb > 0.5 else None),
                 "hold_disp_m": round(hold_disp, 2) if hold_disp is not None else None,
                 "q_track_mae_vs_ref_rad": round(float(np.mean(q_err_ref)), 4) if q_err_ref else None,
                 "q_track_mae_pd_rad": round(float(np.mean(q_err_pd)), 4) if q_err_pd else None,
@@ -219,31 +237,59 @@ def main():
                   f"qMAE={r['q_track_mae_vs_ref_rad']}", flush=True)
 
     # ---- class-level gate aggregation
+    # v2（owner 评审二轮 P1-3，D047 教训）：回放条数≠片段数——look 4 段×3 seed
+    # 曾被旧版记 n_segments=12 gate=true。片段数只按唯一 stem 计；类级存活只看
+    # 主判 seed（min(seeds)，预注册缺省 seed0）；加 seed 不能跨 >=10 段门槛。
+    primary_seed = min(seeds)
     by_class = {}
     for r in results.values():
         by_class.setdefault(r["class"], []).append(r)
     classes = {}
     for cls in sorted(by_class):
         rs = by_class[cls]
-        n = len(rs)
-        n_ok = sum(1 for r in rs if r["completed"])
+        seg_map = {}
+        for r in rs:
+            seg_map.setdefault(r["stem"], {})[r["seed"]] = r
+        n_seg = len(seg_map)
+        prim = [sd.get(primary_seed) for sd in seg_map.values()]
+        prim_missing = sum(1 for p in prim if p is None)
+        n_ok = sum(1 for p in prim if p is not None and p["completed"])
+        n_all_seed_ok = sum(1 for sd in seg_map.values()
+                            if sd and all(v["completed"] for v in sd.values()))
+        per_seed = {}
+        for s in seeds:
+            rs_s = [sd[s] for sd in seg_map.values() if s in sd]
+            per_seed[str(s)] = {"n_replays": len(rs_s),
+                                "n_survived": sum(1 for r in rs_s if r["completed"])}
         classes[cls] = {
-            "n_segments": n,
-            "n_survived": n_ok,
-            "survival_rate": round(n_ok / n, 4) if n else None,
-            "gate": (n >= 10 and n_ok / n >= 0.95) if n else False,
+            "primary_seed": primary_seed,
+            "n_segments": n_seg,
+            "n_replays": len(rs),
+            "n_survived_segments_primary": n_ok,
+            "n_segments_primary_seed_missing": prim_missing,
+            "survival_rate_segments_primary": round(n_ok / n_seg, 4) if n_seg else None,
+            "n_segments_survived_all_seeds": n_all_seed_ok,
+            "per_seed_survival_replays": per_seed,
+            "gate": (n_seg >= 10 and prim_missing == 0 and n_ok / n_seg >= 0.95)
+                    if n_seg else False,
             "n_fall_during_playback": sum(1 for r in rs if r["fall_during_playback"]),
             "q_track_mae_median_rad": round(float(np.median(
                 [r["q_track_mae_vs_ref_rad"] for r in rs if r["q_track_mae_vs_ref_rad"] is not None])), 4),
             "realized_path_ratio_median": round(float(np.median(
                 [r["realized_path_ratio"] for r in rs if r["realized_path_ratio"] is not None])), 3),
+            "playback_path_ratio_median": (round(float(np.median(
+                [r["playback_path_ratio"] for r in rs
+                 if r.get("playback_path_ratio") is not None])), 3)
+                if any(r.get("playback_path_ratio") is not None for r in rs) else None),
         }
     out = {
         "exp": "D044 B3' gate (BONES-SEED G1 native CSV -> obs -> tokens -> Isaac oracle replay)",
         "manifest": cli.manifest,
         "steps_budget": cli.steps,
         "seeds": seeds,
+        "primary_seed": min(seeds),
         "n_segments": len(segs),
+        "n_segments_unique": len({r["stem"] for r in results.values()}),
         "n_replays": len(results),
         "all_completed": all_ok,
         "classes": classes,

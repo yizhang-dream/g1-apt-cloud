@@ -1,4 +1,4 @@
-"""D046b 交叉 z 探针 v2（单轴交叉转向矩阵，owner 评审修正版）——判别 v2.1
+"""D046b 交叉 z 探针 v3（单轴交叉转向矩阵，owner 评审二轮修正版）——判别 v2.1
 VAE 条件通路「真琴键 vs 贴纸」。
 
 背景：v2.1 探针（probe_vae_v2.py）显示 locomotion 窗 z + 条件 IDLE 解码不向 IDLE
@@ -28,16 +28,33 @@ v2 修正（owner 代码级评审 2026-09-07 五项发现，v1 数值矩阵仍�
      trained-combo 格；支持矩阵本身作为产物输出。
   ⑤ （门脚本侧，不在本脚本）D047 path ratio 时间窗 diff，见
      b3p_gate_isaac.py playback/hold instrumentation。
+  ⑥ [v3] 训练支持集升为 (mode,UL,vb,db) 四元组合（owner 评审二轮 P1：R1 的
+     (mode,UL) 二元分层低估 OOD——IDLE 进入列过二元检查的 5,263 窗仅 465 窗
+     （8.8%）四元有训练支持，phase/z 分布尚未核查）。四轴交叉格一律按四元
+     支持分层，有效窗数随矩阵落盘；trained 覆盖过薄时判「不可识别」，不得
+     定位到 decoder 条件响应。phase 为连续量不入组合键，作为覆盖局限登记。
+  ⑦ [v3] 真 token 段级留出识别校准（owner 评审二轮 P1：diag_identification
+     测的是重建输出，混表示误差与读出误差；方向轴连训练真值自身都识别不好
+     ——db 真值宏识别 ~0.22）。同一最近质心读出对真实 train 窗末 token 报
+     resub + 段级留出（seg_id 奇偶两半，同段窗不跨半）宏识别率/混淆矩阵；
+     留出宏识别 < 2*chance -> verdict=readout_unidentifiable（该轴指标不可
+     判读，低交叉命中不可归因）。执行侧保真验证（朝向/速度/qMAE）另号做。
+  ⑧ [v3] 判定措辞降级（owner 评审二轮 P2：机器输出不得再出「架构问题证实」；
+     z 的均值/方差也不能证明其含任务相关信息）：verdict 分支名统一
+     *_on_readout / readout_unidentifiable；z_diag 解读收窄为「未观察到所测
+     top-8 投影上的方差塌缩」，不构成 z 含任务相关信息的证明。
 
-预注册判读量（owner 指令 2026-09-07；z_follow 按 ① 修正实现）：
+预注册判读量（owner 指令 2026-09-07；z_follow 按 ① 修正实现；v3 增补第一道门）：
   cond_follow = 逐轴 off-diagonal (i≠j) 的 P(命中 j) 均值
   z_follow    = 逐轴 off-diagonal (i≠j) 的 P(命中 i) 均值
   baseline    = off-diagonal (i≠j) 的 P(命中 j | z_i, cond_i) 均值（v2 增补）
   chance      = 1/k
-  判定（逐轴，按序）：cond_follow >= 2*chance -> 条件通路可用（贴纸问题不成立）；
-  elif z_follow >= 3*cond_follow -> z 主导（架构问题证实）；else -> 部分可控
-  （逐格报告断裂 (i,j) 对，重点 IDLE 行/列）。
-  判定措辞只允许到「该指标下响应强弱」，不做机制实锤断言（owner 评审口径）。
+  判定（逐轴，按序，v3 修订）：真 token 段级留出宏识别 < 2*chance ->
+  readout_unidentifiable（该轴指标不可判读，不进入下列三选一）；
+  elif cond_follow >= 2*chance -> cond_available_on_readout；
+  elif z_follow >= 3*cond_follow -> z_dominant_on_readout；else ->
+  partial_on_readout。措辞只允许到「该指标下响应强弱」，不做机制实锤断言
+  （owner 评审口径；v1「架构问题证实」措辞撤回）。
 样本门槛：矩阵行（z 组）>= --min-win（默认 150）训练窗（respect segment_bounds
 + keep mask）；低于门槛的条件值不入阵、单独登记。
 
@@ -57,8 +74,8 @@ Usage (CVGL det 容器或 lab-ts venv_isaac，纯 torch 前向，分钟级):
   python probe_vae_cross.py \
     --run-dir /home/cvgluser/ros2_data/g1_b4lite_probe/vae_v21/run1 \
     --inputs-dir /home/cvgluser/ros2_data/g1_b4lite_probe/vae_inputs_v21
-产出 <run-dir>/../probe_cross_v2/{metrics_d046b_v2.json, summary_d046b_v2.txt}
-（v1 产物在 probe_cross/ 不覆盖，append-only 对照）
+产出 <run-dir>/../probe_cross_v3/{metrics_d046b_v3.json, summary_d046b_v3.txt}
+（v1/v2 产物在 probe_cross/、probe_cross_v2/ 不覆盖，append-only 对照）
 """
 from __future__ import annotations
 
@@ -108,7 +125,7 @@ def main() -> None:
     ap.add_argument("--min-win", type=int, default=150)
     ap.add_argument("--n-pc", type=int, default=8)
     ap.add_argument("--out-dir", default=None,
-                    help="缺省 <run-dir>/../probe_cross_v2")
+                    help="缺省 <run-dir>/../probe_cross_v3")
     args = ap.parse_args()
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[env] device={dev}", flush=True)
@@ -144,12 +161,24 @@ def main() -> None:
     pb = per_frame_labels(phase2, bnd, W)
     vbw = per_frame_labels(vb, bnd, W)
     dbw = per_frame_labels(ang, bnd, W)
+    def window_seg_ids(bnd: np.ndarray, W: int) -> np.ndarray:
+        """窗→段 id（build_windows_bounded 枚举序：每段 n-W+1 窗，按段序拼接）。"""
+        ids = []
+        for si, (a, b) in enumerate(bnd):
+            n = int(b - a)
+            if n >= W:
+                ids.extend([si] * (n - W + 1))
+        return np.asarray(ids, dtype=np.int64)
+
+    seg_ids = window_seg_ids(bnd, W)
     km = os.path.join(args.inputs_dir, "window_keep_mask.npy")
     if os.path.isfile(km):
         m = np.load(km)
         x, tok_y, pb, vbw, dbw, mb, ub = (v[m] for v in
                                           (x, tok_y, pb, vbw, dbw, mb, ub))
+        seg_ids = seg_ids[m]
     N = len(x)
+    assert len(seg_ids) == N, "window_seg_ids 与窗枚举错位"
     print(f"[data] train windows N={N}", flush=True)
 
     def batches(*arrays):
@@ -169,27 +198,53 @@ def main() -> None:
     assert np.isfinite(mus).all() and np.isfinite(recs).all(), "NaN/Inf in forward"
     mu_t = torch.from_numpy(mus).float().to(dev)
 
-    # ---- [修正④] (mode,UL) 训练支持集 S（window 级组合计数） ----
+    # ---- [修正④→⑥] 训练支持集：二元 (mode,UL) 仅存档打印，主判升四元
+    # (mode,UL,vb,db)（owner 评审二轮 P1：解码同时消费 vb/db/phase，二元支持
+    # 高估训练覆盖；phase 连续不入键，作为覆盖局限登记） ----
     n_modes_total = int(meta["n_modes"])
     sup_counts = np.zeros((n_modes_total, 3), dtype=np.int64)
     np.add.at(sup_counts, (mb, ub), 1)
     sup_ok = sup_counts > 0
+    sup4_counts = np.zeros((n_modes_total, 3, 3, 8), dtype=np.int64)
+    np.add.at(sup4_counts, (mb, ub, vbw, dbw), 1)
+    sup4_ok = sup4_counts > 0
+    win4_ok = sup4_ok[mb, ub, vbw, dbw]
+    # IDLE 进入列覆盖核查（复现 owner 复算口径：mode≠0 且过二元检查的窗，
+    # 其中四元有训练支持的比例——R1「trained-combo 维持」结论的覆盖前提）
+    idle_entry_bin = (mb != 0) & sup_ok[0, ub]
+    idle_entry_4 = idle_entry_bin & sup4_ok[0, ub, vbw, dbw]
+    idle_entry_support = {
+        "definition": "mode 交叉至 IDLE（进入列）off-diag 窗：过 (mode,UL) 二元"
+                      "支持检查 vs 四元 (mode,UL,vb,db) 有训练支持",
+        "n_binary_pass": int(idle_entry_bin.sum()),
+        "n_4way_pass": int(idle_entry_4.sum()),
+        "share_4way_over_binary": round(
+            float(idle_entry_4.sum() / max(int(idle_entry_bin.sum()), 1)), 4),
+    }
     sup_rows = [m for m in range(n_modes_total) if sup_counts[m].any()]
     sup_row_names = [mode_names.get(m, str(m)) for m in sup_rows]
-    print("\n[support] (mode,UL) train-window 支持矩阵（行=mode 列=UL，0=缺席）：",
-          flush=True)
+    print("\n[support] (mode,UL) train-window 支持矩阵（行=mode 列=UL，0=缺席；"
+          "仅存档，主判用四元）：", flush=True)
     print("mode\\UL    ".ljust(11) + "".join(UL_NAMES[u].rjust(9) for u in range(3)),
           flush=True)
     for m, rn_ in zip(sup_rows, sup_row_names):
         print(rn_[:10].ljust(11) + "".join(str(int(sup_counts[m, u])).rjust(9)
                                            for u in range(3)), flush=True)
+    print(f"[support4] 四元组合支持：{int(sup4_ok.sum())} 组合 / 覆盖窗 "
+          f"{int(win4_ok.sum())}/{N}；IDLE 进入列二元过检 "
+          f"{int(idle_entry_bin.sum())} 窗中四元支持 {int(idle_entry_4.sum())}"
+          f"（{idle_entry_support['share_4way_over_binary']:.1%}）", flush=True)
 
     def combo_trained_mask(axis: str, idx: np.ndarray, vj: int):
-        """axis=mode/ul 时，格 (i,j) 内各窗交叉后组合 (交叉值vj, 保持值) 是否 ∈S。"""
+        """[修正⑥] 四元支持：交叉 vj 后 (mode,UL,vb,db) 是否 ∈ 训练窗组合集。"""
         if axis == "mode":
-            return sup_ok[vj, ub[idx]]          # (mode=vj, ul=窗真值)
+            return sup4_ok[vj, ub[idx], vbw[idx], dbw[idx]]
         if axis == "ul":
-            return sup_ok[mb[idx], vj]          # (mode=窗真值, ul=vj)
+            return sup4_ok[mb[idx], vj, vbw[idx], dbw[idx]]
+        if axis == "vb":
+            return sup4_ok[mb[idx], ub[idx], vj, dbw[idx]]
+        if axis == "db":
+            return sup4_ok[mb[idx], ub[idx], vbw[idx], vj]
         return None
 
     # ---- 轴定义：mode / ul / vb / db（各轴独立矩阵） ----
@@ -230,6 +285,60 @@ def main() -> None:
         cents = np.stack([tok_y[labels == v].mean(0) for v in values])
         cent_t = torch.from_numpy(cents).float().to(dev)
 
+        # [修正⑦] 真 token 可辨识性校准（同一最近质心读出，对真实 train 窗末
+        # token）：resub=全体窗对全窗质心；holdout=段级留出（seg_id 奇偶两半，
+        # 同段窗不跨半，防同段窗相关虚高），质心=留入半。留出宏识别是该读出在
+        # 真值上的保守上限：连真值都识别不好的轴，decode 侧低命中不可归因于
+        # 条件通路（owner 评审二轮 P1-2）。
+        def _nearest(c: np.ndarray, p: np.ndarray) -> np.ndarray:
+            # argmin ||p-c||^2 = argmax(p·c - 0.5||c||^2)
+            return np.argmax(p @ c.T - 0.5 * (c ** 2).sum(1)[None, :], axis=1)
+
+        half_a = (seg_ids % 2 == 0)
+        ident_resub = {}
+        for t, v in enumerate(values):
+            mv = labels == v
+            pr = _nearest(cents, tok_y[mv])
+            ident_resub[row_names[t]] = round(float((pr == t).mean()), 4)
+        feas_t = [t for t in range(K)
+                  if ((labels == values[t]) & half_a).any()
+                  and ((labels == values[t]) & ~half_a).any()]
+        ident_hold = {row_names[t]: None for t in range(K)}
+        conf_hold = np.full((K, K), np.nan)
+        if feas_t:
+            cents_a = np.stack([tok_y[(labels == values[t]) & half_a].mean(0)
+                                for t in feas_t])
+            for pos, t in enumerate(feas_t):
+                mh = (labels == values[t]) & ~half_a
+                ph = _nearest(cents_a, tok_y[mh])
+                ident_hold[row_names[t]] = round(float((ph == pos).mean()), 4)
+                for p2, t2 in enumerate(feas_t):
+                    conf_hold[t, t2] = (ph == p2).mean()
+        feas = [ident_hold[row_names[t]] for t in feas_t]
+        holdout_macro = round(float(np.mean(feas)), 4) if feas else None
+        resub_macro = (round(float(np.mean(list(ident_resub.values()))), 4)
+                       if ident_resub else None)
+        ident_ok = (holdout_macro is not None and len(feas) >= 2
+                    and holdout_macro >= 2 * chance)
+        real_ident = {
+            "readout": "nearest-centroid（与主矩阵同读出）对真实 train 窗末 token",
+            "holdout_split": "段级 seg_id 奇偶两半，同段窗不跨半；质心=留入半",
+            "resub_macro_recall": resub_macro,
+            "resub_per_class": ident_resub,
+            "holdout_macro_recall": holdout_macro,
+            "holdout_per_class": ident_hold,
+            "holdout_confusion_rowtrue": [[None if not np.isfinite(x_) else
+                                           round(float(x_), 4) for x_ in r_]
+                                          for r_ in conf_hold],
+            "n_segments_per_class": {row_names[t]: int(len(np.unique(seg_ids[labels == values[t]])))
+                                     for t in range(K)},
+            "n_classes_feasible_holdout": len(feas),
+            "readout_identifiable": ident_ok,
+        }
+        print(f"[ident] 真 token 校准: resub_macro={resub_macro} "
+              f"holdout_macro={holdout_macro}（2*chance={round(2 * chance, 3)}）-> "
+              f"{'identifiable' if ident_ok else 'NOT identifiable'}", flush=True)
+
         # [修正③] 基线：同 z 不改条件（自条件前向 recs）对同一质心集的命中分布
         base = np.zeros((K, K), dtype=np.float64)   # base[i,j]=P(pred==j | z_i, cond_i)
         with torch.no_grad():
@@ -243,7 +352,7 @@ def main() -> None:
         hit_i = np.zeros((K, K), dtype=np.float64)  # hit_i[i,j]=P(pred==i)（z 源类命中）
         top = np.zeros((K, K), dtype=np.int64)      # 每格最近质心 argmax（断裂归因用）
         top_p = np.zeros((K, K), dtype=np.float64)  # 每格最近质心概率
-        stratified = axis in ("mode", "ul")
+        stratified = True   # [修正⑥] 四轴全部分层（四元支持口径）
         sub_names = ("trained", "unseen") if stratified else ()
         # 分层存格：hit 向量 + 窗数；空格 = None
         s_hit = {s: [[None] * K for _ in range(K)] for s in sub_names}
@@ -295,12 +404,18 @@ def main() -> None:
         mean_delta = cond_follow - base_follow   # [修正③] 交叉 − 基线
         diag_ident = float(np.diag(M).mean())    # [修正③] 同条件可辨识率
         chance = 1.0 / K
-        if cond_follow >= 2 * chance:
-            verdict = "cond_available(条件通路可用,贴纸问题不成立)"
+        # [修正⑦⑧] 第一道门=真 token 留出识别（读出不可辨识则该轴指标不可判
+        # 读）；措辞只到「该指标下响应强弱」（v1「架构问题证实」撤回）
+        if not ident_ok:
+            verdict = (f"readout_unidentifiable(真token留出宏识别={holdout_macro} "
+                       f"< 2*chance={round(2 * chance, 3)}，该轴指标不可判读；"
+                       f"低交叉命中不可归因)")
+        elif cond_follow >= 2 * chance:
+            verdict = "cond_available_on_readout(该指标下条件响应>=2*chance)"
         elif z_follow >= 3 * cond_follow:
-            verdict = "z_dominant(z 主导,架构问题证实)"
+            verdict = "z_dominant_on_readout(该指标下 z 侧命中占优；不作机制实锤断言)"
         else:
-            verdict = "partial(部分可控)"
+            verdict = "partial_on_readout(该指标下部分可控)"
         # 断裂对归因：off-diag 中条件命中所指质心不是输出 argmax 的格（名经 values 映射）
         broken = [[row_names[i], col_names[j], round(float(M[i, j]), 4),
                    col_names[int(top[i, j])], round(float(top_p[i, j]), 4)]
@@ -325,6 +440,7 @@ def main() -> None:
                       if i != j and mi[i][j] is not None]
             return {
                 "cell_n": s_n[s].tolist(),
+                "n_windows_total": int(s_n[s].sum()),
                 "matrix_hit_j": mj,
                 "matrix_hit_i": mi,
                 "argmax_target": tg,
@@ -343,10 +459,12 @@ def main() -> None:
                                             + s_n["unseen"][off].sum()), 1)))
             combo_strat = {
                 "combo_definition": (
-                    "trained: 交叉后 (mode,UL) ∈ train 窗支持集 S；unseen: ∉S；"
-                    "空格=None。IDLE 归因只允许引用 trained 格" if axis == "mode"
-                    else "trained: 交叉后 (mode,UL) ∈ train 窗支持集 S；unseen: ∉S；"
-                         "空格=None"),
+                    "trained: 交叉后 (mode,UL,vb,db) 四元 ∈ train 窗组合支持集"
+                    "（phase 连续不入键）；unseen: ∉S；空格=None。IDLE 归因只允许"
+                    "引用 trained 格，trained 覆盖过薄（n_windows_total 小）时判"
+                    "不可识别" if axis == "mode"
+                    else "trained: 交叉后 (mode,UL,vb,db) 四元 ∈ train 窗组合支持"
+                         "集（phase 连续不入键）；unseen: ∉S；空格=None"),
                 "trained": strat_pack("trained"),
                 "unseen": strat_pack("unseen"),
                 "offdiag_window_share_unseen": round(unseen_share, 4),
@@ -366,6 +484,7 @@ def main() -> None:
             "baseline_follow_offdiag": round(base_follow, 4),
             "mean_delta_offdiag_cross_minus_baseline": round(mean_delta, 4),
             "diag_identification": round(diag_ident, 4),
+            "real_token_identification": real_ident,
             "chance": round(chance, 4),
             "z_over_cond_ratio": round(z_follow / max(cond_follow, 1e-9), 2),
             "cond_over_chance": round(cond_follow / chance, 2),
@@ -412,7 +531,8 @@ def main() -> None:
             "chance": mres["chance"],
             "note": "行=z_IDLE 条件 j（能否被命令离开）；列=z_i 条件 IDLE"
                     "（能否被命令进入；与 v2.1 dev-z 版 0.004 对照）；"
-                    "分层解读只引用 trained 格",
+                    "分层解读只引用 trained 格（v3 起四元支持口径，覆盖过薄判"
+                    "不可识别）",
         }
         st = mres.get("combo_stratified")
         if st:
@@ -463,15 +583,16 @@ def main() -> None:
             "per_pc_std_idle": [round(float(s), 4) for s in sd_i],
             "std_ratio_idle_over_loco_mean": round(float(sd_i.mean() / sd_l.mean()), 4),
             "mean_abs_shift_top8": round(float(shift.mean()), 3),
-            "interpretation_hint": "shift>>1 且 std_ratio 不塌缩 -> IDLE z 有信息"
-                                   "（非无信息/塌缩）；shift~0 或 std_ratio~0 -> "
-                                   "IDLE z 无信息，hub 断裂属平凡解释",
+            "interpretation_hint": "仅必要条件口径：std_ratio 不塌缩且 shift 有限 ->"
+                                   "「未观察到所测 top-8 投影上的方差塌缩」（不构成"
+                                   " z 含任务相关信息的证明）；若塌缩 -> IDLE z "
+                                   "无信息的平凡解释成立",
         }
         print(f"\n[zdiag] mean|shift| top{args.n_pc}={z_diag['mean_abs_shift_top8']}; "
               f"std_ratio(idle/loco)={z_diag['std_ratio_idle_over_loco_mean']}",
               flush=True)
 
-    out_dir = args.out_dir or os.path.join(args.run_dir, "..", "probe_cross_v2")
+    out_dir = args.out_dir or os.path.join(args.run_dir, "..", "probe_cross_v3")
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     overall = {}
@@ -489,7 +610,7 @@ def main() -> None:
                       "verdict": ra["verdict"]}
     out = {
         "_meta": {"script": "apt_g1/probe_vae_cross.py", "experiment": "D046b",
-                  "version": "v2 (owner 评审修正版 2026-09-07)",
+                  "version": "v3 (owner 评审二轮修正版 2026-09-07)",
                   "snapshot": sd_path, "device": str(dev),
                   "train_windows": int(N), "min_win": args.min_win,
                   "design": "单轴交叉：z 取条件值 i 的训练窗 mu，被测轴置 j，"
@@ -503,14 +624,25 @@ def main() -> None:
                       "centroid": "train 窗末真 token（y=decode 目标空间；v1 为模型"
                                   "自重建均值，未校准）",
                       "baseline": "P(命中 j | z_i, cond_i) vs 交叉逐轴 mean delta",
-                      "combo_stratify": "(mode,UL) 训练支持集 S 分层 trained/unseen"
-                                        " 矩阵；IDLE 归因只引用 trained 格",
+                      "combo_stratify": "[v3 升级⑥] 四元 (mode,UL,vb,db) 组合支持集"
+                                        "（R1 二元 (mode,UL) 低估 OOD：IDLE 进入列"
+                                        " 5,263 窗仅 465 窗四元有支持）；四轴全分层；"
+                                        "IDLE 归因只引用 trained 格且覆盖过薄判不可识别",
+                      "readout_calibration": "[v3 增补⑦] 真 token 段级留出识别门："
+                                             "留出宏识别 <2*chance -> "
+                                             "readout_unidentifiable；resub 与"
+                                             "留出双口径落盘",
+                      "verdict_wording": "[v3 修正⑧] 撤回「架构问题证实」机制断言，"
+                                         "verdict 只到该指标响应强弱；z_diag 收窄为"
+                                         "「未观察到所测投影方差塌缩」",
                       "db_bin0": "bin0=段首方向±22.5°=前向（build_b4lite_vae_inputs.py）；"
                                  "v1 台账「db5=前向邻域」表述有误",
                   },
-                  "criteria": "预注册：cond_follow>=2*chance->条件通路可用；"
-                              "elif z_follow>=3*cond_follow->z 主导；else 部分可控；"
-                              "措辞只到「该指标下响应强弱」",
+                  "criteria": "预注册（v3 修订）：真 token 段级留出宏识别<2*chance->"
+                              "readout_unidentifiable（不可判读）；elif "
+                              "cond_follow>=2*chance->cond_available_on_readout；"
+                              "elif z_follow>=3*cond_follow->z_dominant_on_readout；"
+                              "else partial_on_readout；措辞只到「该指标下响应强弱」",
                   "mode_axis_note": "SLOW_WALK(1)/INJURED_WALK(6) 为 T-fam 零训练窗，"
                                     "mode 轴按 >=150 窗实况取值（8 度）"},
         "mode_ul_support": {
@@ -528,22 +660,34 @@ def main() -> None:
                              for m in sup_rows for u in range(3)
                              if sup_counts[m, u] == 0],
         },
+        "support_4way": {
+            "note": "[v3⑥] (mode,UL,vb,db) 训练窗组合支持；主判分层与 IDLE 归因"
+                    "一律用此口径（phase 连续不入键，作为覆盖局限登记）",
+            "n_combos_supported": int(sup4_ok.sum()),
+            "n_windows_in_supported_combos": int(win4_ok.sum()),
+            "idle_entry_support_check": idle_entry_support,
+        },
         "axes": results,
         "j9_hub": j9,
         "z_diag_idle_vs_loco": z_diag,
         "verdict_overall": overall,
     }
-    jp = os.path.join(out_dir, "metrics_d046b_v2.json")
+    jp = os.path.join(out_dir, "metrics_d046b_v3.json")
     with open(jp, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
-    sp = os.path.join(out_dir, "summary_d046b_v2.txt")
+    sp = os.path.join(out_dir, "summary_d046b_v3.txt")
     with open(sp, "w", encoding="utf-8") as f:
-        f.write(f"D046b 交叉 z 探针 v2 summary（owner 评审修正版）\nsnapshot={sd_path}\nN={N}\n")
+        f.write(f"D046b 交叉 z 探针 v3 summary（owner 评审二轮修正版）\nsnapshot={sd_path}\nN={N}\n")
         f.write("\n(mode,UL) train-window 支持矩阵（0=缺席）：\n")
         f.write("mode\\UL    ".ljust(11) + "".join(UL_NAMES[u].rjust(9) for u in range(3)) + "\n")
         for m, rn_ in zip(sup_rows, sup_row_names):
             f.write(rn_[:10].ljust(11) + "".join(str(int(sup_counts[m, u])).rjust(9)
                                                  for u in range(3)) + "\n")
+        f.write(f"support4: 四元组合 {int(sup4_ok.sum())} / 覆盖窗 "
+                f"{int(win4_ok.sum())}/{N}；IDLE 进入列二元过检 "
+                f"{idle_entry_support['n_binary_pass']} 窗中四元支持 "
+                f"{idle_entry_support['n_4way_pass']}"
+                f"（{idle_entry_support['share_4way_over_binary']:.1%}）\n")
         for a, r in results.items():
             if "cond_follow" not in r:
                 f.write(f"\n[axis={a}] skipped: {r['verdict']}\n")
@@ -555,6 +699,12 @@ def main() -> None:
                     f"diag_ident={r['diag_identification']} "
                     f"z/c={r['z_over_cond_ratio']} cond/chance={r['cond_over_chance']}"
                     f"\nverdict: {r['verdict']}\n")
+            ri = r["real_token_identification"]
+            f.write(f"真token校准: resub={ri['resub_macro_recall']} "
+                    f"holdout={ri['holdout_macro_recall']}"
+                    f"（2*chance={round(2 * r['chance'], 3)}）identifiable="
+                    f"{ri['readout_identifiable']}\n")
+            f.write(f"  holdout_per_class: {ri['holdout_per_class']}\n")
             f.write("values 核对: " + str(list(zip(r["values"], r["row_names"]))) + "\n")
             f.write("M_hit_j (P(pred==j | z_i, cond_j)):\n")
             f.write(fmt_matrix(np.asarray(r["matrix_hit_j"]),
