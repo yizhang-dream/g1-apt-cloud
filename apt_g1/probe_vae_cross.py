@@ -752,12 +752,13 @@ def main() -> None:
                     f"z/c={r['z_over_cond_ratio']} cond/chance={r['cond_over_chance']}"
                     f"\nverdict: {r['verdict']}\n")
             ri = r["real_token_identification"]
+            _reason = ri["not_identifiable_reason"]
             f.write(f"真token校准(源段留出): resub={ri['resub_macro_recall']} "
                     f"holdout={ri['holdout_macro_recall']}"
                     f"（2*chance={round(2 * r['chance'], 3)}，"
                     f"coverage={ri['coverage']}）identifiable="
                     f"{ri['readout_identifiable']}"
-                    f"（{ri['not_identifiable_reason']}）\n")
+                    + (f"（{_reason}）" if _reason else "") + "\n")
             f.write(f"  敏感性固定分组: {ri['sensitivity_fixed_splits']}"
                     f"（身份={ri['source_provenance']}）\n")
             f.write(f"  holdout_per_class: {ri['holdout_per_class']}\n")

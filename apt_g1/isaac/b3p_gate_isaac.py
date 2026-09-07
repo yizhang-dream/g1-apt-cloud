@@ -284,10 +284,16 @@ def main():
             "gate": (n_seg >= 10 and prim_missing == 0 and n_ok / n_seg >= 0.95)
                     if n_seg else False,
             "n_fall_during_playback": sum(1 for r in rs if r["fall_during_playback"]),
-            "q_track_mae_median_rad": round(float(np.median(
-                [r["q_track_mae_vs_ref_rad"] for r in rs if r["q_track_mae_vs_ref_rad"] is not None])), 4),
-            "realized_path_ratio_median": round(float(np.median(
-                [r["realized_path_ratio"] for r in rs if r["realized_path_ratio"] is not None])), 3),
+            # 类内全 None（如整类回放首步即摔）时 np.median([]) 得 nan，会写出
+            # 非严格 JSON 的 NaN 字面量——照 playback_path_ratio_median 置 None。
+            "q_track_mae_median_rad": (round(float(np.median(
+                [r["q_track_mae_vs_ref_rad"] for r in rs
+                 if r["q_track_mae_vs_ref_rad"] is not None])), 4)
+                if any(r["q_track_mae_vs_ref_rad"] is not None for r in rs) else None),
+            "realized_path_ratio_median": (round(float(np.median(
+                [r["realized_path_ratio"] for r in rs
+                 if r["realized_path_ratio"] is not None])), 3)
+                if any(r["realized_path_ratio"] is not None for r in rs) else None),
             "playback_path_ratio_median": (round(float(np.median(
                 [r["playback_path_ratio"] for r in rs
                  if r.get("playback_path_ratio") is not None])), 3)
