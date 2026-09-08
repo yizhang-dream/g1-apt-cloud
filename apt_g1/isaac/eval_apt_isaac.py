@@ -402,7 +402,12 @@ def rollout(
                 ).reshape(1, 1, 3)
                 body_dir = env._world_to_body(world_dir)
                 forces = torch.zeros(1, 1, 3, dtype=torch.float32, device=env.device)
-                forces[0, 0] = body_dir[0, 0]
+                # D048f 勘误：旧式 forces[0,0]=body_dir[0,0] 中 body_dir 形状
+                # (1,3)、[0,0] 是标量 x 分量，广播后三轴全为 body_x——实际
+                # 施力 = (body_x,body_x,body_x) 对角力而非设计方向：fwd/back
+                # 变成斜向推、left/right（yaw≈0 时 body_x≈0）历来是零力无效
+                # 扰动。修 = 整行赋真实机体系方向。
+                forces[0, 0, :] = body_dir[0, :]
                 env.robot.set_external_force_and_torque(
                     forces,
                     torch.zeros_like(forces),
