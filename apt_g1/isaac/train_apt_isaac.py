@@ -634,8 +634,12 @@ def main():
                 # _final_pos_w 补上（term/trunc 都走 _reset_idx，均覆盖；
                 # 非 done 位该值为陈旧数据，被 where 掩掉）。
                 _pos_now = env.robot.data.root_pos_w[:, :2].detach()
+                # D048g 勘误：done/trunc 位为 [N]，torch.where 条件按 [1,N]
+                # 与 [N,2] 操作数对齐 → dim1 上 128 vs 2 崩（D048c 引入的
+                # 训练侧位移代码此前从未真实训练执行过，py_compile/纯数值
+                # 核验盖不住形状广播）；升维 [N,1] 与 [N,2] 广播。
                 _end_pos = torch.where(
-                    buf["done"][t] | buf["trunc"][t],
+                    (buf["done"][t] | buf["trunc"][t]).unsqueeze(-1),
                     env._final_pos_w,
                     _pos_now,
                 )
