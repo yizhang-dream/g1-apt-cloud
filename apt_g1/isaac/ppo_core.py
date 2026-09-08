@@ -185,6 +185,10 @@ class PPOTrainer:
         num_epochs: int = 1,
         minibatch_size: int = 512,
         entropy_coef: float = 0.001,
+        # D048b：res（aux）头熵奖励独立系数，只乘 aux 头熵项。默认 1.0 =
+        # 历史行为逐位不变；latent_residual 的 aux=29d 执行残差，共享熵奖励
+        # 会持续推高残差探索噪声（E48 破坏模式的种子之一）
+        res_ent_coef: float = 1.0,
         latent_kl_coef: float = 2.5e-6,
         latent_expl_coef: float = 0.01,
         latent_prior_mean: "torch.Tensor | None" = None,
@@ -235,6 +239,7 @@ class PPOTrainer:
         self.num_epochs = num_epochs
         self.minibatch_size = minibatch_size
         self.entropy_coef = entropy_coef
+        self.res_ent_coef = res_ent_coef
         self.latent_kl_coef = latent_kl_coef
         self.latent_expl_coef = latent_expl_coef
         # E29: prior mean for the latent KL. None -> N(0, I) (E27 behavior).
@@ -423,9 +428,16 @@ class PPOTrainer:
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * adv_f[mb]
                 ploss = -torch.min(surr1, surr2).mean()
                 vloss = torch.nn.functional.mse_loss(self.policy.get_value(obs[mb]), ret_f[mb])
-                ent = ad.entropy().sum(-1) if aux_scored else 0.0
+                # D048b：熵分解——res(aux) 头熵乘 res_ent_coef（0 = 残差头不享受
+                # 熵 bonus，log_prob/信任域不受影响）；aux_scored=False 时 aux
+                # 熵本就不存在，该系数无效果
+                ent_aux = ad.entropy().sum(-1) if aux_scored else 0.0
+                ent = self.res_ent_coef * ent_aux
                 if phase is not None:
-                    ent = ent + pd.entropy().sum(-1)
+                    ent_z = pd.entropy().sum(-1)
+                    ent = ent + ent_z
+                else:
+                    ent_z = 0.0
                 if gate is not None:
                     ent = ent + gd.entropy()
                 loss = (
@@ -561,6 +573,17 @@ class PPOTrainer:
                             if isinstance(act_std, torch.Tensor)
                             else act_std
                         ),
+                        "ent_aux": (
+                            ent_aux.detach().mean()
+                            if isinstance(ent_aux, torch.Tensor)
+                            else ent_aux
+                        ),
+                        "ent_z": (
+                            ent_z.detach().mean()
+                            if isinstance(ent_z, torch.Tensor)
+                            else ent_z
+                        ),
+                        "aux_std": p["aux_log_std"].mean().exp().detach(),
                         "expl": expl_coef,
                         "dreg": (
                             dec_reg.detach()

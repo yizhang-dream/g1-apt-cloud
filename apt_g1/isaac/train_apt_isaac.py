@@ -119,6 +119,10 @@ def build_args():
     ap.add_argument("--phase-warmstart-iters", type=int, default=0)
     ap.add_argument("--phase-warmstart-coef", type=float, default=10.0)
     ap.add_argument("--entropy", type=float, default=0.001)
+    # D048b：res（aux）头熵奖励独立系数。latent_residual 的 aux=29d 执行残差，
+    # 共享 entropy_coef 会持续推高残差探索噪声（E48 破坏模式种子之一）；
+    # 0 = res 头不享受熵 bonus（log_prob/信任域不受影响）。默认 1.0 = 历史行为
+    ap.add_argument("--res-ent-coef", type=float, default=1.0)
     # TO42 修订 v4（论文式大并行操作点）：2048 envs × 500it 配 minibatch 4096
     # （24×2048/4096 = 12 minibatch/epoch，整除）；默认 512 = 既有行为逐字不变
     ap.add_argument("--ppo-minibatch", type=int, default=512)
@@ -377,6 +381,7 @@ def main():
         policy,
         lr=cli.lr,
         entropy_coef=cli.entropy,
+        res_ent_coef=cli.res_ent_coef,
         latent_kl_coef=cli.latent_kl,
         latent_expl_coef=cli.latent_expl,
         latent_prior_mean=latent_prior_mean,
@@ -487,6 +492,9 @@ def main():
         "approx_kl": [],
         "clip_frac": [],
         "act_std": [],
+        "act_aux_std": [],
+        "ent_aux": [],
+        "ent_z": [],
         "post_update_kl": [],
         # E49-C：vloss / expl_var 无条件记录；KL 守卫四键仅 --kl-guard 开启时记录
         "vloss": [],
@@ -667,6 +675,10 @@ def main():
         hist["approx_kl"].append(stats["approx_kl"])
         hist["clip_frac"].append(stats["clip_frac"])
         hist["act_std"].append(stats["act_std"])
+        # D048b：res 头可观测三件套（.get 防御，旧 ckpt/路径无此键时不记录）
+        hist["act_aux_std"].append(stats.get("act_aux_std"))
+        hist["ent_aux"].append(stats.get("ent_aux"))
+        hist["ent_z"].append(stats.get("ent_z"))
         hist["post_update_kl"].append(stats["post_update_kl"])
         # E49-C：新键一律 .get 防御（键缺失时不记录，不抛错）
         hist["vloss"].append(stats.get("vloss"))
