@@ -267,6 +267,7 @@ def rollout(
     imp = {s: f for s, f in (impulses or [])}
     heights, vxs, vys = [], [], []
     xys = []
+    ugs = []  # D048c: per-step |projected gravity xy| for the upright score
     fall = None
     ep_done = False
     t = 0
@@ -360,6 +361,9 @@ def rollout(
             vxs.append(float(v[0]))
             vys.append(float(v[1]))
             xys.append(xy)
+            ugs.append(
+                float(env.robot.data.projected_gravity_b[0, :2].norm().item())
+            )
             if term.any():
                 fall = t
                 ep_done = True
@@ -376,6 +380,13 @@ def rollout(
     if len(xys) > 1:
         displacement = float(np.linalg.norm(xys[-1] - xys[0]))
     spd = np.sqrt(vxs**2 + vys**2)
+    # D048c: 漂移与姿态入报告。drift_y = 横向净位移绝对值（D048b 敏感性
+    # 复算口径：排除复位窗后 B 横漂仍略高于 A，需 eval 级可判）；upright 与
+    # train 奖励项同式（exp(-g_xy²/0.1) 逐步算再平均）。
+    drift_y = float(abs(xys[-1][1] - xys[0][1])) if len(xys) > 1 else 0.0
+    upright = (
+        float(np.mean(np.exp(-(np.array(ugs) ** 2) / 0.1))) if ugs else 0.0
+    )
     return {
         "steps": len(heights),
         "completed": fall is None and len(heights) >= total_steps - 1,
@@ -384,6 +395,8 @@ def rollout(
         "vx": round(float(vxs.mean()), 3),
         "disp": round(displacement, 3),
         "v_speed": round(float(spd.mean()), 3),
+        "drift_y": round(drift_y, 3),
+        "upright": round(upright, 3),
     }
 
 

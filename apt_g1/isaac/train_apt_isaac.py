@@ -15,8 +15,11 @@ Usage (from the repo root on the training server):
 from __future__ import annotations
 
 import argparse
+import hashlib
+import inspect
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -489,6 +492,9 @@ def main():
         "vx": [],
         "vx_fwd": [],
         "fall_rate": [],
+        # D048c：超时率单列（fall_rate=buf["done"] 只统计终止；零摔倒≠零
+        # 复位，D048b 200it 两臂每 ~41.7 it 超时复位一次即第 42/84/125/167 轮）
+        "timeout_rate": [],
         "approx_kl": [],
         "clip_frac": [],
         "act_std": [],
@@ -516,6 +522,27 @@ def main():
     if diag:
         for k in DIAG_HIST_KEYS:
             hist[k] = []
+    # D048c：版本身份三键（rew_contract / env 源 sha256 / git HEAD）。
+    # 旧日志无这三键 = v1 身份（heading 双旋转 + 位移窗口差分），不回刷。
+    # sha256 为跨端锚（CVGL 执行目录非 git 仓时 git_head 记空串）。
+    hist["rew_contract"] = getattr(env, "REW_CONTRACT_VER", 1)
+    try:
+        hist["env_sha256"] = hashlib.sha256(
+            Path(inspect.getfile(type(env))).read_bytes()
+        ).hexdigest()
+    except Exception:
+        hist["env_sha256"] = ""
+    try:
+        _g = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        hist["git_head"] = _g.stdout.strip() if _g.returncode == 0 else ""
+    except Exception:
+        hist["git_head"] = ""
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
 
@@ -537,13 +564,17 @@ def main():
         rew_sum = torch.zeros((), device="cuda:0")
         if diag:
             # E49 诊断：GPU 标量累积器（每 iter 重建；iter 末一次 .cpu() 换算，
-            # 热循环零同步）。diag_pos0 = 位移率差分基点。
+            # 热循环零同步）。
             diag_term_sum = {k: torch.zeros((), device="cuda:0") for k in DIAG_KEYS}
             diag_abs_err = torch.zeros((), device="cuda:0")
             diag_cmd_sum = torch.zeros((), device="cuda:0")
             diag_stand = torch.zeros((), device="cuda:0")
             diag_cnt = torch.zeros((), device="cuda:0")
-            diag_pos0 = env.robot.data.root_pos_w[:, :2].detach().clone()
+            # D048c：位移改为逐步累计。旧口径 = iter 首末窗口差分
+            # （diag_pos0），超时复位的传送跳变直接进差分——D048b 200it
+            # "两臂净前进转负"即此伪影，已撤回（tracker D048c 行）。
+            diag_prev_pos = env.robot.data.root_pos_w[:, :2].detach().clone()
+            diag_disp_acc = torch.zeros_like(diag_prev_pos)
         for t in range(T):
             act, logp, ent, val, p_fwd = policy.act(obs)
             buf["obs"][t] = obs
@@ -597,6 +628,19 @@ def main():
             buf["reward"][t] = rew
             buf["done"][t] = term
             buf["trunc"][t] = trunc
+            if diag:
+                # D048c：位移逐步累计。本步 done 的 env 已在 step 内复位、
+                # root_pos 已回原点，终末位置用 _reset_idx 截留的
+                # _final_pos_w 补上（term/trunc 都走 _reset_idx，均覆盖；
+                # 非 done 位该值为陈旧数据，被 where 掩掉）。
+                _pos_now = env.robot.data.root_pos_w[:, :2].detach()
+                _end_pos = torch.where(
+                    buf["done"][t] | buf["trunc"][t],
+                    env._final_pos_w,
+                    _pos_now,
+                )
+                diag_disp_acc += _end_pos - diag_prev_pos
+                diag_prev_pos = _pos_now.clone()
             # E49: 超时步自举价值 = 复位前终末状态的价值。Isaac step 返回前
             # 已把 obs 换成复位后新局观测，不能用它算；_final_obs 由 env 的
             # _reset_idx 在 super() 之前截留。×trunc 把非 trunc 位清零防陈旧值。
@@ -660,8 +704,10 @@ def main():
         # iter 末（日志边界）一次 .item()；数值含义 = 本 iter 全部 reward 的均值
         mean_rew = (rew_sum / (T * N)).item()
         fall_rate = float(buf["done"].float().mean().item())
+        to_rate = float(buf["trunc"].float().mean().item())
         hist["rewards"].append(mean_rew)
         hist["fall_rate"].append(fall_rate)
+        hist["timeout_rate"].append(to_rate)
         # E49 修正 vx 口径：fwd = 机体系前后向速度（带符号，+x = 前进）；
         # 原模长口径保留为 spd（hist["vx"] 键语义不变，旧工具兼容）
         fwd = float(env.robot.data.root_lin_vel_b[:, 0].mean().detach())
@@ -675,8 +721,9 @@ def main():
         hist["approx_kl"].append(stats["approx_kl"])
         hist["clip_frac"].append(stats["clip_frac"])
         hist["act_std"].append(stats["act_std"])
-        # D048b：res 头可观测三件套（.get 防御，旧 ckpt/路径无此键时不记录）
-        hist["act_aux_std"].append(stats.get("act_aux_std"))
+        # D048b：res 头可观测三件套（.get 防御，旧 ckpt/路径无此键时不记录；
+        # losses 侧键名 = aux_std）
+        hist["act_aux_std"].append(stats.get("aux_std"))
         hist["ent_aux"].append(stats.get("ent_aux"))
         hist["ent_z"].append(stats.get("ent_z"))
         hist["post_update_kl"].append(stats["post_update_kl"])
@@ -693,21 +740,19 @@ def main():
             # E49 诊断口径（裁决 fix-s0 退化用的分项材料）：
             # · 分项均值 / |vx-cmd| / cmd 均值 / 站立占比 = 本 iter 全部 T*N 步
             #   的均值，与 mean_rew 同窗（窗口一致性是本诊断的核心）；
-            # · 位移率 = iter 首末 root_pos 差分 / 控制时长（T * sim.dt *
-            #   decimation），envs 各自算再平均（均值可交换，等价批内均值）。
-            #   注意口径：中途摔倒复位的 env 已被 _reset_idx 把 root_pos 清回
-            #   env 原点，其差分被低估甚至为负——有意保留的"含复位"粗口径，
-            #   fall_rate 已单列可对照判读；精确复位剔除需逐步掩码，非本诊断定位。
+            # · D048c 位移口径 = 逐步累计净位移 / 控制时长（T * sim.dt *
+            #   decimation），done 步用复位前终末位置补齐——超时/摔倒复位
+            #   跳变不再进差分。与 0e11cb6 及之前的 d_fwd_rate/d_drift_rate
+            #   （iter 首末窗口差分）不可直接比较。
             dur = T * env.cfg.sim.dt * env.cfg.decimation
-            dpos = env.robot.data.root_pos_w[:, :2].detach() - diag_pos0
             vals = torch.stack([
                 *[diag_term_sum[k] for k in DIAG_KEYS],
                 diag_abs_err, diag_cmd_sum, diag_stand,
             ]) / diag_cnt
             vals = torch.cat([
                 vals,
-                (dpos[:, 0].mean() / dur).unsqueeze(0),
-                (dpos[:, 1].abs().mean() / dur).unsqueeze(0),
+                (diag_disp_acc[:, 0].mean() / dur).unsqueeze(0),
+                (diag_disp_acc[:, 1].abs().mean() / dur).unsqueeze(0),
             ])
             vals = vals.cpu()  # iter 末唯一一次 GPU->CPU 同步
             dvals = dict(zip(
@@ -754,6 +799,7 @@ def main():
                 )
             print(
                 f"[{it}/{cli.iters}] rew={mean_rew:.3f} fall={fall_rate:.3f} "
+                f"to={to_rate:.3f} "
                 f"fwd={fwd:.3f} spd={spd:.3f} loss={stats['loss']:.4f} "
                 f"ploss={stats['ploss']:.4f} ent={stats['ent']:.4f} "
                 f"klp={stats['kl_prior']:.6f} expl={stats['expl']:.5f} "

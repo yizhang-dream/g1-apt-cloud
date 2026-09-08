@@ -295,6 +295,13 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
 class AptFlatG1Env(DirectRLEnv):
     cfg: AptFlatG1EnvCfg
 
+    # D048c 奖励/测量契约版本。v1（2026-09-08 前全部 run）= heading 项对
+    # 机体系速度再做一次 world→command 旋转（双旋转）+ train 侧位移为
+    # iter 首末窗口差分（超时复位跳变进差分）；v2 = heading 直接读机体系
+    # 分量 + train 侧位移逐步累计（done 步用 _final_pos_w 补终末位置）。
+    # train_apt_isaac 把它写进 train_log.json；旧日志无该键 = v1 身份。
+    REW_CONTRACT_VER = 2
+
     def __init__(self, cfg: AptFlatG1EnvCfg, render_mode: str | None = None, **kwargs):
         self._sonic_default = _sonic_default_isaac()
         self._sonic_scale = _sonic_scale_isaac()
@@ -523,6 +530,9 @@ class AptFlatG1Env(DirectRLEnv):
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         # E49: 复位前终末状态观测（_reset_idx 在 super() 前截留），惰性分配
         self._final_obs = None
+        # D048c: 复位前终末水平位置（_reset_idx 在 super() 前截留，每次
+        # 复位整体覆盖）；train 侧 diag 位移逐步累计用 done 步终末位置补齐
+        self._final_pos_w = None
         # E49 诊断步骤③：最近一个控制步的奖励分项快照（_get_rewards 内写入；
         # 训练侧 --diag-log 开启时逐步读取 GPU 累积）
         self._last_rew_terms = None
@@ -1036,19 +1046,20 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.yaw_rate_penalty > 0.0:
             reward = reward - self.cfg.yaw_rate_penalty * (base_ang_vel[:, 2] ** 2)
         if self.cfg.heading_scale > 0.0:
-            # E32: reward velocity direction aligned with commanded heading.
-            # world-frame vx/vy vs command frame (yaw from root quat).
-            yaw = torch.atan2(
-                2.0 * (self.robot.data.root_quat_w[:, 0] * self.robot.data.root_quat_w[:, 3]
-                       + self.robot.data.root_quat_w[:, 1] * self.robot.data.root_quat_w[:, 2]),
-                1.0 - 2.0 * (self.robot.data.root_quat_w[:, 2] ** 2
-                             + self.robot.data.root_quat_w[:, 3] ** 2),
-            )
-            # rotate world vel into command frame (cmd heading = +x of cmd frame)
-            v_cx = base_lin_vel[:, 0] * torch.cos(yaw) + base_lin_vel[:, 1] * torch.sin(yaw)
-            v_cy = -base_lin_vel[:, 0] * torch.sin(yaw) + base_lin_vel[:, 1] * torch.cos(yaw)
-            sp = torch.clamp(torch.sqrt(v_cx ** 2 + v_cy ** 2), min=1e-3)
-            heading = torch.clamp(v_cx / sp, -1.0, 1.0)  # 1 = moving along +x cmd
+            # E32: reward velocity direction aligned with commanded heading
+            # (body +x). D048c fix (REW_CONTRACT_VER 2): the command frame is
+            # aligned with the body frame (yaw comes from the same root quat),
+            # so the correct world->command rotation of the true world
+            # velocity returns the body components themselves -- read them
+            # directly. The v1 formula applied that rotation to
+            # root_lin_vel_b, which is ALREADY body-frame: a double rotation
+            # that scored heading-dependent strafe as forward (yaw=+90deg,
+            # body-left motion read as v_cx=+v though the world velocity
+            # points away from the heading). v1 == v2 at yaw=0, which is why
+            # early heading-free tests never exposed it. D048b arms trained
+            # with heading_scale=0.4 under the buggy v1 formula.
+            sp = torch.clamp(torch.norm(base_lin_vel[:, :2], dim=1), min=1e-3)
+            heading = torch.clamp(base_lin_vel[:, 0] / sp, -1.0, 1.0)
             reward = reward + self.cfg.heading_scale * (0.5 + 0.5 * heading)
         if self.cfg.progress_scale > 0.0:
             reward = reward + self.cfg.progress_scale * torch.clamp(
@@ -1117,6 +1128,9 @@ class AptFlatG1Env(DirectRLEnv):
                     dtype=torch.float32, device=self.device,
                 )
             self._final_obs[env_ids_pre] = final_obs[env_ids_pre].detach()
+            # D048c: 终末水平位置，同 _final_obs 截留时机（此时复位尚未
+            # 发生，robot.data 仍是上一局终末物理状态）
+            self._final_pos_w = self.robot.data.root_pos_w[:, :2].detach().clone()
         super()._reset_idx(env_ids)
         env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
         n = len(env_ids)
