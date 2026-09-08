@@ -22,11 +22,29 @@ D048e 评测契约 v2（JSON 顶层 eval_contract=2；旧 JSON 无此键 = v1 �
     yaw_err（终末-yaw0 wrap 到 [-π,π]，rad）、upright_final（终末 upright）、
     ended（"term"/"trunc"/"full"）；JSON 顶层落盘 res_scale 防 0.4/0.15 类
     训练/评测失配再犯。
+
+D048f 阶段0 评测资格（JSON 顶层 metrics_contract="d048f_stage0"）：
+  ⑤ 任务成功指标：vx_rmse（机体系 vx 对本局命令的逐步 RMSE）、yaw_err_int
+    （|wrap(yaw_t−yaw0)|·dt 时间积分）、lat_max / fwd_max（初始航向系逐步
+    横偏/前进包络）、survived_budget（零摔且跑满时限，completed 同式显式
+    别名）、task_success（0.4 m/s×20s 契约下按冻结门逐局判定；门外契约
+    一律 null，门常量落盘 task_gate_flat04，不得事后改门）；
+  ⑥ 逐局初态指纹 init（z0/yaw0/关节位 md5/首帧 obs md5+sum）——seed 配对
+    核验从"调用了 manual_seed"升级为"产物可事后逐位比对"；
+  ⑦ 每个 schedule entry 写命令后刷新首帧观测（命令变更后的首个动作看到新
+    命令）。单 entry 测试（A/B/D）刷新时点与 v2 完全一致，行为逐位不变；
+    多 entry（C 切换）此前只有首个 entry 刷新，后续段首动作仍消费旧命令 obs；
+  ⑧ 显式失败纪律：checkpoint 缺失（AppLauncher 之前快速失败）/加载失败/
+    零局产出 → 非零退出，绝不退回未训练 policy 当 aux=0 跑完（v1 缺文件
+    只 WARNING，产出看似合法的 JSON）；顶层异常 os._exit(1)（kit 接管
+    excepthook 后解释器可能仍以 0 退出）；B test 冲量幅值 --impulse-n
+    可调（term 分支探针需要必摔局，全存活批次永远走不到该分支）。
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -127,6 +145,11 @@ def build_args():
                     help="npz with mean/std/rate from official g1-mode tokens")
     ap.add_argument("--res-scale", type=float, default=0.4)
     ap.add_argument("--res-clip", type=float, default=1.0)
+    # D048f: B test impulse magnitude (N). Default 500 = historical value;
+    # the stage-0 term-branch probe passes larger values to force falls, so
+    # the term/trunc terminal-stats path is actually exercised (an
+    # all-survive batch never reaches that branch).
+    ap.add_argument("--impulse-n", type=float, default=500.0)
     ap.add_argument("--use-elevation", type=int, default=0)
     # E32: heading/yaw reward (rollout dynamics only; no effect on eval metrics)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
@@ -293,6 +316,7 @@ def rollout(
     heights, vxs, vys = [], [], []
     xys = []
     ugs = []  # D048c: per-step |projected gravity xy| for the upright score
+    yaws = []  # D048f: per-step yaw for the heading-error time integral
     fall = None
     ep_done = False
     ended = "full"  # D048e: "term"（摔倒）/ "trunc"（episode 时限截断）/ "full"
@@ -309,6 +333,7 @@ def rollout(
     final_xy = None
     final_yaw = 0.0
     final_ug = 0.0  # 终末步 |projected gravity xy|（终末 quat 派生）
+    init_fp = None  # D048f ⑥：逐局初态指纹
 
     def _yaw_of(q):
         # 标准 quat→yaw（Isaac root_quat_w 为 w-first），与环境 elevation 采样
@@ -350,8 +375,26 @@ def rollout(
             yaw0 = _yaw_of(env.robot.data.root_quat_w[0].detach())
             final_xy = xy0
             final_yaw = yaw0
-            env._last_obs = env._get_observations()["policy"]
+            # D048f ⑥：初态指纹与首帧 obs 取自同一次 _get_observations() 调用
+            # （单 entry 行为与 v2 逐位一致）；md5 使同 seed 局在 aux/noaux 两遍
+            # 之间的初态一致性可以事后从 JSON 直接核验，不依赖"调用了
+            # manual_seed"这一静态事实。
+            _obs_t = env._get_observations()["policy"]
+            env._last_obs = _obs_t
+            _jp = env.robot.data.joint_pos[0, env._body_idx].detach().cpu().numpy()
+            _obs0 = _obs_t.detach().cpu().numpy()
+            init_fp = {
+                "z0": round(float(env.robot.data.root_pos_w[0, 2].item()), 5),
+                "yaw0_deg": round(math.degrees(yaw0), 5),
+                "joint_pos_md5": hashlib.md5(_jp.tobytes()).hexdigest()[:10],
+                "obs_md5": hashlib.md5(_obs0.tobytes()).hexdigest()[:10],
+                "obs_sum": round(float(_obs0.sum()), 6),
+            }
             first_entry = False
+        else:
+            # D048f ⑦：后续 entry（命令变更）也刷新首帧观测——切换后的首个
+            # 动作必须看到新命令。单 entry 测试不走此分支，与 v2 逐位一致。
+            env._last_obs = env._get_observations()["policy"]
         for _ in range(int(secs * 50)):
             if t in imp:
                 world_dir = torch.tensor(
@@ -442,7 +485,9 @@ def rollout(
             # 存活步：终末指针刷新为当前 root 状态（schedule 自然跑满时即为
             # 局末值，与 term/trunc 截留口径对齐）
             final_xy = xy
-            final_yaw = _yaw_of(env.robot.data.root_quat_w[0].detach())
+            _yaw_t = _yaw_of(env.robot.data.root_quat_w[0].detach())
+            yaws.append(_yaw_t)
+            final_yaw = _yaw_t
             final_ug = ugs[-1]
             t += 1
         if fall is not None or ep_done:
@@ -475,9 +520,54 @@ def rollout(
         -disp_vec[0] * math.sin(yaw0) + disp_vec[1] * math.cos(yaw0)
     )
     yaw_err = float((final_yaw - yaw0 + math.pi) % (2.0 * math.pi) - math.pi)
+    # D048f ⑤：任务成功指标。存活≠成功——终末 fwd/lat/yaw 是单点量，识别
+    # 不了中途绕圈/超速回落，逐步量（vx RMSE、航向误差时间积分、最大横偏）
+    # 与"存活预算"分开落盘；终末 yaw 不能识别中途绕圈，yaw_err_int 补这个洞。
+    dt = 0.02  # 50 Hz 控制步
+    yaws_arr = np.array(yaws)
+    if len(xys):
+        d = xys - xy0[None, :]
+        fwd_t = d[:, 0] * math.cos(yaw0) + d[:, 1] * math.sin(yaw0)
+        lat_t = -d[:, 0] * math.sin(yaw0) + d[:, 1] * math.cos(yaw0)
+        lat_max = float(np.abs(lat_t).max())
+        fwd_max = float(fwd_t.max())
+    else:
+        lat_max = 0.0
+        fwd_max = 0.0
+    if len(yaws_arr):
+        yaw_err_t = (yaws_arr - yaw0 + math.pi) % (2.0 * math.pi) - math.pi
+        yaw_err_int = float(np.abs(yaw_err_t).sum() * dt)
+    else:
+        yaw_err_int = 0.0
+    cmd_vx_eff = schedule[0][0] if schedule and len(schedule[0]) == 3 else None
+    vx_rmse = (
+        float(np.sqrt(np.mean((vxs - cmd_vx_eff) ** 2)))
+        if cmd_vx_eff is not None and len(vxs)
+        else None
+    )
+    survived_budget = bool(fall is None and len(heights) >= total_steps - 1)
+    # 冻结门（DS_CONTINUOUS_EXECUTION_PLAN §5：0.4 m/s×20s 平地直走，全部
+    # 条件同时满足才计成功；门外契约不判定 → null）。门常量在 main() 顶层
+    # 落盘 task_gate_flat04，不得依候选结果事后放宽。
+    task_success = None
+    if (
+        contract == "train"
+        and cmd_vx_eff is not None
+        and abs(cmd_vx_eff - 0.4) < 1e-6
+    ):
+        task_success = bool(
+            survived_budget
+            and vx_rmse is not None
+            and vx_rmse <= 0.10
+            and 6.0 <= fwd_signed <= 10.0
+            and lat_max <= 0.5
+            and abs(yaw_err) <= math.radians(15.0)
+            and upright >= 0.90
+        )
     return {
         "steps": len(heights),
         "completed": fall is None and len(heights) >= total_steps - 1,
+        "survived_budget": survived_budget,
         "fall_step": fall,
         "h_min": round(h_min, 3),
         "vx": round(float(vxs.mean()), 3) if len(vxs) else 0.0,
@@ -491,11 +581,27 @@ def rollout(
         "yaw_err": round(yaw_err, 4),
         "upright_final": round(upright_final, 3),
         "ended": ended,
+        # D048f 阶段0 新增键
+        "vx_rmse": round(vx_rmse, 4) if vx_rmse is not None else None,
+        "yaw_err_int": round(yaw_err_int, 3),
+        "lat_max": round(lat_max, 3),
+        "fwd_max": round(fwd_max, 3),
+        "task_success": task_success,
+        "init": init_fp,
     }
 
 
 def main():
     cli = build_args().parse_args()
+
+    # D048f ⑧：缺 checkpoint 在 AppLauncher 之前快速失败，不烧 GPU 启动。
+    # v1 行为 = WARNING 后用未训练 policy 跑完全程并写出看似合法的 JSON
+    # （"退回随机模型"），这是显式失败纪律要堵的坑。
+    if not cli.init_policy:
+        if cli.checkpoint is None:
+            raise SystemExit("[eval] pass --checkpoint or --init-policy")
+        if not os.path.isfile(cli.checkpoint):
+            raise SystemExit(f"[eval] FATAL: checkpoint not found: {cli.checkpoint}")
 
     from isaaclab.app import AppLauncher
 
@@ -610,14 +716,15 @@ def main():
         print("[eval] --init-policy: using freshly initialized policy "
               "(no checkpoint loaded)")
     else:
-        if cli.checkpoint is None:
-            raise SystemExit("[eval] pass --checkpoint or --init-policy")
         try:
             policy.load_state_dict(torch.load(cli.checkpoint, map_location="cuda:0"))
             policy.eval()
             print("[eval] loaded checkpoint", cli.checkpoint)
-        except FileNotFoundError:
-            print("[eval] WARNING: checkpoint not found, aux=0 only")
+        except Exception as exc:
+            # 加载失败（文件损坏/权重结构不符/资产错配）= 显式失败，绝不
+            # 退回随机模型继续跑。
+            print(f"[eval] FATAL: checkpoint load failed: {exc!r}", flush=True)
+            os._exit(3)
 
     # initial obs
     env._vanilla = cli.env == "vanilla"
@@ -674,7 +781,12 @@ def main():
     # ---- B. disturbance grid ----
 
     if "B" in tests:
-        dirs = {"fwd": [500.0, 0, 0], "back": [-500.0, 0, 0], "left": [0, 500.0, 0], "right": [0, -500.0, 0]}
+        dirs = {
+            "fwd": [cli.impulse_n, 0, 0],
+            "back": [-cli.impulse_n, 0, 0],
+            "left": [0, cli.impulse_n, 0],
+            "right": [0, -cli.impulse_n, 0],
+        }
         for key in key_list:
             out["B_disturbance"][key] = {}
             use_aux = key != "noaux"
@@ -729,11 +841,95 @@ def main():
     # CLI 默认 0.4 = 残差放大 2.67 倍，D048d 阶梯评测即栽在此），落盘防再犯。
     out["eval_contract"] = 2
     out["res_scale"] = cli.res_scale
+    # D048f 阶段0：指标扩展标注 + 冻结任务门常量落盘（评测自描述，判读方
+    # 不必回查文档；门值来自 DS_CONTINUOUS_EXECUTION_PLAN §5，先于候选
+    # 结果冻结）。
+    out["metrics_contract"] = "d048f_stage0"
+    out["task_gate_flat04"] = {
+        "cmd_vx": 0.4,
+        "window_s": 20,
+        "vx_rmse_max": 0.10,
+        "fwd_min": 6.0,
+        "fwd_max": 10.0,
+        "lat_abs_max": 0.5,
+        "yaw_err_abs_max_deg": 15.0,
+        "upright_min": 0.90,
+    }
+    # D048f ⑧：配置身份落盘（消费了什么就记什么；VAE/代码的 md5 让"资产
+    # 身份一致"可以事后核验，不依赖启动脚本注释）。
+
+    def _fmd5(path):
+        try:
+            h = hashlib.md5()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+        except OSError:
+            return None
+
+    code_md5 = {"eval_apt_isaac.py": _fmd5(__file__)}
+    try:
+        import apt_g1.isaac.apt_flat_env as _afe
+
+        code_md5["apt_flat_env.py"] = _fmd5(_afe.__file__)
+    except Exception:
+        pass
+    out["cfg"] = {
+        "obs_dim": int(cfg.observation_space),
+        "aux_dim": 29 if cli.latent_residual else 12,
+        "contract": cli.contract,
+        "episode_length_s": cfg.episode_length_s,
+        "a_cmd_vx": cli.a_cmd_vx,
+        "num_rollouts": cli.num_rollouts,
+        "seeds": seeds,
+        "sample": cli.sample,
+        "cmd_sample": cli.cmd_sample,
+        "aux_zero": cli.aux_zero,
+        "init_policy": cli.init_policy,
+        "checkpoint": cli.checkpoint,
+        "res_scale": cli.res_scale,
+        "res_clip": cli.res_clip,
+        "latent_mode": cli.latent_mode,
+        "latent_residual": cli.latent_residual,
+        "latent_speed_bins": cli.latent_speed_bins,
+        "latent_dir_bins": cli.latent_dir_bins,
+        "latent_vae_path": cli.latent_vae_path,
+        "vae_md5": _fmd5(cli.latent_vae_path),
+        "decoder_path": cli.decoder_path,
+        "terrain": cli.terrain,
+        "impulse_n": cli.impulse_n,
+        "code_md5": code_md5,
+    }
     with open(cli.out, "w") as f:
         json.dump(out, f, indent=1)
     print("saved", cli.out)
+    # D048f ⑧：零局产出 = 显式失败（JSON 保留作证据，退出码非零）。
+    n_eps = sum(
+        1
+        for grp in out.values()
+        if isinstance(grp, dict)
+        for cell in grp.values()
+        if isinstance(cell, dict)
+        for r in cell.values()
+        if isinstance(r, dict) and "steps" in r
+    )
+    if n_eps == 0:
+        print("[eval] FATAL: no rollouts produced", flush=True)
+        os._exit(4)
     os._exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        # Isaac kit 接管 sys.excepthook 后，未捕获异常可能仍以 0 退出
+        # （SERVER_GUIDE §7 det 判读口径"退出码不可信"）；此处显式拦截，
+        # 保证失败可见。
+        import traceback
+
+        traceback.print_exc()
+        os._exit(1)

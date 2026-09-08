@@ -142,7 +142,7 @@
 | `decft_policy.py` | MODULE | **E44 解码器微调策略**：E39 z头 → 冻结 VAE → token → **可训练 SONIC 解码器** → 29-d 关节目标动作（PPO 评分梯度直达解码器 + 官方解码器漂移正则） |
 | `ppo_core.py` | MODULE | 向量化 PPO（含论文式训练附加项；E44 增加 `decoder_ft` 分支与 `decoder_reg_coef`；**E49 修复：GAE 边界 done|trunc 都切断递推且不自举 + aux_executed=False 时 aux 不进 log_prob/entropy + 真 epoch 循环 + approx_kl/clip_frac/act_std 指标，stats 键 `kl` 更名 `kl_prior`**） |
 | `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略；TO42 修订 v4 增 `--ppo-minibatch`（默认 512 = 既有行为不变；2048envs 操作点用 4096）；**E49 增 `--token-mode/--token-phase-obs/--token-alpha/--token-bound/--token-stats`（直出 64d token，无 VAE）；E49 修复轮增 `--ppo-epochs`（默认 1 = 历史单遍）+ latent/token/to42 置 `aux_executed=False` + vx 拆 fwd（机体系带符号）/spd（模长，hist `vx` 键不变）双口径 + hist 增 approx_kl/clip_frac/act_std + `policy_it_0.pt` 初始快照** |
-| `eval_apt_isaac.py` | 入口 | A/B/C/D 评测；**E49 增 token-mode 同款旗标；E49 修复轮增 `--init-policy`（未训练初始化对照，`--checkpoint` 随之转 optional）** |
+| `eval_apt_isaac.py` | 入口 | A/B/C/D 评测；**E49 增 token-mode 同款旗标；E49 修复轮增 `--init-policy`（未训练初始化对照，`--checkpoint` 随之转 optional）；D048f 阶段0（metrics_contract=d048f_stage0）增：任务成功指标（vx_rmse/yaw_err_int/lat_max/fwd_max/survived_budget/task_success 冻结门）+逐局初态指纹（md5 配对核验）+每 entry 命令刷新+显式失败纪律（缺/坏 ckpt、空结果非零退出，不退回随机模型）+`--impulse-n`（term 分支探针）** |
 | `rollout_log_joints.py` | 入口 | **无相机 rollout → npz**（base 位姿 + 29 关节角，SONIC order，供 `replay_render_mujoco.py` 渲染） |
 | `eval_fast.py` | 入口 | 守护式评测（只跑请求的 A/B/C/D 段） |
 | `render_walk.py` | 渲染 | 从 APT Isaac 环境渲染短行走视频 |
