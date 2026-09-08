@@ -8,12 +8,27 @@ D. jump with explicit mode command (20 s)
 Each test runs with aux=0 and with the trained policy aux (and optionally the
 policy phase in phase_mode), 3 seeds, and reports the same metrics as the
 MuJoCo harness (steps, completed, fall_step, h_min, vx, displacement).
+
+D048e 评测契约 v2（JSON 顶层 eval_contract=2；旧 JSON 无此键 = v1 口径）：
+  ① 逐局 seed 配对：--contract train 分支在 env.reset() 前重设全局随机源，
+    同 seed 局在 aux/noaux 两遍之间初态逐位相同（--sample 下噪声序列也同源，
+    唯一差异 = 残差开/关）；
+  ② done 步统计截留：term/trunc 步的 robot.data 已被 step 内部 auto-reset
+    覆盖，终末 xy/yaw/quat 改从 env._reset_idx 复位前截留的 _final_pos_w /
+    _final_quat_w 取，摔倒局终点不再被新局出生点污染；
+  ③ disp 统一为"局首快照→终末快照"的 2D 净位移（v1 起点是首步 step 后，
+    终点在 term 局被污染）；
+  ④ 新增航向系指标：fwd_signed / lat_signed（初始航向系带符号投影，米）、
+    yaw_err（终末-yaw0 wrap 到 [-π,π]，rad）、upright_final（终末 upright）、
+    ended（"term"/"trunc"/"full"）；JSON 顶层落盘 res_scale 防 0.4/0.15 类
+    训练/评测失配再犯。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import os
@@ -167,6 +182,16 @@ def jitter_and_reset(env, seed: int, contract: str = "eval"):
     the eval path below).
     """
     if contract == "train":
+        # D048e 评测契约 v2 ①：逐局重设随机源后再 reset。env._reset_idx 的全部
+        # 初态随机量（walk-clock 相位 _latent_phase、to_phase、z 抖动、cmd 采样）
+        # 都消费全局 torch 流（torch.rand/uniform_ 无独立 generator），v1 只在
+        # 进程启动设一次 seed，--sample 又持续消耗同一流 → aux/noaux 两遍的同名
+        # seed 局实际初态/噪声序列错位。逐局 manual_seed 后：同 seed 局在两遍
+        # 之间初态逐位相同；两遍 rollout 逐步消费同一条流 → 采样噪声同源配对，
+        # 唯一差异 = 残差开/关。
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
         obs_dict, _ = env.reset()
         env._last_obs = obs_dict["policy"]
         return
@@ -270,6 +295,36 @@ def rollout(
     ugs = []  # D048c: per-step |projected gravity xy| for the upright score
     fall = None
     ep_done = False
+    ended = "full"  # D048e: "term"（摔倒）/ "trunc"（episode 时限截断）/ "full"
+
+    # D048e 评测契约 v2 ②③：航向系指标需要"局首快照（命令设定后、首个 act 前）
+    # →终末快照"两端的 xy/yaw/quat。term/trunc 步的 robot.data 已被 step 内部
+    # auto-reset 覆盖（DirectRLEnv.step 内部 _get_dones → _reset_idx →
+    # _get_observations 之后才返回），终末物理量只能从 env._reset_idx 在
+    # super() 之前截留的 _final_pos_w / _final_quat_w 取；存活步逐步把终末
+    # 指针刷新为当前 root 状态。
+    first_entry = True
+    xy0 = None
+    yaw0 = 0.0
+    final_xy = None
+    final_yaw = 0.0
+    final_ug = 0.0  # 终末步 |projected gravity xy|（终末 quat 派生）
+
+    def _yaw_of(q):
+        # 标准 quat→yaw（Isaac root_quat_w 为 w-first），与环境 elevation 采样
+        # 的内联公式一致（apt_flat_env._get_observations）
+        w, x, y, z = q[0], q[1], q[2], q[3]
+        return float(
+            torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).item()
+        )
+
+    def _grav_xy_of(q):
+        # 世界重力 [0,0,-1] 旋转到机体系（g_b = R(q)^T g_w）的 xy 模：
+        # 2*sqrt((xz-wy)² + (yz+wx)²)；直立为 0，与环境 projected_gravity_b
+        # 同口径（训练 upright 项 = exp(-g_xy²/0.1)）
+        w, x, y, z = q[0], q[1], q[2], q[3]
+        return 2.0 * math.sqrt((x * z - w * y) ** 2 + (y * z + w * x) ** 2)
+
     t = 0
     for entry in schedule:
         if len(entry) == 3:
@@ -286,6 +341,17 @@ def rollout(
             env._commands[0] = torch.tensor(
                 [vx, vy, yaw_bias], dtype=torch.float32, device=env.device
             )
+        if first_entry:
+            # D048e 局首快照：第一个 entry 的命令写入后、首个 act 之前做一次
+            # （C 多 entry schedule 也只快照这一回）。此刻 robot.data 仍是 reset
+            # 初态；顺带刷新首帧观测，让首个动作看到本局命令（v1 首帧 obs 带
+            # 的是 reset 期采样的旧命令）。
+            xy0 = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy()
+            yaw0 = _yaw_of(env.robot.data.root_quat_w[0].detach())
+            final_xy = xy0
+            final_yaw = yaw0
+            env._last_obs = env._get_observations()["policy"]
+            first_entry = False
         for _ in range(int(secs * 50)):
             if t in imp:
                 world_dir = torch.tensor(
@@ -347,11 +413,20 @@ def rollout(
                     torch.zeros(1, 1, 3, dtype=torch.float32, device=env.device),
                     body_ids=[env._root_body_idx[0]],
                 )
-            if trunc.any() and not term.any():
-                # E49 train 契约：episode 时限截断（20s=1000 步）。env.step 内部
-                # 已自动 reset（_last_obs/robot.data 均已换成新局状态），本步物理
-                # 量不可进统计（否则 disp/h_min/vx 的末点会被新局初值污染）。
-                # 按正常跑满收尾，不算 fall。
+            if term.any() or trunc.any():
+                # D048e 评测契约 v2 ②：done 步不读 robot.data——step 内部
+                # auto-reset 已把它覆盖为新局出生点/新局姿态（v1 term 局曾把
+                # 新局初值混入 heights/xys 末位 → 终点≈出生点、disp 失真）。
+                # 终末物理量取 _reset_idx 在 super() 之前截留的 _final_pos_w /
+                # _final_quat_w（复位前值）；本步物理量不进逐步统计（v1 的
+                # trunc-not-term 口径统一推广到 term，截留口径一致）。
+                fq = env._final_quat_w[0].detach()
+                final_xy = env._final_pos_w[0].detach().cpu().numpy()
+                final_yaw = _yaw_of(fq)
+                final_ug = _grav_xy_of(fq)
+                ended = "term" if term.any() else "trunc"
+                if term.any():
+                    fall = t
                 ep_done = True
                 break
             h = float(env.robot.data.root_pos_w[0, 2].item())
@@ -364,10 +439,11 @@ def rollout(
             ugs.append(
                 float(env.robot.data.projected_gravity_b[0, :2].norm().item())
             )
-            if term.any():
-                fall = t
-                ep_done = True
-                break
+            # 存活步：终末指针刷新为当前 root 状态（schedule 自然跑满时即为
+            # 局末值，与 term/trunc 截留口径对齐）
+            final_xy = xy
+            final_yaw = _yaw_of(env.robot.data.root_quat_w[0].detach())
+            final_ug = ugs[-1]
             t += 1
         if fall is not None or ep_done:
             break
@@ -376,27 +452,45 @@ def rollout(
     vys = np.array(vys)
     xys = np.array(xys)
     h_min = float(heights.min()) if len(heights) else 0.0
-    displacement = 0.0
-    if len(xys) > 1:
-        displacement = float(np.linalg.norm(xys[-1] - xys[0]))
     spd = np.sqrt(vxs**2 + vys**2)
-    # D048c: 漂移与姿态入报告。drift_y = 横向净位移绝对值（D048b 敏感性
-    # 复算口径：排除复位窗后 B 横漂仍略高于 A，需 eval 级可判）；upright 与
-    # train 奖励项同式（exp(-g_xy²/0.1) 逐步算再平均）。
-    drift_y = float(abs(xys[-1][1] - xys[0][1])) if len(xys) > 1 else 0.0
+    # D048e 评测契约 v2 ③：disp/drift_y 统一为"局首快照→终末快照"口径。
+    # v1 的 xys[0] 是首步 step 后的位置、xys[-1] 在 term 局是 auto-reset 后的
+    # 新局出生点（≈起点 → 摔倒局 disp≈0 失真）。快照对口径下 0 步存活局
+    # （首步即摔）也有定义。disp/drift_y 保持 2D 净位移语义；fwd/lat 是同一位
+    # 移在初始航向单位向量上的带符号投影——disp/vx（机体系前向速度）都不能
+    # 单独当"直走进展"，航向系投影才是正确量纲。
+    disp_vec = (final_xy - xy0) if final_xy is not None else np.zeros(2)
+    displacement = float(np.linalg.norm(disp_vec))
+    drift_y = float(abs(disp_vec[1]))
+    # D048c: 漂移与姿态入报告。upright 与 train 奖励项同式
+    # （exp(-g_xy²/0.1) 逐步算再平均）；upright_final 是终末快照的同式单点值。
     upright = (
         float(np.mean(np.exp(-(np.array(ugs) ** 2) / 0.1))) if ugs else 0.0
     )
+    upright_final = float(np.exp(-(final_ug**2) / 0.1))
+    fwd_signed = float(
+        disp_vec[0] * math.cos(yaw0) + disp_vec[1] * math.sin(yaw0)
+    )
+    lat_signed = float(
+        -disp_vec[0] * math.sin(yaw0) + disp_vec[1] * math.cos(yaw0)
+    )
+    yaw_err = float((final_yaw - yaw0 + math.pi) % (2.0 * math.pi) - math.pi)
     return {
         "steps": len(heights),
         "completed": fall is None and len(heights) >= total_steps - 1,
         "fall_step": fall,
         "h_min": round(h_min, 3),
-        "vx": round(float(vxs.mean()), 3),
+        "vx": round(float(vxs.mean()), 3) if len(vxs) else 0.0,
         "disp": round(displacement, 3),
-        "v_speed": round(float(spd.mean()), 3),
+        "v_speed": round(float(spd.mean()), 3) if len(spd) else 0.0,
         "drift_y": round(drift_y, 3),
         "upright": round(upright, 3),
+        # D048e 评测契约 v2 新增键
+        "fwd_signed": round(fwd_signed, 3),
+        "lat_signed": round(lat_signed, 3),
+        "yaw_err": round(yaw_err, 4),
+        "upright_final": round(upright_final, 3),
+        "ended": ended,
     }
 
 
@@ -630,6 +724,11 @@ def main():
     # E49 诊断: 评测契约标注（"eval" = 历史口径 / "train" = 训练契约 20s）
     out["contract"] = cli.contract
     out["seed"] = cli.seed
+    # D048e 评测契约 v2 标注（仓库先例 = train_log 的 rew_contract 三键；旧
+    # JSON 无此键 = v1 口径）+ res_scale 落盘：训练/评测必须同值（训练 0.15，
+    # CLI 默认 0.4 = 残差放大 2.67 倍，D048d 阶梯评测即栽在此），落盘防再犯。
+    out["eval_contract"] = 2
+    out["res_scale"] = cli.res_scale
     with open(cli.out, "w") as f:
         json.dump(out, f, indent=1)
     print("saved", cli.out)

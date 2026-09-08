@@ -533,6 +533,10 @@ class AptFlatG1Env(DirectRLEnv):
         # D048c: 复位前终末水平位置（_reset_idx 在 super() 前截留，每次
         # 复位整体覆盖）；train 侧 diag 位移逐步累计用 done 步终末位置补齐
         self._final_pos_w = None
+        # D048e: 复位前终末 root 四元数（与 _final_pos_w 同一截留时机、同源
+        # root_quat_w）；eval 侧 done 步的终末 yaw/upright 消费——step 返回前
+        # robot.data 已被 auto-reset 覆盖，只能读这里
+        self._final_quat_w = None
         # E49 诊断步骤③：最近一个控制步的奖励分项快照（_get_rewards 内写入；
         # 训练侧 --diag-log 开启时逐步读取 GPU 累积）
         self._last_rew_terms = None
@@ -1131,6 +1135,9 @@ class AptFlatG1Env(DirectRLEnv):
             # D048c: 终末水平位置，同 _final_obs 截留时机（此时复位尚未
             # 发生，robot.data 仍是上一局终末物理状态）
             self._final_pos_w = self.robot.data.root_pos_w[:, :2].detach().clone()
+            # D048e: 终末 root 四元数，同一截留时机/同源 root_quat_w（eval 侧
+            # done 步终末 yaw/upright 用；语义与 _final_pos_w 一致，整批覆盖）
+            self._final_quat_w = self.robot.data.root_quat_w.detach().clone()
         super()._reset_idx(env_ids)
         env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
         n = len(env_ids)
