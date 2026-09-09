@@ -173,6 +173,10 @@ def build_args():
     ap.add_argument("--to42-sel", choices=["off", "lsel", "fbkt"], default="off")
     ap.add_argument("--to42-hold-steps", type=int, default=25)
     ap.add_argument("--progress-scale", type=float, default=0.0)
+    # D048j: progress 项封顶上界从 1.0 改为当前命令（静态最优恰为 cmd，
+    # 消除结构性超速偏置）；默认关 = 与旧公式逐位一致（REW_CONTRACT_VER 2；
+    # 开启 = 3）
+    ap.add_argument("--progress-cap-cmd", action="store_true")
     ap.add_argument("--anti-stop", type=float, default=0.0)
     ap.add_argument("--anti-stop-thresh", type=float, default=0.3)
     # E44v3: penalty on yaw-rate (omega_z^2) to suppress the spin gait
@@ -249,6 +253,8 @@ def main():
         if cli.kl_step_guard
         else ""
     )
+    # D048j：旗标关时回显逐字不变
+    pcap_cfg = " progress_cap_cmd=1" if cli.progress_cap_cmd else ""
     print(
         f"[CFG] out={cli.out} num_envs={cli.num_envs} iters={cli.iters} "
         f"probe_iters={cli.probe_iters} "
@@ -256,7 +262,7 @@ def main():
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
         f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}"
-        f"{ksg_cfg}",
+        f"{ksg_cfg}{pcap_cfg}",
         flush=True,
     )
 
@@ -280,6 +286,7 @@ def main():
         cfg.observation_space += cfg.elev_grid * cfg.elev_grid
     cfg.use_gate_sel = bool(cli.gate_sel)
     cfg.progress_scale = cli.progress_scale
+    cfg.progress_cap_cmd = cli.progress_cap_cmd
     cfg.anti_stop_scale = cli.anti_stop
     cfg.anti_stop_thresh = cli.anti_stop_thresh
     cfg.yaw_rate_penalty = cli.yaw_rate_penalty

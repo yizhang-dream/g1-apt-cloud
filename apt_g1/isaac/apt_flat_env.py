@@ -42,6 +42,7 @@ from apt_g1.isaac.elevation_map import (
     sample_elevation,
     wrap_height_function,
 )
+from apt_g1.isaac.reward_terms import progress_bonus
 from apt_g1.isaac.sonic_decoder_torch import SonicTorchDecoder
 from apt_g1.isaac.to42_gate import To42Gate
 
@@ -144,6 +145,10 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     yaw_sigma2: float = 0.25
     vel_sigma2: float = 0.25
     progress_scale: float = 0.0  # forward-progress bonus (forces traversal)
+    # D048j: True 时 progress 项封顶上界从 1.0 改为当前命令 clamp(cmd, min=0)
+    # （静态最优恰为 cmd，消除 cmd=0.4 下最优 ≈0.534 的结构性超速偏置）；
+    # 默认 False = 与旧公式逐位一致（REW_CONTRACT_VER 2；True = 3）。
+    progress_cap_cmd: bool = False
     anti_stop_scale: float = 0.0  # penalty for vx < 0.3 (anti-idle/anti-backward)
     anti_stop_thresh: float = 0.3
     # E44v3: direct yaw-rate penalty (kills the spin gait that decoder fine-tune
@@ -303,7 +308,11 @@ class AptFlatG1Env(DirectRLEnv):
     # D048c 奖励/测量契约版本。v1（2026-09-08 前全部 run）= heading 项对
     # 机体系速度再做一次 world→command 旋转（双旋转）+ train 侧位移为
     # iter 首末窗口差分（超时复位跳变进差分）；v2 = heading 直接读机体系
-    # 分量 + train 侧位移逐步累计（done 步用 _final_pos_w 补终末位置）。
+    # 分量 + train 侧位移逐步累计（done 步用 _final_pos_w 补终末位置）；
+    # v3（D048j，2026-09-10）= v2 + progress 项封顶上界改为当前命令
+    # （cfg.progress_cap_cmd=True）。类属性 2 = 默认身份；实例属性见
+    # __init__（旗标开启时覆盖为 3），train/eval 经
+    # getattr(env, "REW_CONTRACT_VER", 1) 读到实例值。
     # train_apt_isaac 把它写进 train_log.json；旧日志无该键 = v1 身份。
     REW_CONTRACT_VER = 2
 
@@ -331,6 +340,9 @@ class AptFlatG1Env(DirectRLEnv):
         self._sonic_default_t = None  # set after device known
         self._sonic_scale_t = None
         super().__init__(cfg, render_mode, **kwargs)
+        # D048j: 实例属性覆盖类属性——progress 封顶旗标开启时契约 = 3，
+        # 否则 = 2（与旧 run 身份逐位一致）。getattr 优先读实例属性。
+        self.REW_CONTRACT_VER = 3 if cfg.progress_cap_cmd else 2
         if self._elev_key is not None:
             self._elev_grids, self._elev_origins, self._elev_hscale = build_env_grids(
                 self.terrain, self._elev_key, self.num_envs
@@ -1190,10 +1202,16 @@ class AptFlatG1Env(DirectRLEnv):
             sp = torch.clamp(torch.norm(base_lin_vel[:, :2], dim=1), min=1e-3)
             heading = torch.clamp(base_lin_vel[:, 0] / sp, -1.0, 1.0)
             reward = reward + self.cfg.heading_scale * (0.5 + 0.5 * heading)
+        progress_term = None
         if self.cfg.progress_scale > 0.0:
-            reward = reward + self.cfg.progress_scale * torch.clamp(
-                base_lin_vel[:, 0], 0.0, 1.0
+            # D048j: cap_cmd=False 时 progress_bonus 与旧内联公式
+            # clamp(vx, 0, 1) 逐位一致；True 时封顶上界 = 当前命令。
+            progress_term = progress_bonus(
+                base_lin_vel[:, 0],
+                self._commands[:, 0],
+                self.cfg.progress_cap_cmd,
             )
+            reward = reward + self.cfg.progress_scale * progress_term
         if self.cfg.to_ref and self.cfg.to_ref_w > 0.0 and self._to_q is not None:
             # TO38: sagittal-joint tracking of the TO reference, gated by
             # commanded-speed proximity to the solution speed -- envs commanded
@@ -1219,7 +1237,9 @@ class AptFlatG1Env(DirectRLEnv):
             reward = reward - self.cfg.res_l2_scale * (self._last_res ** 2).sum(-1)
         reward = reward + self.cfg.termination_penalty * self.reset_terminated.float()
         # E49 诊断步骤③：分项快照，return 前一次性存（GPU tensor 原样引用，
-        # 纯记录不改计算图/数值；heading/progress/yaw_rate 等默认 0 的分支不记）。
+        # 纯记录不改计算图/数值；heading/yaw_rate 等默认 0 的分支不记）。
+        # D048j: progress 分支激活时补记 "progress"（未加权的 bonus 项，
+        # 与 track_* 同口径；progress_scale 权重在 reward 式里）。
         # 未开启 diag 时每步被覆盖，无累积开销。vx_err = 当时口径的 cmd 跟踪误差。
         self._last_rew_terms = {
             "track_xy": track_xy,
@@ -1229,6 +1249,8 @@ class AptFlatG1Env(DirectRLEnv):
             "stillness": stillness,
             "vx_err": base_lin_vel[:, 0] - self._commands[:, 0],
         }
+        if progress_term is not None:
+            self._last_rew_terms["progress"] = progress_term
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
