@@ -171,6 +171,42 @@ def kl_diag_gaussian(
     ).sum(-1)
 
 
+def kl_diag_gaussian_reverse(
+    old_mean: torch.Tensor,
+    old_log_std: torch.Tensor,
+    new_mean: torch.Tensor,
+    new_log_std: torch.Tensor,
+) -> torch.Tensor:
+    """对角高斯解析 KL，D048i 步级看门口径 KL(old‖new)，逐样本（动作维已 sum）。
+
+    与上方 kl_diag_gaussian（rsl_rl 口径 KL(new‖old)，E49-C rollout 参照）方向
+    相反且用途不同：这里 old = 本轮更新开始时的策略（update() 内 B2 缓存，
+    不是 rollout 采样分布），new = 候选 optimizer step 后的前向重算。闭式式：
+    KL(old‖new) = log(σn/σo) + (σo² + (μo−μn)²)/(2σn²) − 1/2。
+    """
+    var_old = torch.exp(2.0 * old_log_std)
+    var_new = torch.exp(2.0 * new_log_std)
+    return (
+        new_log_std
+        - old_log_std
+        + (var_old + (old_mean - new_mean) ** 2) / (2.0 * var_new)
+        - 0.5
+    ).sum(-1)
+
+
+def kl_categorical_reverse(
+    old_logits: torch.Tensor, new_logits: torch.Tensor
+) -> torch.Tensor:
+    """离散分布（gate 头）解析 KL(old‖new)，逐样本（D048i）。
+
+    不进步级看门的联合目标（owner 口径「按动作维求和」= 连续动作头）；策略带
+    gate 头时仅顺带记录 kl_gate。
+    """
+    log_po = torch.log_softmax(old_logits, dim=-1)
+    log_pn = torch.log_softmax(new_logits, dim=-1)
+    return (torch.softmax(old_logits, dim=-1) * (log_po - log_pn)).sum(-1)
+
+
 class PPOTrainer:
     def __init__(
         self,
@@ -205,6 +241,14 @@ class PPOTrainer:
         kl_guard_shrink: float = 0.8,  # E49-C: 回滚时 lr 乘子（TRPO 回溯惯例）
         kl_guard_grow: float = 1.2,  # E49-C: KL < 阈/2 时 lr 回升乘子（镜像 rsl_rl 自适应；1.0 = 关；上限钉在初始 lr）
         kl_guard_max_rolls: int = 3,  # E49-C: 同一 update() 内连续回滚达此数 → 提前结束整个循环
+        # D048i：步级解析 KL 看门（默认 False = 完全关闭；与 kl_guard 互斥，
+        # 互斥由 train_apt_isaac CLI 强制）。开启时每个 optimizer step 前快照
+        # 参数+Adam 状态，步后在当前 minibatch 观测上测 KL(old‖new)（old =
+        # 本轮更新开始策略的分布），超 kl_step_target 则 lr 减半重试至
+        # kl_backtracks 次，仍超则拒绝该步（参数+Adam 状态还原、lr 复位）
+        kl_step_guard: bool = False,
+        kl_step_target: float = 0.05,
+        kl_backtracks: int = 6,
     ):
         self.policy = policy.to(device)
         self.device = device
@@ -257,6 +301,11 @@ class PPOTrainer:
         self.kl_guard_shrink = kl_guard_shrink
         self.kl_guard_grow = kl_guard_grow
         self.kl_guard_max_rolls = kl_guard_max_rolls
+        # D048i：步级解析 KL 看门状态（kl_step_guard=False 时 update() 内
+        # ksg 分支完全不进入，行为与冻结版逐位一致）
+        self.kl_step_guard = kl_step_guard
+        self.kl_step_target = kl_step_target
+        self.kl_backtracks = kl_backtracks
         self.it = 0
 
     def compute_gae(
@@ -315,6 +364,165 @@ class PPOTrainer:
             return False
         norms = torch.stack(torch._foreach_norm(grads))
         return not bool(torch.isfinite(norms).all().item())
+
+    # ------------------------------------------------------------------
+    # D048i：步级解析 KL 看门（kl_step_guard）工具方法。全部纯 torch、
+    # 不依赖 isaac，可被 test_kl_step_guard.py 在 CPU 上独立调用。
+    # ------------------------------------------------------------------
+
+    def ksg_snapshot(self):
+        """D048i B3：optimizer 全部参数（clone）+ Adam 状态（deepcopy）快照。
+
+        返回 (参数 clone 列表, optimizer.state_dict 深拷贝, 参数引用列表)。
+        每个被看门的 step 各自快照（单次使用，下个 minibatch 重新快照）。
+        """
+        params = [p for g in self.optimizer.param_groups for p in g["params"]]
+        return (
+            [p.detach().clone() for p in params],
+            copy.deepcopy(self.optimizer.state_dict()),
+            params,
+        )
+
+    def ksg_restore(self, snap) -> None:
+        """D048i B3：还原参数 + Adam 状态（逐位精确）。
+
+        用 copy_ 原位写参数（保留 .grad 引用——回退重跑 step 时梯度仍是在
+        还原后的参数处计算的，无需重算前向/反传）；load_state_dict 前 deepcopy
+        一次防快照张量被别名进 optimizer.state（与 kl_guard 同款防御）。
+        """
+        snap_p, snap_o, params = snap
+        with torch.no_grad():
+            for p, s in zip(params, snap_p):
+                p.copy_(s)
+        self.optimizer.load_state_dict(copy.deepcopy(snap_o))
+
+    def ksg_joint_logp(
+        self, p_fwd, obs, phase, aux, gate, aux_scored=True
+    ) -> torch.Tensor:
+        """D048i B1：从 forward dict 重算存量 action 的联合 logp。
+
+        分支口径照抄 update() 末尾 post_update_kl 的整批重算（decoder_ft /
+        aux_scored / phase / gate 四分支同构），供资格检查复用——既有
+        post_update_kl 的计算本身不动。
+        """
+        if getattr(self.policy, "decoder_ft", False):
+            aux_mean, _ = self.policy.action_mean(phase, obs)
+            ad = Normal(aux_mean, p_fwd["aux_log_std"].exp())
+            lp = ad.log_prob(aux).sum(-1)
+        else:
+            ad = Normal(p_fwd["aux_mean"], p_fwd["aux_log_std"].exp())
+            lp = ad.log_prob(aux).sum(-1) if aux_scored else 0.0
+        if phase is not None:
+            pd = Normal(p_fwd["phase_mean"], p_fwd["phase_log_std"].exp())
+            lp = lp + pd.log_prob(phase).sum(-1)
+        if gate is not None:
+            gd = Categorical(logits=p_fwd["gate_logits"])
+            lp = lp + gd.log_prob(gate)
+        return lp
+
+    def ksg_qualification(
+        self, obs, phase, aux, gate, logp_old, aux_scored=True
+    ) -> dict:
+        """D048i B1：资格检查——重算联合 logp 与存储 logp_old 的偏差。
+
+        返回 dict：qual_logp_maxdev = max|Δlogp|、qual_ratio_maxdev =
+        max|exp(Δlogp)−1|。函数级独立可调（测试篡改 logp_old 的入口）。
+        """
+        with torch.no_grad():
+            p0 = self.policy.forward_actor(obs)
+            lp = self.ksg_joint_logp(p0, obs, phase, aux, gate, aux_scored)
+            d = lp - logp_old
+            return {
+                "qual_logp_maxdev": float(d.abs().max().item()),
+                "qual_ratio_maxdev": float((d.exp() - 1.0).abs().max().item()),
+            }
+
+    def ksg_eval_kl(self, obs_mb, mb, old_buf) -> dict:
+        """D048i B3：候选步后 KL(old‖new) 评估（no_grad，当前 minibatch 观测）。
+
+        每头闭式 KL 按动作维求和、再按 minibatch 样本平均；联合 = res(aux)头
+        + z(phase)头。vanilla 无 z 头（按键存在性跳过）；latent/token 模式的
+        aux 头虽不执行但共享 encoder 主干，照测（KL 仍度量策略移动）；gate 头
+        只顺带记录、不进联合目标（owner 口径「按动作维求和」= 连续动作头）。
+        返回 dict（全 float）：joint/z/res/gate。
+        """
+        with torch.no_grad():
+            p_new = self.policy.forward_actor(obs_mb)
+            kl_z = 0.0
+            kl_res = 0.0
+            if "phase_mean" in old_buf and "phase_mean" in p_new:
+                kl_z = float(
+                    kl_diag_gaussian_reverse(
+                        old_buf["phase_mean"][mb],
+                        old_buf["phase_log_std"][mb],
+                        p_new["phase_mean"],
+                        p_new["phase_log_std"],
+                    )
+                    .mean()
+                    .item()
+                )
+            if "aux_mean" in old_buf and "aux_mean" in p_new:
+                kl_res = float(
+                    kl_diag_gaussian_reverse(
+                        old_buf["aux_mean"][mb],
+                        old_buf["aux_log_std"][mb],
+                        p_new["aux_mean"],
+                        p_new["aux_log_std"],
+                    )
+                    .mean()
+                    .item()
+                )
+            kl_gate = 0.0
+            if "gate_logits" in old_buf and "gate_logits" in p_new:
+                kl_gate = float(
+                    kl_categorical_reverse(
+                        old_buf["gate_logits"][mb], p_new["gate_logits"]
+                    )
+                    .mean()
+                    .item()
+                )
+            return {"joint": kl_z + kl_res, "z": kl_z, "res": kl_res,
+                    "gate": kl_gate}
+
+    def ksg_watch_step(
+        self, obs_mb, mb, old_buf, lr_round, target=None, backtracks=None
+    ) -> dict:
+        """D048i B3：单 optimizer step 的看门执行（快照→step→KL→lr 减半回退）。
+
+        lr_round = 本轮开始时各 param_group 的 lr（看门只临时改 lr，接受/拒绝
+        后一律复位为该值——lr 缩放是单步重试手段，不跨步粘滞）。重试时参数+
+        Adam 状态还原到 step 前快照，.grad 仍有效（它是在还原后参数处计算的），
+        无需重算前向/反传。返回 dict：accepted/rejected/lr_scale/backtracks/
+        joint/z/res/gate（KL 为最终尝试的达成值；NaN/Inf KL 恒判不通过）。
+        """
+        target = self.kl_step_target if target is None else target
+        backtracks = self.kl_backtracks if backtracks is None else backtracks
+        snap = self.ksg_snapshot()
+        kl = {"joint": float("inf"), "z": 0.0, "res": 0.0, "gate": 0.0}
+        for attempt in range(backtracks + 1):
+            scale = 0.5 ** attempt
+            for g, lr0 in zip(self.optimizer.param_groups, lr_round):
+                g["lr"] = lr0 * scale
+            self.optimizer.step()
+            kl = self.ksg_eval_kl(obs_mb, mb, old_buf)
+            if kl["joint"] <= target:
+                for g, lr0 in zip(self.optimizer.param_groups, lr_round):
+                    g["lr"] = lr0
+                return {
+                    "accepted": True, "rejected": False,
+                    "lr_scale": scale, "backtracks": attempt, **kl,
+                }
+            if attempt < backtracks:
+                # 回退重试：参数 + Adam 状态还原后以减半 lr 重跑同一梯度
+                self.ksg_restore(snap)
+        # 回退预算耗尽：拒绝该步（还原快照、复位 lr），继续下一 minibatch
+        self.ksg_restore(snap)
+        for g, lr0 in zip(self.optimizer.param_groups, lr_round):
+            g["lr"] = lr0
+        return {
+            "accepted": False, "rejected": True,
+            "lr_scale": 0.5 ** backtracks, "backtracks": backtracks, **kl,
+        }
 
     def update(
         self,
@@ -387,6 +595,54 @@ class PPOTrainer:
         # entropy；decft 的 aux 是 29d 实际动作，恒参与（DecFtPolicy 无此属性，
         # getattr 默认 True）；latent_residual 的 aux 同为 29d 执行动作，恒参与
         aux_scored = getattr(self.policy, "aux_executed", True)
+
+        # D048i：步级解析 KL 看门（kl_step_guard，与 kl_guard 互斥由 CLI 强制）。
+        # B1 资格检查 + B2 本轮 old 分布缓存共用同一次轮开始 no_grad 前向——
+        # forward_actor 无采样/无 dropout，不消耗 RNG，guard 开/关的 randperm
+        # 序列逐位一致（关闭路径零行为变化的组成部分）
+        ksg_on = getattr(self, "kl_step_guard", False)
+        if ksg_on:
+            lr_round = [float(g["lr"]) for g in self.optimizer.param_groups]
+            with torch.no_grad():
+                p_round0 = self.policy.forward_actor(obs)
+                # B2：本轮 KL 的 old 端分布参数（= 本轮更新开始策略，不是
+                # 每个 minibatch 步前策略）；整批 T*N，显存占用极小
+                old_buf = {k: v.detach().clone() for k, v in p_round0.items()}
+                # B1 资格检查：重算存量 action 联合 logp vs rollout 存储值
+                # （分支口径经 ksg_joint_logp 与 post_update_kl 同构）
+                dqual = self.ksg_joint_logp(
+                    p_round0, obs, phase, aux, gate, aux_scored
+                ) - logp_old
+                qual_logp_maxdev = float(dqual.abs().max().item())
+                qual_ratio_maxdev = float((dqual.exp() - 1.0).abs().max().item())
+                # qual_kl_self：公式自检——同一组 μ/σ 对自身的解析联合 KL，
+                # 应≈0。工单口径为首轮自检，这里每轮计算：成本近零（纯
+                # elementwise 于已物化的 old_buf），且 hist 序列保持无 null，
+                # 首轮语义不变
+                kl_self = 0.0
+                if "phase_mean" in old_buf:
+                    kl_self = kl_self + kl_diag_gaussian_reverse(
+                        old_buf["phase_mean"], old_buf["phase_log_std"],
+                        old_buf["phase_mean"], old_buf["phase_log_std"],
+                    ).mean()
+                if "aux_mean" in old_buf:
+                    kl_self = kl_self + kl_diag_gaussian_reverse(
+                        old_buf["aux_mean"], old_buf["aux_log_std"],
+                        old_buf["aux_mean"], old_buf["aux_log_std"],
+                    ).mean()
+                qual_kl_self = float(kl_self)
+            # B4 的 θ_start（B2 时刻快照，覆盖 optimizer 全部参数，含 decft
+            # 双 param_group）
+            _opt_params = [
+                p for g in self.optimizer.param_groups for p in g["params"]
+            ]
+            theta_start = [p.detach().clone() for p in _opt_params]
+            ksg_total = ksg_acc = ksg_rej = 0
+            ksg_scales: list = []
+            ksg_kl_joint: list = []
+            ksg_kl_z: list = []
+            ksg_kl_res: list = []
+            ksg_kl_gate: list = []
 
         losses = []
         # E49-C：KL 守卫的连续回滚计数与提前停止标志（作用域 = 整个 update()）
@@ -487,6 +743,21 @@ class PPOTrainer:
                     # fine-tuned decoder from exploding the run)
                     self.optimizer.zero_grad()
                     nan_skip = 1.0
+                elif ksg_on:
+                    # D048i B3：步级看门（覆盖所有 optimizer step，含第一次）。
+                    # NaN skip 的 minibatch 没有发生 step，不进看门计数。
+                    # kl_guard 与本分支互斥（CLI 强制），下方 kl_guard 原路径不动
+                    w_step = self.ksg_watch_step(obs[mb], mb, old_buf, lr_round)
+                    ksg_total += 1
+                    ksg_scales.append(w_step["lr_scale"])
+                    ksg_kl_gate.append(w_step["gate"])
+                    if w_step["accepted"]:
+                        ksg_acc += 1
+                        ksg_kl_joint.append(w_step["joint"])
+                        ksg_kl_z.append(w_step["z"])
+                        ksg_kl_res.append(w_step["res"])
+                    else:
+                        ksg_rej += 1
                 else:
                     if self.kl_guard is not None:
                         # E49-C v2：step 前快照 policy 参数 **和** Adam 状态
@@ -620,6 +891,45 @@ class PPOTrainer:
             agg["kl_mb_all"] = [float(d["kl_mb"]) for d in losses]
             agg["kl_rolls"] = int(sum(d["kl_roll"] for d in losses))
             agg["lr_now"] = float(self._lr_now)
+        if ksg_on:
+            # D048i B4：轮末聚合。全部新键独立命名，不与 kl_guard 四键
+            # （kl_mb/kl_mb_all/kl_rolls/lr_now）或既有键重叠；analytic 三项
+            # = 接受步的达成值（零接受步的轮记 0.0）；param_rel_move =
+            # ‖θ_end−θ_start‖₂/‖θ_start‖₂（θ_start = B2 时刻快照）
+            agg["qual_logp_maxdev"] = qual_logp_maxdev
+            agg["qual_ratio_maxdev"] = qual_ratio_maxdev
+            agg["qual_kl_self"] = qual_kl_self
+            agg["kl_steps_total"] = int(ksg_total)
+            agg["kl_steps_accepted"] = int(ksg_acc)
+            agg["kl_steps_rejected"] = int(ksg_rej)
+            agg["kl_lr_scale_min"] = (
+                float(min(ksg_scales)) if ksg_scales else 1.0
+            )
+            agg["kl_lr_scale_mean"] = (
+                float(np.mean(ksg_scales)) if ksg_scales else 1.0
+            )
+            agg["kl_analytic_joint_mean"] = (
+                float(np.mean(ksg_kl_joint)) if ksg_kl_joint else 0.0
+            )
+            agg["kl_analytic_joint_max"] = (
+                float(np.max(ksg_kl_joint)) if ksg_kl_joint else 0.0
+            )
+            agg["kl_analytic_z_mean"] = (
+                float(np.mean(ksg_kl_z)) if ksg_kl_z else 0.0
+            )
+            agg["kl_analytic_res_mean"] = (
+                float(np.mean(ksg_kl_res)) if ksg_kl_res else 0.0
+            )
+            agg["kl_gate_mean"] = (
+                float(np.mean(ksg_kl_gate)) if ksg_kl_gate else 0.0
+            )
+            with torch.no_grad():
+                _num = torch.sqrt(sum(
+                    (p - s).pow(2).sum()
+                    for p, s in zip(_opt_params, theta_start)
+                ))
+                _den = torch.sqrt(sum(s.pow(2).sum() for s in theta_start))
+                agg["param_rel_move"] = float((_num / (_den + 1e-12)).item())
         agg["expl_var"] = expl_var
         # E49: 整轮更新结束后的统一 KL 测量——no_grad 下用更新后的 policy 对
         # 整批 rollout obs 重算联合 logp（与 minibatch 的 logp 同口径，含

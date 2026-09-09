@@ -24,9 +24,14 @@ import torch
 
 FORMAT = 1  # envelope format version (identity["format"])
 
-# Keys compared by verify_ckpt_identity. A key is SKIPPED when absent (or
+# Keys compared by verify_ckpt_identity. Semantics split by envelope format
+# (2026-09-09 owner ruling): a format=1 identity block must be self-
+# certifying -- every key here has to exist (non-None) on BOTH the ckpt and
+# the expect side, a missing side is itself a mismatch. Legacy ckpts (no
+# identity block) keep the old behavior: a key is SKIPPED when absent (or
 # None) on either side -- the eval side only feeds keys it can derive
-# unambiguously from its own flags, so "missing" must never mean "mismatch".
+# unambiguously from its own flags, so "missing" must never mean "mismatch"
+# there.
 VERIFY_KEYS = (
     "res_scale",
     "res_clip",
@@ -132,23 +137,40 @@ def load_ckpt(path, map_location=None):
 def verify_ckpt_identity(identity, expect: dict) -> list:
     """Pure comparison: return a list of mismatch messages (empty = match).
 
-    Message format: ``"res_scale: ckpt=0.15 eval=0.4"``. Keys absent (or
-    None) on either side are skipped -- no false positives. A wrong/missing
-    envelope "format" is itself reported.
+    Message format: ``"res_scale: ckpt=0.15 eval=0.4"``. For a format=1
+    identity block every VERIFY_KEY is REQUIRED on both sides; a missing (or
+    None) key reports as ``"res_scale: missing on ckpt side (required for
+    format=1)"`` instead of being skipped. Legacy blocks (no identity /
+    format mismatch) keep the skip-if-absent semantics; a wrong/missing
+    "format" is itself reported.
     """
     msgs = []
     fmt = identity.get("format") if isinstance(identity, dict) else None
     if fmt != FORMAT:
         msgs.append(f"format: ckpt={fmt!r} expected={FORMAT}")
+    strict = isinstance(identity, dict) and fmt == FORMAT
     for key in VERIFY_KEYS:
-        if key not in expect or expect[key] is None:
-            continue
-        if not isinstance(identity, dict):
-            continue
-        ck = identity.get(key)
-        if ck is None:
-            continue
-        ev = expect[key]
+        ck = identity.get(key) if isinstance(identity, dict) else None
+        ev = expect.get(key)
+        if strict:
+            # format=1 envelope must be self-certifying: a missing/None key on
+            # either side is a mismatch, never a silent skip.
+            if ck is None:
+                msgs.append(
+                    f"{key}: missing on ckpt side (required for format={FORMAT})"
+                )
+            if ev is None:
+                msgs.append(
+                    f"{key}: missing on eval side (required for format={FORMAT})"
+                )
+            if ck is None or ev is None:
+                continue
+        else:
+            # legacy: skipped when absent (or None) on either side -- the eval
+            # side only feeds keys it can derive unambiguously from its own
+            # flags, so "missing" must not fire here.
+            if ck is None or ev is None:
+                continue
         if isinstance(ck, float) or isinstance(ev, float):
             ok = abs(float(ck) - float(ev)) <= 1e-9
         else:

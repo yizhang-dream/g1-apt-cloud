@@ -144,6 +144,18 @@ def build_args():
                     help="E49-C: lr multiplier when KL < threshold/2 (1.0 = off)")
     ap.add_argument("--kl-guard-max-rolls", type=int, default=3,
                     help="E49-C: consecutive rollbacks before ending the update loop")
+    # D048i：PPO 更新约束臂——步级解析 KL 看门 + 资格检查。默认关 = 完全保留
+    # 历史行为；与 --kl-guard 互斥（同时开启 argparse 直接报错退出，见 main）
+    ap.add_argument("--kl-step-guard", action="store_true",
+                    help="D048i: per-step analytic-KL watchdog on PPO updates")
+    ap.add_argument("--kl-step-target", type=float, default=0.05,
+                    help="D048i: joint analytic KL(old||new) budget per optimizer step")
+    ap.add_argument("--kl-backtracks", type=int, default=6,
+                    help="D048i: lr-halving retries before a step is rejected")
+    ap.add_argument("--qual-ratio-tol", type=float, default=1e-3,
+                    help="D048i: max |exp(dlogp)-1| tolerance for the qualification check (exit 8)")
+    ap.add_argument("--dead-rounds", type=int, default=5,
+                    help="D048i: consecutive zero-accepted updates before fatal stop (exit 7)")
     # E49-C v2：短探针迭代上限。只截短训练循环（含末 iter 日志/ckpt 边界），
     # trainer.max_iters 仍 = --iters → expl_coef 等调度长度不被压缩（配方公平性）
     ap.add_argument("--probe-iters", type=int, default=None,
@@ -199,6 +211,13 @@ def main():
     AppLauncher.add_app_launcher_args(launcher_parser)
     launcher_args, _ = launcher_parser.parse_known_args()
     cli = ap.parse_args()
+    # D048i：两机制互斥——kl-guard（E49-C，曾锁死学习）与 kl-step-guard
+    # （D048i）同时开启属配置错误，argparse 直接报错退出（exit 2）
+    if cli.kl_step_guard and cli.kl_guard is not None:
+        ap.error(
+            "--kl-step-guard and --kl-guard are mutually exclusive "
+            "(D048i step-level watchdog vs E49-C rollout-referenced guard)"
+        )
     launcher_args.num_envs = cli.num_envs
     launcher_args.headless = cli.headless
     launcher_args.env_spacing = 4.0
@@ -222,14 +241,22 @@ def main():
     out_dir = Path(cli.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     # E49-C：启动配置回显（此前版本无完整回显行；关键 PPO 参数 + 守卫四参数
-    # + token-stats 路径，便于日志取证）
+    # + token-stats 路径，便于日志取证）。D048i：kl-step-guard 开启时追加五参数
+    ksg_cfg = (
+        f" kl_step_guard=1 kl_step_target={cli.kl_step_target} "
+        f"kl_backtracks={cli.kl_backtracks} "
+        f"qual_ratio_tol={cli.qual_ratio_tol} dead_rounds={cli.dead_rounds}"
+        if cli.kl_step_guard
+        else ""
+    )
     print(
         f"[CFG] out={cli.out} num_envs={cli.num_envs} iters={cli.iters} "
         f"probe_iters={cli.probe_iters} "
         f"lr={cli.lr} ppo_epochs={cli.ppo_epochs} minibatch={cli.ppo_minibatch} "
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
-        f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}",
+        f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}"
+        f"{ksg_cfg}",
         flush=True,
     )
 
@@ -450,6 +477,9 @@ def main():
         kl_guard_shrink=cli.kl_guard_shrink,
         kl_guard_grow=cli.kl_guard_grow,
         kl_guard_max_rolls=cli.kl_guard_max_rolls,
+        kl_step_guard=cli.kl_step_guard,
+        kl_step_target=cli.kl_step_target,
+        kl_backtracks=cli.kl_backtracks,
     )
     start_it = 0
     if cli.resume:
@@ -567,6 +597,27 @@ def main():
         hist["kl_mb_all"] = []
         hist["kl_rolls"] = []
         hist["lr_now"] = []
+    # D048i：步级看门 + 资格检查新键序列（仅 --kl-step-guard 开启时初始化；
+    # guard 关闭时 train_log.json 键集合与旧运行完全一致，不新增 null 列）
+    KSG_HIST_KEYS = (
+        "qual_logp_maxdev",
+        "qual_ratio_maxdev",
+        "qual_kl_self",
+        "kl_steps_total",
+        "kl_steps_accepted",
+        "kl_steps_rejected",
+        "kl_lr_scale_min",
+        "kl_lr_scale_mean",
+        "kl_analytic_joint_mean",
+        "kl_analytic_joint_max",
+        "kl_analytic_z_mean",
+        "kl_analytic_res_mean",
+        "kl_gate_mean",
+        "param_rel_move",
+    )
+    if cli.kl_step_guard:
+        for _k in KSG_HIST_KEYS:
+            hist[_k] = []
     # E49 诊断步骤③：分项诊断（--diag-log 开启时启用）。vanilla env 无
     # _last_rew_terms 快照，不支持。d_* 序列随 hist 整体序列化进 train_log.json。
     DIAG_KEYS = ("track_xy", "track_yaw", "upright", "height", "stillness")
@@ -592,6 +643,7 @@ def main():
     # 保证短探针也产出末行日志与最终 ckpt）；trainer.max_iters 不变（=--iters，
     # 调度长度不压缩）
     iters_run = cli.probe_iters or cli.iters
+    dead_streak = 0  # D048i：连续死轮计数（accepted==0 的更新轮）
 
     for it in range(start_it, iters_run):
         t0 = time.time()
@@ -746,6 +798,57 @@ def main():
                 1.0 - it / max(1, warm_iters)
             )
         stats = trainer.update(buf, phase_labels=phase_labels_buf, phase_warm_coef=warm_coef)
+        if cli.kl_step_guard:
+            # D048i B6：资格检查违约 → 逐条打印偏差详情后 exit 8（与 eval 身份
+            # exit 6、死轮 exit 7 区分）。先落盘 train_log 再退，防诊断数据丢失
+            if stats.get("qual_ratio_maxdev", 0.0) > cli.qual_ratio_tol:
+                print(
+                    f"[QUAL-VIOLATION] iter={it} qual_ratio_maxdev="
+                    f"{stats.get('qual_ratio_maxdev', 0.0):.6e} > "
+                    f"tol={cli.qual_ratio_tol:.3e}",
+                    flush=True,
+                )
+                print(
+                    f"    qual_logp_maxdev={stats.get('qual_logp_maxdev', 0.0):.6e} "
+                    f"qual_kl_self={stats.get('qual_kl_self', 0.0):.3e} "
+                    f"kl_steps_total={stats.get('kl_steps_total', 0)} "
+                    f"param_rel_move={stats.get('param_rel_move', 0.0):.3e} "
+                    f"(存储 logp 与本轮开始策略重算 logp 失配 -> exit 8)",
+                    flush=True,
+                )
+                with open(out_dir / "train_log.json", "w") as f:
+                    json.dump(hist, f)
+                os._exit(8)
+            # D048i B5：死轮停臂——accepted==0 记死轮，连续 --dead-rounds 轮
+            # 死 → 诊断 ckpt（文件名带 _deadround 后缀）+ FATAL 摘要 + exit 7
+            if stats.get("kl_steps_accepted", 0) == 0:
+                dead_streak += 1
+                if dead_streak >= cli.dead_rounds:
+                    dead_ckpt = out_dir / f"policy_it_{it + 1}_deadround.pt"
+                    ckpt_identity.save_ckpt(
+                        dead_ckpt, policy.state_dict(), _ident(it + 1)
+                    )
+                    print(
+                        f"[FATAL][kl-step-guard] iter={it} 连续 {dead_streak} 轮"
+                        f"零接受步（>= --dead-rounds {cli.dead_rounds}）",
+                        flush=True,
+                    )
+                    print(
+                        f"    steps total={stats.get('kl_steps_total', 0)} "
+                        f"rejected={stats.get('kl_steps_rejected', 0)} "
+                        f"lr_scale_min={stats.get('kl_lr_scale_min', 0.0):.4g} "
+                        f"lr_scale_mean={stats.get('kl_lr_scale_mean', 0.0):.4g} "
+                        f"qual_logp_maxdev={stats.get('qual_logp_maxdev', 0.0):.3e} "
+                        f"qual_ratio_maxdev={stats.get('qual_ratio_maxdev', 0.0):.3e} "
+                        f"param_rel_move={stats.get('param_rel_move', 0.0):.3e} "
+                        f"ckpt={dead_ckpt} -> exit 7",
+                        flush=True,
+                    )
+                    with open(out_dir / "train_log.json", "w") as f:
+                        json.dump(hist, f)
+                    os._exit(7)
+            else:
+                dead_streak = 0
         it_time = time.time() - t0
         # iter 末（日志边界）一次 .item()；数值含义 = 本 iter 全部 reward 的均值
         mean_rew = (rew_sum / (T * N)).item()
@@ -781,6 +884,10 @@ def main():
             hist["kl_mb_all"].append(stats.get("kl_mb_all"))
             hist["kl_rolls"].append(stats.get("kl_rolls"))
             hist["lr_now"].append(stats.get("lr_now"))
+        if cli.kl_step_guard:
+            # D048i：新键 .get 防御（键缺失时记 None 不抛错）
+            for _k in KSG_HIST_KEYS:
+                hist[_k].append(stats.get(_k))
         dvals = None
         if diag:
             # E49 诊断口径（裁决 fix-s0 退化用的分项材料）：
@@ -842,6 +949,15 @@ def main():
                     f" kl_g={stats.get('kl_mb', 0.0):.4g}"
                     f" roll={stats.get('kl_rolls', 0)}"
                     f" lr={stats.get('lr_now', 0.0):.2g}"
+                )
+            if cli.kl_step_guard:
+                # D048i：步级看门监控尾巴（接受/总数、lr 下探、资格偏差、参数位移）
+                ev_line += (
+                    f" ksg={stats.get('kl_steps_accepted', 0)}/"
+                    f"{stats.get('kl_steps_total', 0)}"
+                    f" lrmin={stats.get('kl_lr_scale_min', 0.0):.3g}"
+                    f" qdev={stats.get('qual_ratio_maxdev', 0.0):.2e}"
+                    f" prm={stats.get('param_rel_move', 0.0):.2e}"
                 )
             print(
                 f"[{it}/{cli.iters}] rew={mean_rew:.3f} fall={fall_rate:.3f} "

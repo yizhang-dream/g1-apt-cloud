@@ -828,6 +828,9 @@ class AptFlatG1Env(DirectRLEnv):
         self._rs_step_pool = []  # |res_t - res_{t-1}| raw, per step (t0 skipped)
         self._rs_prev = None
         self._rs_abs_sum = torch.zeros(29, dtype=torch.float32, device=dev)
+        # signed per-joint sum (res_joint_signed_mean); _rs_abs_sum feeds the
+        # |r| mean -- the two keys are separate calibers, see pop_res_stats.
+        self._rs_signed_sum = torch.zeros(29, dtype=torch.float32, device=dev)
         self._rs_rows = torch.zeros((), dtype=torch.float32, device=dev)
         self._rs_cnt = torch.zeros((), dtype=torch.float32, device=dev)
         self._rs_sat = torch.zeros((), dtype=torch.float32, device=dev)
@@ -848,6 +851,10 @@ class AptFlatG1Env(DirectRLEnv):
             (torch.clamp(r, -clip, clip) * float(self.cfg.res_scale)).abs()
         )
         self._rs_abs_sum += a.sum(dim=0)
+        # same caliber as `r` (post-freeze-zeroing, pre-clamp): signed sums can
+        # cancel across joints/steps, |r| sums cannot -- that difference is
+        # exactly the "systematic positive bias" misread fixed on 2026-09-09.
+        self._rs_signed_sum += r.sum(dim=0)
         self._rs_rows += a.shape[0]
         self._rs_cnt += a.numel()
         self._rs_sat += (a >= clip).sum()
@@ -863,8 +870,8 @@ class AptFlatG1Env(DirectRLEnv):
 
         Returns {res_raw_abs:{mean,p50,p90,p99,max}, res_dq_abs:{mean,p90,max},
         res_step_abs:{mean,p90}, sat_frac, near_sat_frac,
-        res_joint_mean:[29], steps}; an all-None block when no samples were
-        accumulated (res_stats off / zero steps).
+        res_joint_mean:[29], res_joint_signed_mean:[29], steps}; an all-None
+        block when no samples were accumulated (res_stats off / zero steps).
         """
         empty = {
             "res_raw_abs": None,
@@ -873,6 +880,7 @@ class AptFlatG1Env(DirectRLEnv):
             "sat_frac": None,
             "near_sat_frac": None,
             "res_joint_mean": None,
+            "res_joint_signed_mean": None,
             "steps": 0,
         }
         if self._rs_steps == 0 or not self._rs_pool:
@@ -899,8 +907,13 @@ class AptFlatG1Env(DirectRLEnv):
             "res_step_abs": None,
             "sat_frac": round(float(self._rs_sat) / cnt, 6),
             "near_sat_frac": round(float(self._rs_near) / cnt, 6),
+            # 历史键 = |r| 均值（勿改名：120 份 JSON 可比性；带符号口径看
+            # res_joint_signed_mean，两者不能互相代读）。
             "res_joint_mean": [
                 round(float(v), 6) for v in (self._rs_abs_sum / self._rs_rows)
+            ],
+            "res_joint_signed_mean": [
+                round(float(v), 6) for v in (self._rs_signed_sum / self._rs_rows)
             ],
             "steps": self._rs_steps,
         }

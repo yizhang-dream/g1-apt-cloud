@@ -10,10 +10,16 @@
      ckpt_identity 键 -> 同样 (sd, None)
   5. 损坏文件（垃圾字节）-> torch.load 异常向上抛（eval 侧 try 捕获后
      exit 3 的路径）
-  6. expect 缺键跳过：identity 有 vae_md5 / action_space 而 expect 缺 ->
-     不误报
+  6. legacy 缺键跳过：format 非 1（含无 format 键 / identity=None）时
+     expect/identity 侧缺键仍静默跳过（只报 format 条目，无逐键误报）
   7. file_md5：内容 md5 稳定 32 hex；缺失文件 -> None（train/eval 资产
      md5 容错口径）
+  8. format=1 必填硬化（2026-09-09 owner 裁定）：裸 {"format":1} 信封对
+     错误 res_scale 的完整 expect 仍被拒且条目点名缺失；ckpt 侧缺
+     vae_md5 -> 失配条目点名缺失；expect 侧缺一个 VERIFY_KEY -> 同样
+     失配（双侧必填，不再单侧静默跳过）
+  9. 回归：双侧完整且值一致 -> 空清单；双侧完整但 res_scale 不同 -> 失配；
+     float 容差 1e-9 不变
 
 用法（服务器 .venv_isaac；本机无 torch 仅 py_compile）：
     PYTHONPATH=. python apt_g1/isaac/test_ckpt_identity.py
@@ -30,6 +36,7 @@ import torch
 
 from apt_g1.isaac.ckpt_identity import (
     FORMAT,
+    VERIFY_KEYS,
     build_identity,
     file_md5,
     load_ckpt,
@@ -162,16 +169,24 @@ def case5_corrupt(tmp: str) -> bool:
 
 
 def case6_expect_missing_keys(tmp: str) -> bool:
-    # eval feeds only keys it can derive; missing expect keys must not fire
+    # legacy semantics (2026-09-09 硬化后仅限非 format=1 身份)：eval 只喂
+    # 自身旗标能推导的键，缺键 ≠ 失配；format 条目本身仍要报告
     expect = _expect()
     del expect["vae_md5"], expect["decoder_md5"], expect["action_space"]
-    msgs = verify_ckpt_identity(_ident(), expect)
-    ok = msgs == []
-    # identity-side None values are also skipped (no crash, no false report)
-    msgs2 = verify_ckpt_identity(_ident(vae_md5=None, action_space=None), _expect())
-    ok = ok and msgs2 == []
-    return _report("6 expect/identity missing keys skipped (no false report)",
-                   ok, str(msgs + msgs2))
+    legacy = _ident()
+    del legacy["format"]  # 无 format 键 -> 按 legacy 处理，逐键跳过
+    msgs = verify_ckpt_identity(legacy, expect)
+    ok = msgs == ["format: ckpt=None expected=1"]
+    # legacy 身份块自身的 None 值同样跳过（format 改写为 0 = 格式不符）
+    legacy2 = _ident(vae_md5=None, action_space=None)
+    legacy2["format"] = 0
+    msgs2 = verify_ckpt_identity(legacy2, expect)
+    ok = ok and msgs2 == ["format: ckpt=0 expected=1"]
+    # identity=None（load 返回 legacy 裸 state_dict）：只有 format 条目
+    msgs3 = verify_ckpt_identity(None, _expect())
+    ok = ok and msgs3 == ["format: ckpt=None expected=1"]
+    return _report("6 legacy identity: missing keys still skipped (no false report)",
+                   ok, str(msgs + msgs2 + msgs3))
 
 
 def case7_file_md5(tmp: str) -> bool:
@@ -184,6 +199,52 @@ def case7_file_md5(tmp: str) -> bool:
     return _report("7 file_md5 stable / missing -> None", ok)
 
 
+def case8_bare_format1_rejected(tmp: str) -> bool:
+    # owner 复现用例（2026-09-09）：裸 {"format":1} 信封对错误 res_scale 的
+    # 完整 expect 曾返回无失配；硬化后必须被拒且条目点名缺失
+    msgs = verify_ckpt_identity({"format": FORMAT}, _expect(res_scale=0.4))
+    ok = len(msgs) == len(VERIFY_KEYS)  # 7 键全部 ckpt 侧缺失，各一条
+    ok = ok and (
+        "res_scale: missing on ckpt side (required for format=1)" in msgs
+    )
+    return _report("8 bare format=1 envelope vs wrong expect -> rejected",
+                   ok, str(msgs))
+
+
+def case9_ckpt_side_missing_key(tmp: str) -> bool:
+    # format=1 但 ckpt 侧缺 vae_md5（None 等价缺失）-> 失配条目点名缺失
+    msgs = verify_ckpt_identity(_ident(vae_md5=None), _expect())
+    ok = msgs == ["vae_md5: missing on ckpt side (required for format=1)"]
+    return _report("9 format=1 ckpt-side missing key -> entry names it",
+                   ok, str(msgs))
+
+
+def case10_expect_side_missing_key(tmp: str) -> bool:
+    # 双侧必填：完整 format=1 ckpt vs 缺一个 VERIFY_KEY 的 expect -> 失配
+    expect = _expect()
+    del expect["obs_dim"]
+    msgs = verify_ckpt_identity(_ident(), expect)
+    ok = msgs == ["obs_dim: missing on eval side (required for format=1)"]
+    return _report("10 format=1 expect-side missing key -> mismatch",
+                   ok, str(msgs))
+
+
+def case11_complete_regression(tmp: str) -> bool:
+    # 回归：双侧完整时行为与硬化前一致
+    ok = verify_ckpt_identity(_ident(), _expect()) == []
+    # res_scale 不同 -> 恰一条，消息格式不变
+    ok = ok and verify_ckpt_identity(_ident(), _expect(res_scale=0.4)) == [
+        "res_scale: ckpt=0.15 eval=0.4"
+    ]
+    # float 容差 1e-9 不变：5e-10 漂移仍算匹配
+    ok = ok and verify_ckpt_identity(
+        _ident(res_scale=0.15 + 5e-10), _expect(res_scale=0.15)
+    ) == []
+    return _report(
+        "11 regression: complete envelopes compare as before (1e-9 tol)", ok
+    )
+
+
 def main() -> None:
     cases = [
         case1_roundtrip,
@@ -193,6 +254,10 @@ def main() -> None:
         case5_corrupt,
         case6_expect_missing_keys,
         case7_file_md5,
+        case8_bare_format1_rejected,
+        case9_ckpt_side_missing_key,
+        case10_expect_side_missing_key,
+        case11_complete_regression,
     ]
     with tempfile.TemporaryDirectory() as tmp:
         results = [c(tmp) for c in cases]

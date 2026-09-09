@@ -614,8 +614,9 @@ def rollout(
 def _agg_res_diag(diags):
     """D048h: cross-rollout mean of per-rollout res_diag blocks.
 
-    Scalars (and quantiles) are averaged across rollouts; res_joint_mean is
-    averaged element-wise; sub-blocks missing in every rollout stay None.
+    Scalars (and quantiles) are averaged across rollouts; res_joint_mean and
+    res_joint_signed_mean are averaged element-wise (|r| vs signed caliber,
+    kept separate); sub-blocks missing in every rollout stay None.
     """
     def _mean(xs):
         xs = [x for x in xs if x is not None]
@@ -636,6 +637,10 @@ def _agg_res_diag(diags):
     jm = [x for x in (d.get("res_joint_mean") for d in diags) if x]
     agg["res_joint_mean"] = (
         [round(sum(col) / len(col), 6) for col in zip(*jm)] if jm else None
+    )
+    sm = [x for x in (d.get("res_joint_signed_mean") for d in diags) if x]
+    agg["res_joint_signed_mean"] = (
+        [round(sum(col) / len(col), 6) for col in zip(*sm)] if sm else None
     )
     return agg
 
@@ -765,8 +770,10 @@ def main():
     vae_md5 = ckpt_identity.file_md5(cli.latent_vae_path)
     decoder_md5 = ckpt_identity.file_md5(cli.decoder_path)
     # D048h: eval-side expect for the identity check. Only keys derivable
-    # unambiguously from the eval flags are fed in -- a missing expect key is
-    # skipped by verify (no false positives in exotic mode combos).
+    # unambiguously from the eval flags are fed in. 2026-09-09 hardening: for
+    # a format=1 ckpt EVERY VERIFY_KEY is required on this side too, so each
+    # mode branch below must supply a derivable action_space (a missing key
+    # would now be a mismatch, not a skip).
     ident_expect = {
         "res_scale": cli.res_scale,
         "res_clip": cli.res_clip,
@@ -782,6 +789,12 @@ def main():
         ident_expect["action_space"] = 64
     elif cli.decft or cli.env == "vanilla":
         ident_expect["action_space"] = 29
+    else:
+        # default apt path: phase(2) + aux(12) = 14, the train default layout
+        # (gate_sel/to42_sel have no eval flag). A standalone --latent-residual
+        # widens the aux head to 29 -> 31, a combo no train ckpt can carry
+        # (obs_dim would flag it first); kept consistent with the policy above.
+        ident_expect["action_space"] = 31 if cli.latent_residual else 14
 
     ident_status = "legacy"  # "matched" | "legacy" (no identity block to check)
     ckpt_ident = None
@@ -988,7 +1001,8 @@ def main():
     }
     if res_stats_on:
         # D048h：跨局聚合的残差执行统计（各标量对局取均值；分位取均值近似、
-        # sat/near_sat_frac 均值、res_joint_mean 逐关节均值）
+        # sat/near_sat_frac 均值、res_joint_mean / res_joint_signed_mean 逐
+        # 关节均值，|r| 与带符号两口径分开聚合）
         _diags = [
             r["res_diag"]
             for grp in out.values()
