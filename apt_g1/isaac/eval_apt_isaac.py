@@ -38,7 +38,15 @@ D048f 阶段0 评测资格（JSON 顶层 metrics_contract="d048f_stage0"）：
     零局产出 → 非零退出，绝不退回未训练 policy 当 aux=0 跑完（v1 缺文件
     只 WARNING，产出看似合法的 JSON）；顶层异常 os._exit(1)（kit 接管
     excepthook 后解释器可能仍以 0 退出）；B test 冲量幅值 --impulse-n
-    可调（term 分支探针需要必摔局，全存活批次永远走不到该分支）。
+    可调（term 分支探针需要必摔局，全存活批次永远走不到该分支）；
+  ⑨ D048h：ckpt 配置身份核验（ckpt_identity 信封）——身份块存在则逐键比对
+    res_scale / res_clip / latent_residual / obs·action 维度 / vae_md5 /
+    decoder_md5，任何失配在跑第一局之前 os._exit(6)（0.4-vs-0.15 类训练/
+    评测配置错配被结构性拒绝）；旧格式纯 state_dict = legacy，WARNING 后
+    继续（无核验）。匹配/legacy 状态与两侧关键值落盘 out["ckpt_identity"]。
+    D048h 另增 --res-stats：逐局残差执行统计（饱和/分位/差分）落盘
+    out[*]["res_diag"] + 顶层跨局聚合，metrics_contract 翻转为
+    "d048h_resdiag"（默认路径保持 "d048f_stage0" 不变）。
 """
 
 from __future__ import annotations
@@ -145,6 +153,13 @@ def build_args():
                     help="npz with mean/std/rate from official g1-mode tokens")
     ap.add_argument("--res-scale", type=float, default=0.4)
     ap.add_argument("--res-clip", type=float, default=1.0)
+    # D048h: per-rollout residual execution statistics (sat/near-sat/quantile
+    # pools accumulated env-side, harvested as res_diag per rollout plus a
+    # top-level aggregate; metrics_contract flips to "d048h_resdiag")
+    ap.add_argument("--res-stats", action="store_true",
+                    help="D048h: accumulate per-step residual execution stats "
+                    "(sat_frac/near_sat/quantiles/diff) and store res_diag "
+                    "per rollout + top-level aggregate")
     # D048f: B test impulse magnitude (N). Default 500 = historical value;
     # the stage-0 term-branch probe passes larger values to force falls, so
     # the term/trunc terminal-stats path is actually exercised (an
@@ -596,6 +611,35 @@ def rollout(
     }
 
 
+def _agg_res_diag(diags):
+    """D048h: cross-rollout mean of per-rollout res_diag blocks.
+
+    Scalars (and quantiles) are averaged across rollouts; res_joint_mean is
+    averaged element-wise; sub-blocks missing in every rollout stay None.
+    """
+    def _mean(xs):
+        xs = [x for x in xs if x is not None]
+        return round(sum(xs) / len(xs), 6) if xs else None
+
+    if not diags:
+        return None
+    agg = {"steps": _mean([d.get("steps") for d in diags])}
+    for k in ("res_raw_abs", "res_dq_abs", "res_step_abs"):
+        blocks = [b for b in (d.get(k) for d in diags) if isinstance(b, dict)]
+        agg[k] = (
+            {kk: _mean([b[kk] for b in blocks]) for kk in blocks[0]}
+            if blocks
+            else None
+        )
+    agg["sat_frac"] = _mean([d.get("sat_frac") for d in diags])
+    agg["near_sat_frac"] = _mean([d.get("near_sat_frac") for d in diags])
+    jm = [x for x in (d.get("res_joint_mean") for d in diags) if x]
+    agg["res_joint_mean"] = (
+        [round(sum(col) / len(col), 6) for col in zip(*jm)] if jm else None
+    )
+    return agg
+
+
 def main():
     cli = build_args().parse_args()
 
@@ -626,6 +670,7 @@ def main():
         AptFlatG1VanillaEnv,
         AptFlatG1VanillaEnvCfg,
     )
+    from apt_g1.isaac import ckpt_identity
     from apt_g1.isaac.terrain_cfg import make_terrain_importer_cfg
     from apt_g1.isaac.ppo_core import AptPPOPolicy
 
@@ -695,6 +740,7 @@ def main():
     cfg.token_stats = cli.token_stats
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
+    cfg.res_stats = cli.res_stats  # D048h: env-side residual stat accumulation
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
     cfg.to_ref = cli.to_ref
@@ -715,6 +761,30 @@ def main():
         env = AptFlatG1VanillaEnv(cfg)
     else:
         env = AptFlatG1Env(cfg)
+    # D048h: asset md5s computed ONCE here (identity expect + cfg 落盘共用)
+    vae_md5 = ckpt_identity.file_md5(cli.latent_vae_path)
+    decoder_md5 = ckpt_identity.file_md5(cli.decoder_path)
+    # D048h: eval-side expect for the identity check. Only keys derivable
+    # unambiguously from the eval flags are fed in -- a missing expect key is
+    # skipped by verify (no false positives in exotic mode combos).
+    ident_expect = {
+        "res_scale": cli.res_scale,
+        "res_clip": cli.res_clip,
+        "latent_residual": cli.latent_residual,
+        "obs_dim": int(cfg.observation_space),
+        "vae_md5": vae_md5,
+        "decoder_md5": decoder_md5,
+    }
+    if cli.latent_mode:
+        # train side: action_space = 45 (z16+res29) with residual, else 16
+        ident_expect["action_space"] = 45 if cli.latent_residual else 16
+    elif cli.token_mode:
+        ident_expect["action_space"] = 64
+    elif cli.decft or cli.env == "vanilla":
+        ident_expect["action_space"] = 29
+
+    ident_status = "legacy"  # "matched" | "legacy" (no identity block to check)
+    ckpt_ident = None
     if cli.init_policy:
         # 未训练初始化对照：直接用按现有旗标新构造的 policy（确定性模式照旧）
         policy.eval()
@@ -722,14 +792,35 @@ def main():
               "(no checkpoint loaded)")
     else:
         try:
-            policy.load_state_dict(torch.load(cli.checkpoint, map_location="cuda:0"))
+            sd, ckpt_ident = ckpt_identity.load_ckpt(
+                cli.checkpoint, map_location="cuda:0"
+            )
+            policy.load_state_dict(sd)
             policy.eval()
-            print("[eval] loaded checkpoint", cli.checkpoint)
         except Exception as exc:
             # 加载失败（文件损坏/权重结构不符/资产错配）= 显式失败，绝不
             # 退回随机模型继续跑。
             print(f"[eval] FATAL: checkpoint load failed: {exc!r}", flush=True)
             os._exit(3)
+        print("[eval] loaded checkpoint", cli.checkpoint)
+        if ckpt_ident is not None:
+            # D048h：配置身份核验——训练/评测失配（res_scale 0.4 vs 0.15 类
+            # 事故）在跑任何一局之前拒绝（exit 6）。
+            mismatch = ckpt_identity.verify_ckpt_identity(ckpt_ident, ident_expect)
+            if mismatch:
+                for m in mismatch:
+                    print(f"[eval] FATAL: ckpt identity mismatch: {m}", flush=True)
+                os._exit(6)
+            ident_status = "matched"
+            print(
+                "[eval] ckpt_identity matched: "
+                f"entry={ckpt_ident.get('entry')} it={ckpt_ident.get('it')} "
+                f"git_head={ckpt_ident.get('git_head')}",
+                flush=True,
+            )
+        else:
+            print("[eval] WARNING: ckpt_identity: legacy（无身份块，跳过配置核验）",
+                  flush=True)
 
     # initial obs
     env._vanilla = cli.env == "vanilla"
@@ -746,6 +837,20 @@ def main():
           f"(episode_length_s={cfg.episode_length_s}, "
           f"num_rollouts={cli.num_rollouts})", flush=True)
     seeds = list(range(cli.seed, cli.seed + cli.num_rollouts))
+
+    # D048h: --res-stats wrapper -- reset the env-side accumulators at rollout
+    # start, harvest res_diag at rollout end (executed-residual口径; the
+    # noaux/aux_zero zero-residual control arms accumulate all-zero stats,
+    # which is exactly the paired diagnostic)
+    res_stats_on = cli.res_stats and hasattr(env, "reset_res_stats")
+
+    def do_rollout(*args, **kw):
+        if res_stats_on:
+            env.reset_res_stats()
+        r = rollout(*args, **kw)
+        if res_stats_on:
+            r["res_diag"] = env.pop_res_stats()
+        return r
 
     tests = set(cli.tests.split(","))
     out = {"A_walk60": {}, "B_disturbance": {}, "C_switch": {}, "D_jump": {}}
@@ -777,7 +882,7 @@ def main():
                         np.random.default_rng(2000 + seed).uniform(0.0, cli.a_cmd_vx)
                     )
                     sched = [(vx_cmd, 0.0, 60)]
-                r = rollout(env, policy, sched, seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
+                r = do_rollout(env, policy, sched, seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                 if cli.cmd_sample:
                     r["cmd_vx"] = sched[0][0]
                 out["A_walk60"][key][f"seed{seed}"] = r
@@ -798,7 +903,7 @@ def main():
             for dname, dvec in dirs.items():
                 for seed in seeds:
                     imp = [(500, dvec), (1250, dvec)]
-                    r = rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
+                    r = do_rollout(env, policy, [(0.8, 0.0, 45)], seed, use_aux, impulses=imp, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                     out["B_disturbance"][key][f"{dname}_seed{seed}"] = r
                     print(f"B {dname} {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']}", flush=True)
 
@@ -814,7 +919,7 @@ def main():
             out["C_switch"][key] = {}
             use_aux = key != "noaux"
             for seed in seeds:
-                r = rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
+                r = do_rollout(env, policy, [(vx, vy, s) for vx, vy, s in sched], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                 out["C_switch"][key][f"seed{seed}"] = r
                 print(f"C switch {key} seed{seed} mode={mode} done={r['completed']} fall={r['fall_step']} h_min={r['h_min']}", flush=True)
 
@@ -830,7 +935,7 @@ def main():
             out["D_jump"][key] = {}
             use_aux = key != "noaux"
             for seed in seeds:
-                r = rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
+                r = do_rollout(env, policy, [(jump_cmd, 20)], seed, use_aux, phase_policy=pp, phase_zero=pz, aux_zero=az, latent_policy=lp, yaw_bias=cli.yaw_bias_comp, sample=cli.sample, contract=cli.contract)
                 out["D_jump"][key][f"seed{seed}"] = r
                 print(f"D jump {key} seed{seed} mode={mode} done={r['completed']} h_min={r['h_min']} vx={r['vx']}", flush=True)
 
@@ -848,8 +953,9 @@ def main():
     out["res_scale"] = cli.res_scale
     # D048f 阶段0：指标扩展标注 + 冻结任务门常量落盘（评测自描述，判读方
     # 不必回查文档；门值来自 DS_CONTINUOUS_EXECUTION_PLAN §5，先于候选
-    # 结果冻结）。
-    out["metrics_contract"] = "d048f_stage0"
+    # 结果冻结）。D048h --res-stats 开启时翻转为 resdiag 契约（默认路径
+    # 保持 "d048f_stage0" 不变）。
+    out["metrics_contract"] = "d048h_resdiag" if cli.res_stats else "d048f_stage0"
     out["task_gate_flat04"] = {
         "cmd_vx": 0.4,
         "window_s": 20,
@@ -860,6 +966,39 @@ def main():
         "yaw_err_abs_max_deg": 15.0,
         "upright_min": 0.90,
     }
+    # D048h：ckpt 身份核验结果落盘（matched = 新格式 ckpt 且 expect 全匹配；
+    # legacy = 旧格式纯 state_dict / --init-policy，未做核验）。checks 左半 =
+    # eval 侧期望值（与 ident_expect 同源），it/entry/git_head = ckpt 侧身份
+    # （legacy 时 None）。失配根本走不到这里（已在加载后立即 exit 6）。
+    out["ckpt_identity"] = {
+        "status": ident_status,
+        "checkpoint": cli.checkpoint,
+        "checks": {
+            "res_scale": cli.res_scale,
+            "res_clip": cli.res_clip,
+            "latent_residual": cli.latent_residual,
+            "obs_dim": int(cfg.observation_space),
+            "action_space": ident_expect.get("action_space"),
+            "vae_md5": vae_md5,
+            "decoder_md5": decoder_md5,
+            "it": (ckpt_ident or {}).get("it"),
+            "entry": (ckpt_ident or {}).get("entry"),
+            "git_head": (ckpt_ident or {}).get("git_head"),
+        },
+    }
+    if res_stats_on:
+        # D048h：跨局聚合的残差执行统计（各标量对局取均值；分位取均值近似、
+        # sat/near_sat_frac 均值、res_joint_mean 逐关节均值）
+        _diags = [
+            r["res_diag"]
+            for grp in out.values()
+            if isinstance(grp, dict)
+            for cell in grp.values()
+            if isinstance(cell, dict)
+            for r in cell.values()
+            if isinstance(r, dict) and isinstance(r.get("res_diag"), dict)
+        ]
+        out["res_diag"] = _agg_res_diag(_diags)
     # D048f ⑧：配置身份落盘（消费了什么就记什么；VAE/代码的 md5 让"资产
     # 身份一致"可以事后核验，不依赖启动脚本注释）。
 
@@ -895,13 +1034,15 @@ def main():
         "checkpoint": cli.checkpoint,
         "res_scale": cli.res_scale,
         "res_clip": cli.res_clip,
+        "res_stats": cli.res_stats,
         "latent_mode": cli.latent_mode,
         "latent_residual": cli.latent_residual,
         "latent_speed_bins": cli.latent_speed_bins,
         "latent_dir_bins": cli.latent_dir_bins,
         "latent_vae_path": cli.latent_vae_path,
-        "vae_md5": _fmd5(cli.latent_vae_path),
+        "vae_md5": vae_md5,  # D048h: computed once at the load block
         "decoder_path": cli.decoder_path,
+        "decoder_md5": decoder_md5,  # D048h
         "terrain": cli.terrain,
         "impulse_n": cli.impulse_n,
         "code_md5": code_md5,

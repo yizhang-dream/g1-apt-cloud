@@ -131,9 +131,10 @@
 | 脚本 | 角色 | 用途 |
 |---|---|---|
 | `__init__.py` | MODULE | 包初始化 |
-| `apt_flat_env.py` | MODULE | Isaac Lab DirectRLEnv 平坦地 APT 环境（G1） |
+| `apt_flat_env.py` | MODULE | Isaac Lab DirectRLEnv 平坦地 APT 环境（G1）；**D048h 增 `cfg.res_stats`（默认 False=零开销）+ `reset_res_stats()/pop_res_stats()`：按实际执行残差（冻结置零后、clamp 前）逐步累积 |res| 分位池/sat/near_sat/逐步差分/分关节均值，`pop` 收割并清零（eval `--res-stats` 逐局调用）** |
 | `apt_flat_env_vanilla.py` | MODULE | Vanilla RL 基线环境（无 SONIC 先验，E9/E11 对照） |
 | `batched_router.py` | MODULE | 向量化相位路由器 encoder |
+| `ckpt_identity.py` | MODULE | **D048h ckpt 配置身份信封**：`build_identity/save_ckpt/load_ckpt/verify_ckpt_identity/file_md5`——新格式 ckpt = `{"state_dict","ckpt_identity"}`（format=1：res_scale/res_clip/res_l2/res_freeze_steps/latent_mode/latent_residual/obs·action 维度/rew_contract/env_sha256/vae_md5/decoder_md5/git_head/it/entry/timestamp）；`load_ckpt` 兼容旧纯 state_dict（返回 `(sd,None)`）；`verify` 逐键比较、expect 缺键跳过不误报；只依赖 torch+stdlib（无 isaaclab）。train 三保存点写身份块，eval 加载时失配即 exit 6（D048h） |
 | `elevation_map.py` | MODULE | 特权局部 elevation-map 观测 |
 | `sonic_decoder_torch.py` | MODULE | 纯 torch 重实现的 SONIC 解码器（ONNX→torch） |
 | `sonic_decoder_isaac.py` | MODULE | Isaac Lab 批量化 SONIC 解码器（ONNX Runtime） |
@@ -141,8 +142,8 @@
 | `token_window_vae.py` | MODULE | token VAE 三件：**E27 PhaseTokenVAE + E31 SpeedPhaseTokenVAE（+速度条件）+ E35 DirSpeedPhaseTokenVAE（+方向条件）**，冻结解码器供 RL |
 | `decft_policy.py` | MODULE | **E44 解码器微调策略**：E39 z头 → 冻结 VAE → token → **可训练 SONIC 解码器** → 29-d 关节目标动作（PPO 评分梯度直达解码器 + 官方解码器漂移正则） |
 | `ppo_core.py` | MODULE | 向量化 PPO（含论文式训练附加项；E44 增加 `decoder_ft` 分支与 `decoder_reg_coef`；**E49 修复：GAE 边界 done|trunc 都切断递推且不自举 + aux_executed=False 时 aux 不进 log_prob/entropy + 真 epoch 循环 + approx_kl/clip_frac/act_std 指标，stats 键 `kl` 更名 `kl_prior`**） |
-| `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略；TO42 修订 v4 增 `--ppo-minibatch`（默认 512 = 既有行为不变；2048envs 操作点用 4096）；**E49 增 `--token-mode/--token-phase-obs/--token-alpha/--token-bound/--token-stats`（直出 64d token，无 VAE）；E49 修复轮增 `--ppo-epochs`（默认 1 = 历史单遍）+ latent/token/to42 置 `aux_executed=False` + vx 拆 fwd（机体系带符号）/spd（模长，hist `vx` 键不变）双口径 + hist 增 approx_kl/clip_frac/act_std + `policy_it_0.pt` 初始快照** |
-| `eval_apt_isaac.py` | 入口 | A/B/C/D 评测；**E49 增 token-mode 同款旗标；E49 修复轮增 `--init-policy`（未训练初始化对照，`--checkpoint` 随之转 optional）；D048f 阶段0（metrics_contract=d048f_stage0）增：任务成功指标（vx_rmse/yaw_err_int/lat_max/fwd_max/survived_budget/task_success 冻结门）+逐局初态指纹（md5 配对核验）+每 entry 命令刷新+显式失败纪律（缺/坏 ckpt、空结果非零退出，不退回随机模型）+`--impulse-n`（term 分支探针）** |
+| `train_apt_isaac.py` | 入口 | 训练 APT（相位路由器先验 + aux）策略；TO42 修订 v4 增 `--ppo-minibatch`（默认 512 = 既有行为不变；2048envs 操作点用 4096）；**E49 增 `--token-mode/--token-phase-obs/--token-alpha/--token-bound/--token-stats`（直出 64d token，无 VAE）；E49 修复轮增 `--ppo-epochs`（默认 1 = 历史单遍）+ latent/token/to42 置 `aux_executed=False` + vx 拆 fwd（机体系带符号）/spd（模长，hist `vx` 键不变）双口径 + hist 增 approx_kl/clip_frac/act_std + `policy_it_0.pt` 初始快照**；**D048h：三 ckpt 保存点（it_0/50it 阶梯/final）改 `ckpt_identity.save_ckpt` 带 ckpt_identity 配置身份块（git_head/env_sha256/rew_contract 与 train_log 同源复用，vae/decoder md5 资产加载后各算一次），`--resume` 兼容解包新格式** |
+| `eval_apt_isaac.py` | 入口 | A/B/C/D 评测；**E49 增 token-mode 同款旗标；E49 修复轮增 `--init-policy`（未训练初始化对照，`--checkpoint` 随之转 optional）；D048f 阶段0（metrics_contract=d048f_stage0）增：任务成功指标（vx_rmse/yaw_err_int/lat_max/fwd_max/survived_budget/task_success 冻结门）+逐局初态指纹（md5 配对核验）+每 entry 命令刷新+显式失败纪律（缺/坏 ckpt、空结果非零退出，不退回随机模型）+`--impulse-n`（term 分支探针）**；**D048h：ckpt 身份核验（新格式 ckpt 逐键比对 res_scale/res_clip/latent_residual/维度/vae·decoder md5，失配 exit 6 在跑局前拒绝；legacy WARNING 继续）+ `--res-stats`（env 侧残差执行统计逐局 res_diag 落盘 + 顶层聚合，metrics_contract=d048h_resdiag）+ out 新增 `ckpt_identity` 块与 cfg `decoder_md5` 键** |
 | `rollout_log_joints.py` | 入口 | **无相机 rollout → npz**（base 位姿 + 29 关节角，SONIC order，供 `replay_render_mujoco.py` 渲染） |
 | `eval_fast.py` | 入口 | 守护式评测（只跑请求的 A/B/C/D 段） |
 | `render_walk.py` | 渲染 | 从 APT Isaac 环境渲染短行走视频 |
@@ -152,6 +153,7 @@
 | `e49_smoke.py` | DEV | **E49 直出 token 模式不变量冒烟**（obs 维度 / decoder 收到的映射 token / 反馈槽=原始 a / B 臂 φ obs 逐位 / 初始动作统计；2026-09-05 登记） |
 | `e49_gae_test.py` | DEV | **E49 训练器修复确定性测试**（纯 torch CPU，无 isaaclab 依赖，仓库根 `PYTHONPATH=. python apt_g1/isaac/e49_gae_test.py`：朴素 GAE 对拍 / 手算边界小例 / done+trunc+last_value 切断不变性 / aux_executed=False 剔除不变量 / num_epochs step 计数 / approx_kl+clip_frac+kl_prior 指标 sanity；六用例全 PASS exit 0；2026-09-05 登记） |
 | `e49_kl_guard_test.py` | DEV | **E49-C KL 信任域守卫单测**（纯 torch CPU，无 isaaclab 依赖，仓库根 `PYTHONPATH=. python apt_g1/isaac/e49_kl_guard_test.py`：解析对角高斯 KL 公式 vs torch.distributions 对拍 / kl_guard=None 默认关闭零回归 / 极小阈值全回滚+连续回滚断路 / 巨阈值探针形态零回滚 / grow lr 回复路径 / expl_var 口径；六用例全 PASS exit 0；2026-09-06 登记） |
+| `test_ckpt_identity.py` | DEV | **D048h ckpt 身份信封单测**（纯 torch+tempfile，无 isaaclab 依赖，**服务器 .venv_isaac 运行**：仓库根 `PYTHONPATH=. python apt_g1/isaac/test_ckpt_identity.py`：带身份块存取往返 / verify 全匹配空清单 / 单键失配检出（res_scale/res_clip/latent_residual/obs·action 维度/vae·decoder md5，无误报键）/ legacy 纯 state_dict→(sd,None) / 损坏文件异常路径（eval exit 3 对应）/ expect 缺键不误报 / file_md5 稳定+缺失容错；七用例全 PASS exit 0；2026-09-09 登记） |
 | `dbg_path.py` | DEV | 诊断 sys.path / PYTHONPATH |
 | `server_apt_flat_env.py` | **FORK** | `apt_flat_env.py` 的服务端分叉（同源，body 已分叉） |
 | `server_train_apt_isaac.py` | **FORK** | `train_apt_isaac.py` 的服务端分叉 |

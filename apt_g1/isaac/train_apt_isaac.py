@@ -212,6 +212,7 @@ def main():
         AptFlatG1VanillaEnv,
         AptFlatG1VanillaEnvCfg,
     )
+    from apt_g1.isaac import ckpt_identity
     from apt_g1.isaac.ppo_core import AptPPOPolicy, PPOTrainer
     from apt_g1.isaac.terrain_cfg import make_terrain_importer_cfg
 
@@ -372,6 +373,55 @@ def main():
             # （action = [z, res]，两颗头都执行），必须保持 True 让残差头
             # 收到策略梯度
             policy.aux_executed = False
+
+    # D048h: checkpoint identity (embedded in every ckpt via save_ckpt; the
+    # eval side rejects a train/eval misconfiguration with exit 6 BEFORE the
+    # first rollout). Asset md5s computed once here (the env has loaded the
+    # vae/decoder by now); git_head / env_sha256 / rew_contract use the same
+    # recipe as the train_log keys below and are SHARED with them (single
+    # source, the two records can never diverge).
+    rew_contract = getattr(env, "REW_CONTRACT_VER", 1)
+    try:
+        env_sha256 = hashlib.sha256(
+            Path(inspect.getfile(type(env))).read_bytes()
+        ).hexdigest()
+    except Exception:
+        env_sha256 = ""
+    try:
+        _g = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        git_head_v = _g.stdout.strip() if _g.returncode == 0 else ""
+    except Exception:
+        git_head_v = ""
+    ident_base = ckpt_identity.build_identity(
+        entry=out_dir.name,
+        it=0,
+        res_scale=cfg.res_scale,
+        res_clip=cfg.res_clip,
+        res_l2=cfg.res_l2_scale,
+        res_freeze_steps=cfg.res_freeze_steps,
+        latent_mode=cfg.latent_mode,
+        latent_residual=cfg.latent_residual,
+        action_space=cfg.action_space,
+        obs_dim=cfg.observation_space,
+        rew_contract=rew_contract,
+        env_sha256=env_sha256,
+        vae_md5=ckpt_identity.file_md5(cli.latent_vae_path),
+        decoder_md5=ckpt_identity.file_md5(cli.decoder_path),
+        git_head=git_head_v,
+    )
+
+    def _ident(it: int) -> dict:
+        # per-save identity = shared config block with the iteration pinned
+        d = dict(ident_base)
+        d["it"] = int(it)
+        return d
+
     latent_prior_mean = None
     if cli.latent_mode and cli.latent_kl_prior == "walk":
         zw = np.load(str(Path(cli.latent_vae_path).parent / "z_walk.npy"))
@@ -403,7 +453,11 @@ def main():
     )
     start_it = 0
     if cli.resume:
-        sd = torch.load(cli.resume, map_location="cuda:0")
+        # D048h: ckpts carry the identity envelope -- unwrap it here (legacy
+        # bare state_dicts also load, identity side is ignored on resume)
+        sd, _resume_ident = ckpt_identity.load_ckpt(
+            cli.resume, map_location="cuda:0"
+        )
         if cli.decft:
             # partial warm start: keep encoder/z-head/critic from the E39
             # checkpoint; decoder stays at official init, aux heads are dropped
@@ -426,7 +480,9 @@ def main():
     # E49：未训练初始化对照用的 iter-0 初始权重快照（resume 时 start_it>0，
     # 原始 init 已不存在，不重复落盘）
     if start_it == 0:
-        torch.save(policy.state_dict(), out_dir / "policy_it_0.pt")
+        ckpt_identity.save_ckpt(
+            out_dir / "policy_it_0.pt", policy.state_dict(), _ident(0)
+        )
 
     rollout = cli.rollout
     T, N, D = rollout, env.num_envs, cfg.observation_space
@@ -525,24 +581,10 @@ def main():
     # D048c：版本身份三键（rew_contract / env 源 sha256 / git HEAD）。
     # 旧日志无这三键 = v1 身份（heading 双旋转 + 位移窗口差分），不回刷。
     # sha256 为跨端锚（CVGL 执行目录非 git 仓时 git_head 记空串）。
-    hist["rew_contract"] = getattr(env, "REW_CONTRACT_VER", 1)
-    try:
-        hist["env_sha256"] = hashlib.sha256(
-            Path(inspect.getfile(type(env))).read_bytes()
-        ).hexdigest()
-    except Exception:
-        hist["env_sha256"] = ""
-    try:
-        _g = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).parent,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        hist["git_head"] = _g.stdout.strip() if _g.returncode == 0 else ""
-    except Exception:
-        hist["git_head"] = ""
+    # D048h：取值逻辑上移到 ckpt 身份块构造处，这里只复用同一份值。
+    hist["rew_contract"] = rew_contract
+    hist["env_sha256"] = env_sha256
+    hist["git_head"] = git_head_v
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
 
@@ -827,13 +869,15 @@ def main():
                 )
         if (it + 1) % 50 == 0 or it == iters_run - 1:
             ckpt = out_dir / f"policy_it_{it + 1}.pt"
-            torch.save(policy.state_dict(), ckpt)
+            ckpt_identity.save_ckpt(ckpt, policy.state_dict(), _ident(it + 1))
             with open(out_dir / "train_log.json", "w") as f:
                 json.dump(hist, f)
 
     with open(out_dir / "train_log.json", "w") as f:
         json.dump(hist, f)
-    torch.save(policy.state_dict(), out_dir / "policy_final.pt")
+    ckpt_identity.save_ckpt(
+        out_dir / "policy_final.pt", policy.state_dict(), _ident(iters_run)
+    )
     print("saved", out_dir)
     os._exit(0)
 

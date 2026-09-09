@@ -214,6 +214,11 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # working controller first; the residual is only freed afterwards --
     # ReSkill-style residual on top of a working base policy).
     res_freeze_steps: int = 0
+    # D048h: residual execution statistics (eval diagnostics only; off by
+    # default = zero overhead and bit-identical behavior). Accumulated per
+    # control step from the EXECUTED residual (post-freeze zeroing, pre-clamp)
+    # -- harvested via pop_res_stats(), see eval_apt_isaac --res-stats.
+    res_stats: bool = False
     # E32: heading/velocity-direction reward. yaw_scale multiplies the base
     # track_yaw term; heading_scale adds exp(-(vy/vx vs cmd heading)^2)-style
     # alignment reward to fight the high-speed yaw drift E31 showed.
@@ -528,6 +533,11 @@ class AptFlatG1Env(DirectRLEnv):
         self._aux_rate = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
         self._last_res = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
+        # D048h: residual execution statistics accumulators (GPU-side pools,
+        # synced once at pop; see _accum_res_stats / reset_res_stats /
+        # pop_res_stats). Off by default (cfg.res_stats) -- zero overhead.
+        self._res_stats_on = bool(getattr(cfg, "res_stats", False))
+        self._reset_res_stats()
         # E49: 复位前终末状态观测（_reset_idx 在 super() 前截留），惰性分配
         self._final_obs = None
         # D048c: 复位前终末水平位置（_reset_idx 在 super() 前截留，每次
@@ -807,6 +817,102 @@ class AptFlatG1Env(DirectRLEnv):
             q_des = q_des + self.cfg.res_scale * res_c
         return q_des
 
+    # ------------------------------------------------- residual stats (D048h)
+    def _reset_res_stats(self):
+        # per-rollout accumulators; quantile pools are lists of detached GPU
+        # tensors (eval runs 1/few envs x ~3k steps -> ~1e5 floats, cheap).
+        # Counters stay GPU scalars so the hot loop never syncs.
+        dev = self.device
+        self._rs_pool = []       # |res| raw (pre-clamp), per step (N, 29)
+        self._rs_dq_pool = []    # |res_scale * clamp(res)| executed, per step
+        self._rs_step_pool = []  # |res_t - res_{t-1}| raw, per step (t0 skipped)
+        self._rs_prev = None
+        self._rs_abs_sum = torch.zeros(29, dtype=torch.float32, device=dev)
+        self._rs_rows = torch.zeros((), dtype=torch.float32, device=dev)
+        self._rs_cnt = torch.zeros((), dtype=torch.float32, device=dev)
+        self._rs_sat = torch.zeros((), dtype=torch.float32, device=dev)
+        self._rs_near = torch.zeros((), dtype=torch.float32, device=dev)
+        self._rs_steps = 0
+
+    def _accum_res_stats(self, res):
+        # res = the EXECUTED raw residual (after freeze zeroing, before clamp;
+        # frozen steps contribute zeros -- executed-value口径)
+        r = res.detach()
+        if self._rs_prev is not None:
+            self._rs_step_pool.append((r - self._rs_prev).abs())
+        self._rs_prev = r
+        a = r.abs()
+        clip = float(self.cfg.res_clip)
+        self._rs_pool.append(a)
+        self._rs_dq_pool.append(
+            (torch.clamp(r, -clip, clip) * float(self.cfg.res_scale)).abs()
+        )
+        self._rs_abs_sum += a.sum(dim=0)
+        self._rs_rows += a.shape[0]
+        self._rs_cnt += a.numel()
+        self._rs_sat += (a >= clip).sum()
+        self._rs_near += (a >= 0.9 * clip).sum()
+        self._rs_steps += 1
+
+    def reset_res_stats(self):
+        """D048h: clear residual execution stats (call at rollout start)."""
+        self._reset_res_stats()
+
+    def pop_res_stats(self):
+        """D048h: harvest + clear the residual execution statistics.
+
+        Returns {res_raw_abs:{mean,p50,p90,p99,max}, res_dq_abs:{mean,p90,max},
+        res_step_abs:{mean,p90}, sat_frac, near_sat_frac,
+        res_joint_mean:[29], steps}; an all-None block when no samples were
+        accumulated (res_stats off / zero steps).
+        """
+        empty = {
+            "res_raw_abs": None,
+            "res_dq_abs": None,
+            "res_step_abs": None,
+            "sat_frac": None,
+            "near_sat_frac": None,
+            "res_joint_mean": None,
+            "steps": 0,
+        }
+        if self._rs_steps == 0 or not self._rs_pool:
+            self._reset_res_stats()
+            return empty
+        raw = torch.cat(self._rs_pool, dim=0).flatten()
+        dq = torch.cat(self._rs_dq_pool, dim=0).flatten()
+        qs = torch.tensor([0.5, 0.9, 0.99], dtype=torch.float32, device=raw.device)
+        raw_q = torch.quantile(raw, qs)
+        cnt = float(self._rs_cnt)
+        out = {
+            "res_raw_abs": {
+                "mean": round(float(raw.mean()), 6),
+                "p50": round(float(raw_q[0]), 6),
+                "p90": round(float(raw_q[1]), 6),
+                "p99": round(float(raw_q[2]), 6),
+                "max": round(float(raw.max()), 6),
+            },
+            "res_dq_abs": {
+                "mean": round(float(dq.mean()), 6),
+                "p90": round(float(torch.quantile(dq, 0.9)), 6),
+                "max": round(float(dq.max()), 6),
+            },
+            "res_step_abs": None,
+            "sat_frac": round(float(self._rs_sat) / cnt, 6),
+            "near_sat_frac": round(float(self._rs_near) / cnt, 6),
+            "res_joint_mean": [
+                round(float(v), 6) for v in (self._rs_abs_sum / self._rs_rows)
+            ],
+            "steps": self._rs_steps,
+        }
+        if self._rs_step_pool:
+            st = torch.cat(self._rs_step_pool, dim=0).flatten()
+            out["res_step_abs"] = {
+                "mean": round(float(st.mean()), 6),
+                "p90": round(float(torch.quantile(st, 0.9)), 6),
+            }
+        self._reset_res_stats()
+        return out
+
     # --------------------------------------------------------------- RL API
     def _pre_physics_step(self, actions: torch.Tensor):
         self._sample_disturbance()
@@ -885,6 +991,12 @@ class AptFlatG1Env(DirectRLEnv):
             self._last_aux = aux.detach()
             if res is not None:
                 self._last_res = res.detach()
+                if self._res_stats_on:
+                    # D048h: executed-value口径 -- hook AFTER the freeze
+                    # zeroing above, so frozen steps contribute zeros and the
+                    # pool holds the pre-clamp raw res (the clamp mapping is
+                    # applied at pop time for res_dq)
+                    self._accum_res_stats(res)
         self._aux_rate = self._last_aux - self._prev_aux
         self._prev_aux = self._last_aux
         self._actions = actions.clone()
