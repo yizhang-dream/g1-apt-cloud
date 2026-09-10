@@ -62,6 +62,15 @@ G-1 的闭合实验（策略自主 gait 选择，论文同构 2Hz+0.5s 锁）：
   获证；均不过 → 表示层候选收窄至连续条件/语料量程。
 - 预算：2×200it（D048i 配方逐字）。正式预注册待 D048p/D048q 结果后落
   DS_CONTINUOUS_EXECUTION_PLAN 新节（§5i），点火时点按本轮 owner 授权裁量。
+- **实现锚点（2026-09-10 深夜核验）**：骨架 80% 现成——env 已有 `To42Gate`
+  （apt_g1/isaac/to42_gate.py，`lsel` 模式=策略 sel_bit 驱动 selector +
+  hold_steps 锁存，默认 25 步 @50Hz = 0.5s，与论文 gait 锁定节律逐字同构，TO42 线
+  遗产）；vb 消费点已分三路（to42 selector > 自然 bucketize > force 覆写，
+  apt_flat_env.py `_compute_q_des`）；ppo_core 已有离散 gate 头先例
+  （gate_logits Linear + kl_categorical_reverse）。臂 b 增量 =
+  to42_n_sel 2→3（vb2 入选）+ sel bit 扩维（1 bit→2 logits softmax 三档，
+  或沿用单 logit 双段阈值）+ 训练 to42_sel="lsel" 打开；观测侧沿用论文做法
+  （喂当前档 one-hot + 2Hz 门控布尔信号，eval `--use-2hz-gate` 既有）。
 
 ## 4. 更新日志
 
@@ -69,3 +78,9 @@ G-1 的闭合实验（策略自主 gait 选择，论文同构 2Hz+0.5s 锁）：
   （已闭合 6 / 本轮补 3——量程、连续性、db 方向轴）。依据：论文 Methods 精读 +
   D046b/D048l/D048m/D048n 证据链 + ppo_core/eval 接口核验（KL 系数、2Hz 门控
   对齐项确认）。
+- 2026-09-10 深夜：D048p/D048q 预注册落 §5h 并发射（commits fc75eee 代码 +
+  8b2016d 文档）。代码面：build_d048p_vb_edges_calib.py（均值目标校准搜索 +
+  自测 4/4）+ token_window_vae.py 运行时两类 decode vb_soft 软权重支持 +
+  eval --force-vbin-soft/--force-dbin 评测干预（默认关零变化）。执行中
+  （lab-ts 3060，watcher 后台：部署→标签→speedC 重训→G1'/G2' 18 局→Q1 软插值
+  36 局→Q2 db 48 局）。
