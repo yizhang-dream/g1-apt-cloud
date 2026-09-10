@@ -103,7 +103,6 @@ def _check_vb_from_policy(
     latent_mode: bool,
     latent_dir_bins: bool,
     latent_speed_bins: bool,
-    latent_residual: bool,
     to42_sel: str,
     latent_vae_n_bins: int,
 ) -> None:
@@ -112,21 +111,19 @@ def _check_vb_from_policy(
     tmp/d049_test 经 ast 提取本函数源码单测真身。vb_from_policy=False 时
     无条件放行（默认路径零变化）；True 时校验前置条件，全部硬报错不静默。
 
-    force_vbin/force_vbin_soft 与本旗标**可组合**（§5j b 臂 force 电池复测
-    语义）：force 只覆写 decode 的 vb 输入，策略照常出 w（进 obs 反馈与
-    日志统计），b 臂结构（obs/动作空间/vb_head）不变——优先级见
-    `_resolve_decode_vb_mode`。训练侧"vb 与 force 干预不混用"的单变量纪律
-    由 train CLI assert 把守（训练恒无 force 干预，cfg.force_vbin=-1）。
+    与 latent_residual **可组合**（§5j b 臂=D048i 配方逐字：z16+29d 残差
+    执行 + vb，动作 [z(16), res(29), vb_logits(3)]=48，切片位置见
+    `_vb_action_slice`）；plain latent 组合 = [z(16), aux(12), vb(3)]=31。
+    force_vbin/force_vbin_soft 亦可组合（force 电池复测：force 只覆写
+    decode 的 vb 输入，策略 w 照常进 obs 反馈与日志——优先级见
+    `_resolve_decode_vb_mode`）。训练侧"vb 与 force 干预不混用"的单变量
+    纪律由 train CLI assert 把守（训练恒无 force 干预）。
     """
     if not vb_from_policy:
         return
     if not latent_mode:
         raise ValueError(
             "vb_from_policy 骑在 latent decode 路径上（需 --latent-mode）")
-    if latent_residual:
-        raise ValueError(
-            "vb_from_policy 与 latent_residual 动作布局冲突"
-            "（[z,res(29)] vs [z(16),aux(12),vb_logits(3)]）")
     if not (latent_dir_bins or latent_speed_bins):
         raise ValueError(
             "vb_from_policy 需带 vb 条件的 decode 分支"
@@ -139,6 +136,16 @@ def _check_vb_from_policy(
         raise ValueError(
             "vb_from_policy 与 to42_sel 互斥"
             "（策略 softmax 连续软权重 vs 锁存离散选择状态机）")
+
+
+def _vb_action_slice(latent_residual: bool) -> slice:
+    """D049b：vb_logits 在动作向量中的切片位置（纯函数，numpy 级单测）。
+
+    latent_residual（D048i 配方）= [z(16), res(29), vb(3)] → slice(45, 48)；
+    plain latent = [z(16), aux(12), vb(3)]（aux 不执行，env 忽略中段）
+    → slice(28, 31)。res 消费（16:45）与 vb 消费解耦，各自独立切片。
+    """
+    return slice(45, 48) if latent_residual else slice(28, 31)
 
 
 def _resolve_decode_vb_mode(
@@ -367,14 +374,16 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     force_dbin: int = -1
 
     # D049b：连续 vb 软权重臂（策略选档主臂，DS_CONTINUOUS_EXECUTION_PLAN
-    # §5j）。True 时动作布局 = [z(16), aux(12), vb_logits(3)]（31 维；中段
-    # 12 维是策略 aux 头槽位，latent 模式 aux 不执行、env 忽略），末 3 维
-    # logits→softmax = 连续软权重 w=(N,3)，latent decode 每步以 vb_soft=w
-    # 消费（复用 D048q 的 vb_soft 通路，来源从评测干预改为策略动作）；自然
-    # 分桶 vb 仍计算但仅日志对照；obs 追加当前 w 反馈 3 维。默认 False =
-    # 行为/obs/action 空间与旧逐位一致。与 to42_sel/latent_residual 互斥
-    # （__init__ 经 _check_vb_from_policy 校验）；与 force_vbin/force_vbin_soft
-    # **可组合**（§5j b 臂 force 电池复测）：decode 优先级 force_vbin（硬档）
+    # §5j）。True 时动作末 3 维 = vb logits→softmax = 连续软权重 w=(N,3)，
+    # latent decode 每步以 vb_soft=w 消费（复用 D048q 的 vb_soft 通路，来源
+    # 从评测干预改为策略动作）；自然分桶 vb 仍计算但仅日志对照；obs 追加
+    # 当前 w 反馈 3 维。动作布局随模式（_vb_action_slice）：
+    # latent_residual（D048i 配方，§5j b 臂基线）= [z(16), res(29), vb(3)]=48；
+    # plain latent = [z(16), aux(12), vb(3)]=31（aux 不执行，env 忽略中段）。
+    # 默认 False = 行为/obs/action 空间与旧逐位一致。与 to42_sel 互斥
+    # （__init__ 经 _check_vb_from_policy 校验）；与 latent_residual 可组合
+    # （单变量链：a/b 两臂唯一自变量=vb 来源）；与 force_vbin/force_vbin_soft
+    # 可组合（§5j force 电池复测）：decode 优先级 force_vbin（硬档）
     # > force_vbin_soft（软混）> 策略 w > 自然分桶，force 覆写时 w 不进
     # decode 但 obs 反馈/日志照常（_resolve_decode_vb_mode）。
     vb_from_policy: bool = False
@@ -430,14 +439,14 @@ class AptFlatG1Env(DirectRLEnv):
                 raise ValueError(f"force_vbin_soft alpha 须 ∈[0,1]，收到 {_fvbs!r}")
         # D049b：vb_from_policy 前置校验。注意必须用传入参数 cfg
         # （DirectRLEnv 的 self.cfg 在 super().__init__ 内才赋值——3162292 教训）。
-        # force_vbin/force_vbin_soft 与本旗标可组合（§5j b 臂 force 电池）：
-        # decode 优先级见 _resolve_decode_vb_mode，策略 w 照常进 obs/日志。
+        # 与 latent_residual 可组合（D048i 配方）、与 force_vbin/soft 可组合
+        # （force 电池）：decode 优先级见 _resolve_decode_vb_mode，策略 w
+        # 照常进 obs/日志。
         _check_vb_from_policy(
             vb_from_policy=cfg.vb_from_policy,
             latent_mode=cfg.latent_mode,
             latent_dir_bins=cfg.latent_dir_bins,
             latent_speed_bins=cfg.latent_speed_bins,
-            latent_residual=cfg.latent_residual,
             to42_sel=cfg.to42_sel,
             latent_vae_n_bins=cfg.latent_vae_n_bins,
         )
@@ -1189,13 +1198,16 @@ class AptFlatG1Env(DirectRLEnv):
                 else:
                     res = None
                 if self.cfg.vb_from_policy:
-                    # D049b：动作 = [z(16), aux(12), vb_logits(3)]。中段 12 维
-                    # 是策略 aux 头槽位（latent 模式 aux 不执行，env 忽略）；
-                    # 末 3 维 logits 经 softmax 得连续软权重 w——softmax(logits)
-                    # 即策略的确定性 w（离散 sample 只进 PPO log_prob 簿记，
-                    # 不进 env），本步 decode 以 vb_soft=w 消费（见
-                    # _compute_q_des），obs 反馈用 _last_vb_w。
-                    self._vb_w = torch.softmax(actions[:, 28:31], dim=-1)
+                    # D049b：动作末 3 维 = vb_logits，softmax 得连续软权重 w
+                    # ——softmax(logits) 即策略的确定性 w（离散 sample 只进
+                    # PPO log_prob 簿记，不进 env），本步 decode 以 vb_soft=w
+                    # 消费（见 _compute_q_des），obs 反馈用 _last_vb_w。
+                    # 切片位置随模式（_vb_action_slice）：residual 配方
+                    # [z,res,vb]→45:48（vb 在 res 段之后，res 消费 16:45 与
+                    # vb 消费解耦）；plain [z,aux,vb]→28:31（aux 不执行，
+                    # env 忽略中段 12 维）。
+                    _vb_seg = actions[:, _vb_action_slice(self.cfg.latent_residual)]
+                    self._vb_w = torch.softmax(_vb_seg, dim=-1)
                     self._last_vb_w = self._vb_w.detach()
                 aux = torch.zeros(
                     self.num_envs, 12, dtype=torch.float32, device=self.device

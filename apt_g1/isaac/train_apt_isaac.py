@@ -100,14 +100,17 @@ def build_args():
     # steps so the z-head first learns a working controller on terrain.
     ap.add_argument("--res-freeze-steps", type=int, default=0)
     # D049b：连续 vb 软权重臂（DS_CONTINUOUS_EXECUTION_PLAN §5j 主臂）。动作
-    # [z(16), aux(12), vb_logits(3)] = 31 维，末 3 维 softmax=w 进 decode 的
-    # vb_soft；obs +3（w 反馈）。骑在 plain --latent-mode 上（需带 vb 条件的
-    # --latent-speed-bins/--latent-dir-bins 分支），与 residual/token/decft/
-    # gate-sel/to42 互斥（下方 assert + env __init__ 双层校验）
+    # 末 3 维 = vb_logits（softmax=w 进 decode 的 vb_soft）+ obs +3（w 反馈）。
+    # 骑在 --latent-mode 上（需带 vb 条件的 --latent-speed-bins/--latent-dir-bins
+    # 分支）；与 latent_residual **可组合**（§5j b 臂=D048i 配方逐字：
+    # [z(16), res(29), vb(3)]=48，唯一自变量=vb 来源），plain latent 组合
+    # = [z(16), aux(12), vb(3)]=31。与 token/decft/gate-sel/to42 互斥
+    # （下方 assert + env __init__ 双层校验）
     ap.add_argument("--vb-from-policy", action="store_true",
                     help="D049b: policy 3-dim vb logits -> softmax soft weights "
-                         "w consumed as decode vb_soft; action 31-dim, obs +3 "
-                         "(w feedback)")
+                         "w consumed as decode vb_soft; obs +3 (w feedback); "
+                         "action 48-dim with --latent-residual (D048i recipe), "
+                         "31-dim plain latent")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -344,10 +347,13 @@ def main():
             cfg.action_space = 16 + 29  # z(16) + full-joint residual(29)
             cfg.observation_space += 29  # residual action feedback
         if cli.vb_from_policy:
-            # D049b：动作 [z(16), aux(12), vb_logits(3)] = 31 维；obs +3
-            # （当前软权重 w 反馈）。只在旗标开时 bump，且与 env 的 obs/动作
-            # 组装同步（z_sweep hotfix3 教训：两侧必须同步，默认路径零变化）
-            cfg.action_space = 16 + 12 + 3
+            # D049b：动作末 3 维 vb_logits + obs +3（当前软权重 w 反馈）。
+            # 布局随模式（与 env _vb_action_slice 同步）：latent_residual
+            # （D048i 配方）= [z(16), res(29), vb(3)] = 48；plain latent =
+            # [z(16), aux(12), vb(3)] = 31。只在旗标开时 bump，且与 env 的
+            # obs/动作组装同步（z_sweep hotfix3 教训：两侧必须同步，默认
+            # 路径零变化）
+            cfg.action_space = (16 + 29 + 3) if cli.latent_residual else (16 + 12 + 3)
             cfg.observation_space += 3
     if cli.token_mode:
         assert not cli.latent_mode and not cli.decft and not cli.gate_sel, (
@@ -369,11 +375,13 @@ def main():
         cfg.observation_space += 2   # [sel_state, gate_bool]
     to42_active = cli.to42_sel != "off"
     if cli.vb_from_policy:
-        # D049b：前置组合校验（env __init__ 的 _check_vb_from_policy 是第二层）
-        assert cli.latent_mode and not cli.latent_residual and not cli.token_mode \
+        # D049b：前置组合校验（env __init__ 的 _check_vb_from_policy 是第二层）。
+        # latent_residual 可组合（§5j b 臂=D048i 配方，动作 48 维）；训练侧
+        # 与 force 干预不混用是自然成立的（train 无 force CLI，cfg 恒 -1）
+        assert cli.latent_mode and not cli.token_mode \
             and not cli.decft and not cli.gate_sel and cli.to42_sel == "off", (
-            "--vb-from-policy rides on plain --latent-mode, exclusive with "
-            "latent_residual/token/decft/gate_sel/to42")
+            "--vb-from-policy rides on --latent-mode, exclusive with "
+            "token/decft/gate_sel/to42 (latent_residual allowed: D048i recipe)")
         assert cli.latent_speed_bins or cli.latent_dir_bins, (
             "--vb-from-policy needs a vb-conditioned decode branch "
             "(--latent-speed-bins or --latent-dir-bins)")
@@ -746,8 +754,16 @@ def main():
                 else:
                     buf["phase"][t] = act["phase"].detach()
                     if cfg.latent_mode and cfg.latent_residual:
-                        # E48: [z(16), res(29)] -- the aux head IS the residual
+                        # E48/D049b：[z(16), res(29)]——aux 头即 29d 残差执行
+                        # 动作（aux_executed=True，进 ratio/log_prob 既有逻辑
+                        # 不动）；vb_from_policy 时再接末 3 维 vb_logits=48 维
+                        # （切片位置与 env _vb_action_slice 同步）
                         action = torch.cat([act["phase"], act["aux"]], dim=1)
+                        if cli.vb_from_policy:
+                            buf["vb"][t] = act["vb"].detach()
+                            action = torch.cat(
+                                [action, p_fwd["vb_logits"]], dim=1
+                            )
                     elif cfg.latent_mode:
                         if cli.vb_from_policy:
                             # D049b：[z(16), aux(12), vb_logits(3)] = 31 维。

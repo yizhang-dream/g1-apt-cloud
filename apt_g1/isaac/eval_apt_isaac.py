@@ -489,21 +489,28 @@ def rollout(
                         res = torch.zeros_like(act["aux"])
                     action = torch.cat([action, res], dim=1)
                 if getattr(env, "_vb_from_policy", False):
-                    # D049b：[z(16), aux(12), vb_logits(3)] = 31 维。中段 12
-                    # 维 = aux 头槽位（latent 模式 env 忽略）；vb 槽位放
-                    # forward 的原始 logits——env 侧 softmax 得确定性 w
-                    # （det/sample 模式同式，softmax(logits) 恒被执行，与
-                    # 策略离散采样索引解耦）
-                    action = torch.cat(
-                        [
-                            action,
-                            torch.zeros(
-                                1, 12, dtype=torch.float32, device=env.device
-                            ),
-                            p_fwd["vb_logits"],
-                        ],
-                        dim=1,
-                    )
+                    # D049b：vb 槽位放 forward 的原始 logits——env 侧 softmax
+                    # 得确定性 w（det/sample 模式同式，softmax(logits) 恒被
+                    # 执行，与策略离散采样索引解耦）。切片位置随模式（与 env
+                    # _vb_action_slice 同步）：residual 配方 [z,res,vb]=48
+                    # （vb 直接接 res 段后）；plain [z,aux,vb]=31（中段 12 维
+                    # aux 槽位 env 忽略）
+                    if getattr(env, "_latent_residual", False):
+                        action = torch.cat(
+                            [action, p_fwd["vb_logits"]], dim=1
+                        )
+                    else:
+                        action = torch.cat(
+                            [
+                                action,
+                                torch.zeros(
+                                    1, 12, dtype=torch.float32,
+                                    device=env.device,
+                                ),
+                                p_fwd["vb_logits"],
+                            ],
+                            dim=1,
+                        )
             else:
                 action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
                 action[:, 2:] = aux
@@ -888,11 +895,13 @@ def main():
         "decoder_md5": decoder_md5,
     }
     if cli.latent_mode:
-        # train side: action_space = 45 (z16+res29) with residual, else 16;
-        # D049b vb 臂 = 31（[z16, aux12, vb3]；b 臂与旧 ckpt 维度互不兼容是
-        # 预期，此处 + load_state_dict 双层显式报错不静默）
+        # train side: D048i residual 配方 = 45（z16+res29），+vb(D049b) = 48
+        # （[z16, res29, vb3]，§5j b 臂）；plain latent = 16，+vb = 31
+        # （[z16, aux12, vb3]）。b 臂与旧 ckpt 维度互不兼容是预期，此处 +
+        # load_state_dict 双层显式报错不静默
         ident_expect["action_space"] = (
-            31 if _vb_on else (45 if cli.latent_residual else 16)
+            (48 if _vb_on else 45) if cli.latent_residual
+            else (31 if _vb_on else 16)
         )
     elif cli.token_mode:
         ident_expect["action_space"] = 64
