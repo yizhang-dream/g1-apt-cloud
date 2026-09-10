@@ -198,13 +198,21 @@ def resolve_label_slices(cli, stems, frames_by_stem):
 
 
 def load_vae(cli, device):
-    """与 env latent 分支同源加载（token_window_vae 类 + strict=False）。"""
-    from apt_g1.isaac.token_window_vae import DirSpeedPhaseTokenVAE
-
-    vae = DirSpeedPhaseTokenVAE(n_vbins=cli.n_vbins, n_dbins=cli.n_dbins).to(device)
+    """D048r hotfix2：R2 重建须 encode→decode 全链，改用训练侧完整模型类
+    （token_window_vae 运行时镜像是 decode-only，strict=False 会丢 encoder
+    权重——首跑 AttributeError: no attribute 'encode'）。维度从 meta.json 读，
+    strict=True 全量加载防权重错位。"""
+    from train_token_vae_e39 import DirSpeedPhaseTokenVAE as FullVAE
+    import json as _json
+    meta_p = Path(cli.latent_vae_path).parent / "meta.json"
+    dims = _json.load(open(meta_p))
+    vae = FullVAE(token_dim=dims["token_dim"], window=dims["window"],
+                  latent_dim=dims["latent_dim"], hidden_dim=dims["hidden"],
+                  phase_dim=dims["phase_dim"], n_vbins=cli.n_vbins,
+                  n_dbins=cli.n_dbins).to(device)
     vae.load_state_dict(
         torch.load(cli.latent_vae_path, map_location=device),
-        strict=False,  # checkpoint 也带 encoder；decode 只需 decoder
+        strict=True,
     )
     vae.eval()
     pca_path = cli.pca_npz or str(Path(cli.latent_vae_path).parent / "pca.npz")

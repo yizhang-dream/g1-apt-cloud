@@ -180,6 +180,10 @@ def main():
     cfg.latent_vae_path = cli.latent_vae_path
     cfg.latent_vae_n_bins = cli.n_vbins
     cfg.latent_vae_n_dbins = cli.n_dbins
+    # D048r hotfix3：observation_space 由调用方按 eval 同式 bump（latent_mode
+    # 分支 _last_phase 2 -> 16 in observation = +14；缺省 91 与 latent obs 105
+    # 不符 → _get_observations assert 崩，smoke 首跑复现）
+    cfg.observation_space += 14
     cfg.action_space = 16                          # latent z only（train 同款）
     env = CemEnv(cfg)
     env._cem_db = int(cli.force_dbin)
