@@ -41,11 +41,17 @@ D039 实测（lab-ts 3060，10ep）：原始路径 52-54k samples/s > 全显存+
   tok[i-9..i]）绝不跨段，跨段窗口帧从 train/val 采样中剔除；缺省文件时
   行为与原始完全一致。训练结束额外保存 heads.pt（dir/speed head 权重，
   原版不落盘导致无法跨集评测；不影响 vae.pt 格式）。
+【2026-09-10 D048n 扩展（默认=原始行为，逐字节等价）】
+  --vb-npy PATH    外部 (N,) int64 vb 标签替代内部 vb=digitize(rate,edges) 赋值
+                   （N 断言+取值域检查；PCA/rate/pca.npz/dbin 计算与落盘全部
+                   照旧——env 依赖；vbin_meta.json 增写 label_source/label_md5；
+                   空=与现版行为完全一致，对照臂用）
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -146,6 +152,15 @@ def _build_optimizer(cls, params, use_fused: bool, **kw):
         return cls(params, **kw)
 
 
+def _md5_file(path: str) -> str:
+    """文件 md5（D048n --vb-npy 外部标签溯源用）。"""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="E39 dual-disentangled token VAE (perf flags 2026-09-05, D039-measured)")
@@ -167,6 +182,9 @@ def main():
                     help="每 N epochs 存 vae/heads 快照（0=关，只保留 best vae.pt）")
     ap.add_argument("--bin0-forward", action="store_true", default=False,
                     help="dbin_meta 标注 bin0=前向（D046 B4-lite 约定；默认 bin4=前向=exp_all3）")
+    ap.add_argument("--vb-npy", type=str, default="",
+                    help="D048n: 外部 (N,) int64 vb 标签文件，替代内部相位 rate 分位"
+                         " vb 赋值（PCA/rate/pca.npz/dbin 落盘照旧；空=原行为）")
     args = ap.parse_args()
     torch.manual_seed(0)
     np.random.seed(0)
@@ -185,6 +203,17 @@ def main():
     rw = rate[mode == 2]
     edges = np.quantile(rw, [1.0 / 3.0, 2.0 / 3.0])
     vb = np.clip(np.digitize(rate, edges), 0, 2).astype(np.int64)
+    _vb_extra = {}
+    if args.vb_npy:  # D048n: 外部 vb 标签（速度锚定），PCA/rate 路径照旧不动
+        vb = np.load(args.vb_npy).astype(np.int64)
+        assert len(vb) == len(tok), \
+            f"--vb-npy N mismatch: {len(vb)} != tokens {len(tok)}"
+        assert int(vb.min()) >= 0 and int(vb.max()) <= 2, \
+            "--vb-npy labels outside [0,2]"
+        _vb_extra = {"label_source": f"external:{args.vb_npy}",
+                     "label_md5": _md5_file(args.vb_npy)}
+        print(f"vb labels: external {args.vb_npy} md5={_vb_extra['label_md5']}",
+              flush=True)
     db = angle_bin
     print("v-bin counts", np.bincount(vb))
     print("d-bin counts", np.bincount(db, minlength=8))
@@ -192,7 +221,8 @@ def main():
              rate=float(np.abs(np.diff(phi[mode == 2])).mean()))
     with open(os.path.join(out_dir, "vbin_meta.json"), "w") as f:
         json.dump({"n_bins": 3, "edges": [float(e) for e in edges],
-                   "bin_counts": [int(c) for c in np.bincount(vb)]}, f, indent=1)
+                   "bin_counts": [int(c) for c in np.bincount(vb)], **_vb_extra},
+                  f, indent=1)
     with open(os.path.join(out_dir, "dbin_meta.json"), "w") as f:
         json.dump({"n_bins": 8,
                    "bin_counts": [int(c) for c in np.bincount(db, minlength=8)],
