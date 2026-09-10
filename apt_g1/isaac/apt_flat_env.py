@@ -333,14 +333,17 @@ class AptFlatG1Env(DirectRLEnv):
     REW_CONTRACT_VER = 2
 
     def __init__(self, cfg: AptFlatG1EnvCfg, render_mode: str | None = None, **kwargs):
-        # D048q: 评测干预旗标校验（默认值 () / -1 时零开销零变化；训练不受影响）
-        if self.cfg.force_vbin >= 0 and self.cfg.force_vbin_soft:
+        # D048q: 评测干预旗标校验（默认值 () / -1 时零开销零变化；训练不受影响）。
+        # 注意：DirectRLEnv 的 self.cfg 在 super().__init__ 内才赋值，此处必须用
+        # 传入参数 cfg（fc75eee 误用 self.cfg 在服务器 smoke 即 AttributeError，
+        # hotfix 见 d048pq_deploy.log，本提交为正式回修）。
+        if cfg.force_vbin >= 0 and cfg.force_vbin_soft:
             raise ValueError(
                 "force_vbin 与 force_vbin_soft 互斥（硬档覆写 vs 软混覆写）："
-                f"force_vbin={self.cfg.force_vbin}, "
-                f"force_vbin_soft={tuple(self.cfg.force_vbin_soft)}")
-        if self.cfg.force_vbin_soft:
-            _fvbs = tuple(self.cfg.force_vbin_soft)
+                f"force_vbin={cfg.force_vbin}, "
+                f"force_vbin_soft={tuple(cfg.force_vbin_soft)}")
+        if cfg.force_vbin_soft:
+            _fvbs = tuple(cfg.force_vbin_soft)
             if len(_fvbs) != 3:
                 raise ValueError(
                     f"force_vbin_soft 需 (a, b, alpha) 三元组，收到 {_fvbs!r}")

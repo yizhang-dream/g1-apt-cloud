@@ -43,7 +43,7 @@ except ImportError:
     from apt_g1.holdout_ident import derive_segment_sources
 
 HOME = os.path.expanduser("~")
-DEFAULT_INPUTS = f"{HOME}/ros2_data/apt_g1/data/g1_b4lite/vae_inputs_v21"
+DEFAULT_INPUTS = f"{HOME}/ros2_data/apt_g1/data/ds_bones/g1_b4lite/vae_inputs_v21"
 # builder v2 同款双目录解析（v1 npz/ 只读 + v2conv 新转换段；段级 npz_path 优先）
 DEFAULT_NPZ_DIRS = [f"{HOME}/ros2_data/apt_g1/data/ds_bones/g1_b4lite/npz",
                     f"{HOME}/ros2_data/apt_g1/data/ds_bones/g1_b4lite_v2conv/npz"]
