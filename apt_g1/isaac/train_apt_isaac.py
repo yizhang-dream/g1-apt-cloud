@@ -315,6 +315,7 @@ def main():
     cfg.latent_speed_bins = cli.latent_speed_bins
     cfg.latent_dir_bins = cli.latent_dir_bins
     cfg.latent_residual = cli.latent_residual
+    cfg.vb_from_policy = cli.vb_from_policy  # D049b hotfix：env 侧旗标接线（86c1057 漏传，b 臂 env 恒走自然桶致 obs 105!=cfg 108 断言，smoke Exp 10559 拦截；eval 侧 853 行本就有）
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
     cfg.res_l2_scale = cli.res_l2
