@@ -291,6 +291,18 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # 不改命令采样与奖励。训练必须保持 -1（自然分档）。
     force_vbin: int = -1
 
+    # D048q: 软速度档评测干预 (a, b, alpha)——decode 的 speed_embed 输入改软混
+    # alpha·E[a]+(1−alpha)·E[b]（a/b∈{0,1,2} 档对，alpha∈[0,1] 为 a 档权重）。
+    # 默认 () = 不干预（逐字节旧路径）；与 force_vbin 互斥（__init__ 校验）。
+    # vb 覆写优先级：force_vbin（硬档）> force_vbin_soft（软混）> 自然分桶
+    # ——互斥校验保证运行时只会命中其中一档。
+    force_vbin_soft: tuple = ()
+
+    # D048q: >=0 时覆写 VAE 方向档（decode 的 db 条件输入）。只在带 db 的
+    # decode 分支（latent_dir_bins）生效；无 db 的旧分支（latent_speed_bins）
+    # 遇到则 print 警告一次并忽略。默认 -1 = 自然方位分桶。
+    force_dbin: int = -1
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -321,6 +333,23 @@ class AptFlatG1Env(DirectRLEnv):
     REW_CONTRACT_VER = 2
 
     def __init__(self, cfg: AptFlatG1EnvCfg, render_mode: str | None = None, **kwargs):
+        # D048q: 评测干预旗标校验（默认值 () / -1 时零开销零变化；训练不受影响）
+        if self.cfg.force_vbin >= 0 and self.cfg.force_vbin_soft:
+            raise ValueError(
+                "force_vbin 与 force_vbin_soft 互斥（硬档覆写 vs 软混覆写）："
+                f"force_vbin={self.cfg.force_vbin}, "
+                f"force_vbin_soft={tuple(self.cfg.force_vbin_soft)}")
+        if self.cfg.force_vbin_soft:
+            _fvbs = tuple(self.cfg.force_vbin_soft)
+            if len(_fvbs) != 3:
+                raise ValueError(
+                    f"force_vbin_soft 需 (a, b, alpha) 三元组，收到 {_fvbs!r}")
+            _a, _b, _alpha = int(_fvbs[0]), int(_fvbs[1]), float(_fvbs[2])
+            if not (0 <= _a <= 2 and 0 <= _b <= 2):
+                raise ValueError(f"force_vbin_soft 档位 a/b 须 ∈{{0,1,2}}，收到 {_fvbs!r}")
+            if not (0.0 <= _alpha <= 1.0):
+                raise ValueError(f"force_vbin_soft alpha 须 ∈[0,1]，收到 {_fvbs!r}")
+        self._force_dbin_warned = False  # 无 db 分支的 force_dbin 警告只打一次
         self._sonic_default = _sonic_default_isaac()
         self._sonic_scale = _sonic_scale_isaac()
         self._body_names = G1_ISAACLab_ORDER
@@ -713,9 +742,24 @@ class AptFlatG1Env(DirectRLEnv):
                         vb = torch.full_like(vb, min(self.cfg.force_vbin, n - 1))
                     ang = torch.atan2(self._commands[:, 1], self._commands[:, 0])
                     db = torch.floor((ang + math.pi) / (2.0 * math.pi) * 8).long() % 8
+                    if self.cfg.force_dbin >= 0:
+                        # D048q 评测干预：强制方向档，覆写自然方位分桶
+                        db = torch.full_like(
+                            db, min(self.cfg.force_dbin, self.cfg.latent_vae_n_dbins - 1))
                     # decode 结果保持 GPU tensor 直送 _decoder_obs_parts，
                     # 去掉 .cpu().numpy() + from_numpy 的每步往返（数值逐位不变）
-                    tokens = self._vae.decode(phase, sc, vb, db).detach()
+                    if self.cfg.force_vbin_soft:
+                        # D048q 评测干预：软速度档（speed_embed 软混
+                        # alpha·E[a]+(1−alpha)·E[b]，dtype 取 embedding 权重、
+                        # device 对齐 vb；其余条件逐位不变）
+                        a, b, alpha = self.cfg.force_vbin_soft
+                        w = torch.zeros((vb.shape[0], n), device=vb.device,
+                                        dtype=self._vae.speed_embed.weight.dtype)
+                        w[:, int(a)] = float(alpha)
+                        w[:, int(b)] = 1.0 - float(alpha)
+                        tokens = self._vae.decode(phase, sc, vb, db, vb_soft=w).detach()
+                    else:
+                        tokens = self._vae.decode(phase, sc, vb, db).detach()
                 elif self.cfg.latent_speed_bins:
                     # E31: pick the speed bin from the commanded vx (bins
                     # trained on walk phase-rate thirds: slow/mid/fast).
@@ -729,7 +773,23 @@ class AptFlatG1Env(DirectRLEnv):
                     if self.cfg.force_vbin >= 0:
                         # D048l 评测干预：强制速度档，覆写自然/TO42 分档
                         vb = torch.full_like(vb, min(self.cfg.force_vbin, n - 1))
-                    tokens = self._vae.decode(phase, sc, vb).detach()
+                    if self.cfg.force_dbin >= 0 and not self._force_dbin_warned:
+                        # D048q：force_dbin 只在带 db 的 latent-dir-bins 分支
+                        # 生效；本分支 decode 无 db 输入，警告一次后忽略
+                        print("[D048q] WARN: force_dbin>=0 在无 db 的 "
+                              "latent-speed-bins decode 分支不受支持，已忽略"
+                              "（需 --latent-dir-bins）", flush=True)
+                        self._force_dbin_warned = True
+                    if self.cfg.force_vbin_soft:
+                        # D048q 评测干预：软速度档（软混构造与 dir-bins 分支同式）
+                        a, b, alpha = self.cfg.force_vbin_soft
+                        w = torch.zeros((vb.shape[0], n), device=vb.device,
+                                        dtype=self._vae.speed_embed.weight.dtype)
+                        w[:, int(a)] = float(alpha)
+                        w[:, int(b)] = 1.0 - float(alpha)
+                        tokens = self._vae.decode(phase, sc, vb, vb_soft=w).detach()
+                    else:
+                        tokens = self._vae.decode(phase, sc, vb).detach()
                 else:
                     tokens = self._vae.decode(phase, sc).detach()
                 if self.cfg.latent_cmd_phase_rate:

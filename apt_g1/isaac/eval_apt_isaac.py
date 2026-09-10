@@ -178,6 +178,16 @@ def build_args():
     # fed to decode (vb) instead of the natural bucketize(cmd) assignment.
     ap.add_argument("--force-vbin", type=int, default=-1,
                     help="D048l 评测干预：强制 VAE 速度档 0..2，-1=自然分档；记入 eval_interventions")
+    # D048q: soft speed-bin intervention -- blend the speed embedding as
+    # alpha*E[a]+(1-alpha)*E[b] (Q1 连续可调性画像)；与 --force-vbin 互斥。
+    ap.add_argument("--force-vbin-soft", type=str, default="",
+                    help="D048q 评测干预：软速度档 \"a,b,alpha\"（a/b∈{0,1,2} 档对、"
+                         "alpha∈[0,1] 为 a 档权重，decode speed_embed 软混），"
+                         "与 --force-vbin 互斥；记入 eval_interventions")
+    ap.add_argument("--force-dbin", type=int, default=-1,
+                    help="D048q 评测干预：强制 VAE 方向档 0..7（Q2 方位语义闭环"
+                         "画像），-1=自然方位分桶（仅带 db 的 latent-dir-bins 分支"
+                         "生效）；记入 eval_interventions")
     # TO38: reference obs injection (must match the trained policy's obs dim)
     ap.add_argument("--to-ref", action="store_true")
     ap.add_argument("--to-ref-npz", default="")
@@ -755,6 +765,28 @@ def main():
     cfg.res_clip = cli.res_clip
     cfg.res_stats = cli.res_stats  # D048h: env-side residual stat accumulation
     cfg.force_vbin = cli.force_vbin  # D048l: eval-only intervention; -1 = natural binning
+    # D048q: parse "a,b,alpha" -> (a, b, alpha) tuple (soft speed-bin blend);
+    # mutually exclusive with --force-vbin (hard bin vs soft blend).
+    # Default "" -> () = no intervention (byte-identical legacy decode path).
+    _force_vbin_soft = ()
+    if cli.force_vbin_soft:
+        _parts = [p.strip() for p in cli.force_vbin_soft.split(",")]
+        if len(_parts) != 3:
+            raise ValueError(f"--force-vbin-soft 需 3 个逗号分隔字段 a,b,alpha，"
+                             f"收到 {cli.force_vbin_soft!r}")
+        _a, _b, _alpha = int(_parts[0]), int(_parts[1]), float(_parts[2])
+        if not (0 <= _a <= 2 and 0 <= _b <= 2):
+            raise ValueError(f"--force-vbin-soft 档位 a/b 须 ∈{{0,1,2}}，"
+                             f"收到 {cli.force_vbin_soft!r}")
+        if not (0.0 <= _alpha <= 1.0):
+            raise ValueError(f"--force-vbin-soft alpha 须 ∈[0,1]，"
+                             f"收到 {cli.force_vbin_soft!r}")
+        _force_vbin_soft = (_a, _b, _alpha)
+    if _force_vbin_soft and cli.force_vbin >= 0:
+        raise ValueError("--force-vbin 与 --force-vbin-soft 互斥"
+                         "（硬档覆写 vs 软混覆写，D048q 口径）")
+    cfg.force_vbin_soft = _force_vbin_soft
+    cfg.force_dbin = cli.force_dbin  # D048q: eval-only db intervention; -1 = natural
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
     cfg.to_ref = cli.to_ref
@@ -978,17 +1010,33 @@ def main():
     # vx_max / n_bins 取 env cfg 现值（默认 0.8 / 3），避免字面量漂移。
     out["units"] = {"yaw_err": "rad", "yaw_err_deg": "deg", "yaw_err_int": "rad*s"}
     _fvb = cli.force_vbin if cli.force_vbin >= 0 else None
+    _fdb = cli.force_dbin if cli.force_dbin >= 0 else None
     _edges = np.linspace(0.0, float(cfg.vx_max), int(cfg.latent_vae_n_bins) + 1)[1:-1]
     _nvb = min(
         max(int(np.searchsorted(_edges, cli.a_cmd_vx, side="left")), 0),
         int(cfg.latent_vae_n_bins) - 1,
     )
-    out["eval_interventions"] = {
+    # D048q 扩展：soft 介入记 soft_pair/alpha（forced_vbin 保持 null，两者互斥）；
+    # dbin 介入加 forced_dbin。默认路径键集与旧版逐键一致（note="none"）。
+    _iv = {
         "forced_vbin": _fvb,
         "natural_vb": _nvb,
         "cmd_vx": cli.a_cmd_vx,
-        "note": "D048l: forced_vbin 非 None 时为评测干预（覆写 VAE 速度档条件输入），非自然行为" if _fvb is not None else "none",
     }
+    if _force_vbin_soft:
+        _iv["soft_pair"] = [int(_force_vbin_soft[0]), int(_force_vbin_soft[1])]
+        _iv["alpha"] = float(_force_vbin_soft[2])
+    if _fdb is not None:
+        _iv["forced_dbin"] = _fdb
+    if _fvb is not None:
+        _iv["note"] = "D048l: forced_vbin 非 None 时为评测干预（覆写 VAE 速度档条件输入），非自然行为"
+    elif _force_vbin_soft:
+        _iv["note"] = "D048q: force_vbin_soft 评测干预（decode speed_embed 软混 alpha·E[a]+(1−alpha)·E[b]，覆写速度档条件），非自然行为"
+    elif _fdb is not None:
+        _iv["note"] = "D048q: forced_dbin 评测干预（覆写 VAE 方向档条件输入，仅带 db 的 latent-dir-bins 分支生效），非自然行为"
+    else:
+        _iv["note"] = "none"
+    out["eval_interventions"] = _iv
     # D048f 阶段0：指标扩展标注 + 冻结任务门常量落盘（评测自描述，判读方
     # 不必回查文档；门值来自 DS_CONTINUOUS_EXECUTION_PLAN §5，先于候选
     # 结果冻结）。D048h --res-stats 开启时翻转为 resdiag 契约（默认路径

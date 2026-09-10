@@ -63,8 +63,18 @@ class SpeedPhaseTokenVAE(nn.Module):
         )
 
     def decode(self, z: torch.Tensor, phase: torch.Tensor,
-               v_bin: torch.Tensor) -> torch.Tensor:
-        se = self.speed_embed(v_bin)
+               v_bin: torch.Tensor,
+               vb_soft: torch.Tensor | None = None) -> torch.Tensor:
+        """D048q 评测干预：vb_soft 非 None 时为 (N, n_bins) 软权重（行和≈1，
+        仅 assert 形状），速度条件改软混合 se = vb_soft @ speed_embed.weight；
+        None（默认）维持 se = speed_embed(v_bin) 逐字节旧路径，训练路径不受
+        影响（本文件类仅作冻结 decoder 运行时加载）。"""
+        if vb_soft is not None:
+            assert vb_soft.shape == (z.shape[0], self.n_bins), \
+                f"vb_soft 形状须为 (N, {self.n_bins})，收到 {tuple(vb_soft.shape)}"
+            se = vb_soft @ self.speed_embed.weight
+        else:
+            se = self.speed_embed(v_bin)
         return self.decoder(torch.cat([z, phase, se], dim=-1))
 
 
@@ -100,7 +110,17 @@ class DirSpeedPhaseTokenVAE(nn.Module):
         )
 
     def decode(self, z: torch.Tensor, phase: torch.Tensor,
-               v_bin: torch.Tensor, d_bin: torch.Tensor) -> torch.Tensor:
-        se = self.speed_embed(v_bin)
+               v_bin: torch.Tensor, d_bin: torch.Tensor,
+               vb_soft: torch.Tensor | None = None) -> torch.Tensor:
+        """D048q 评测干预：vb_soft 非 None 时为 (N, n_vbins) 软权重（行和≈1，
+        仅 assert 形状），速度条件改软混合 se = vb_soft @ speed_embed.weight
+        （dir 通路不变）；None（默认）维持 se = speed_embed(v_bin) 逐字节
+        旧路径，训练路径不受影响（本文件类仅作冻结 decoder 运行时加载）。"""
+        if vb_soft is not None:
+            assert vb_soft.shape == (z.shape[0], self.n_vbins), \
+                f"vb_soft 形状须为 (N, {self.n_vbins})，收到 {tuple(vb_soft.shape)}"
+            se = vb_soft @ self.speed_embed.weight
+        else:
+            se = self.speed_embed(v_bin)
         de = self.dir_embed(d_bin)
         return self.decoder(torch.cat([z, phase, se, de], dim=-1))

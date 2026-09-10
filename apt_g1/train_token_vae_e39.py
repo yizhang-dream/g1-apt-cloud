@@ -104,8 +104,22 @@ class DirSpeedPhaseTokenVAE(nn.Module):
         return mu + std * torch.randn_like(std)
 
     def decode(self, z: torch.Tensor, phase: torch.Tensor,
-               vb: torch.Tensor, db: torch.Tensor) -> torch.Tensor:
-        se = self.speed_embed(vb)
+               vb: torch.Tensor, db: torch.Tensor,
+               vb_soft: torch.Tensor | None = None) -> torch.Tensor:
+        """Decode from z + phase + speed/dir bin conditions.
+
+        D048q 评测干预用途：vb_soft 非 None 时为 (N, n_vbins) 软权重（行和≈1，
+        不强制检查，仅 assert 形状），速度条件改软混合 se = vb_soft @
+        speed_embed.weight（db 通路不变）；None（默认）维持 se =
+        speed_embed(vb) 逐字节旧路径——forward/训练不传 vb_soft，训练路径
+        不受影响。
+        """
+        if vb_soft is not None:
+            assert vb_soft.shape == (z.shape[0], self.n_vbins), \
+                f"vb_soft 形状须为 (N, {self.n_vbins})，收到 {tuple(vb_soft.shape)}"
+            se = vb_soft @ self.speed_embed.weight
+        else:
+            se = self.speed_embed(vb)
         de = self.dir_embed(db)
         return self.decoder(torch.cat([z, phase, se, de], dim=-1))
 
