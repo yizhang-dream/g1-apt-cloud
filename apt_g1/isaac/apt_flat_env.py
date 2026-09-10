@@ -287,6 +287,10 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     yaw_min: float = 0.0
     yaw_max: float = 0.0
 
+    # D048l: >=0 时覆写 VAE 速度档（decode 的 vb 条件输入），评测干预专用；
+    # 不改命令采样与奖励。训练必须保持 -1（自然分档）。
+    force_vbin: int = -1
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -704,6 +708,9 @@ class AptFlatG1Env(DirectRLEnv):
                         vb = self._to42.state  # TO42: 锁存的 selector 状态
                     else:
                         vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
+                    if self.cfg.force_vbin >= 0:
+                        # D048l 评测干预：强制速度档，覆写自然/TO42 分档
+                        vb = torch.full_like(vb, min(self.cfg.force_vbin, n - 1))
                     ang = torch.atan2(self._commands[:, 1], self._commands[:, 0])
                     db = torch.floor((ang + math.pi) / (2.0 * math.pi) * 8).long() % 8
                     # decode 结果保持 GPU tensor 直送 _decoder_obs_parts，
@@ -719,6 +726,9 @@ class AptFlatG1Env(DirectRLEnv):
                         vb = self._to42.state  # TO42: 锁存的 selector 状态
                     else:
                         vb = torch.bucketize(cmd_v, edges).clamp(0, n - 1)
+                    if self.cfg.force_vbin >= 0:
+                        # D048l 评测干预：强制速度档，覆写自然/TO42 分档
+                        vb = torch.full_like(vb, min(self.cfg.force_vbin, n - 1))
                     tokens = self._vae.decode(phase, sc, vb).detach()
                 else:
                     tokens = self._vae.decode(phase, sc).detach()

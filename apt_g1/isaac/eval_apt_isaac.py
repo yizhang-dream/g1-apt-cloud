@@ -47,6 +47,8 @@ D048f 阶段0 评测资格（JSON 顶层 metrics_contract="d048f_stage0"）：
     D048h 另增 --res-stats：逐局残差执行统计（饱和/分位/差分）落盘
     out[*]["res_diag"] + 顶层跨局聚合，metrics_contract 翻转为
     "d048h_resdiag"（默认路径保持 "d048f_stage0" 不变）。
+
+D048l 扩展：--force-vbin 评测干预（eval_interventions 显式记录）+ yaw_err_deg/heading_gate_pass 单位防误读字段；eval_contract 语义不变。
 """
 
 from __future__ import annotations
@@ -172,6 +174,10 @@ def build_args():
     # TO38: override test A's commanded vx (default 0.8 = E-battery standard;
     # low-speed band evals pass e.g. 0.277 / 0.2 / 0.35)
     ap.add_argument("--a-cmd-vx", type=float, default=0.8)
+    # D048l: evaluation-only intervention -- force the VAE speed-bin condition
+    # fed to decode (vb) instead of the natural bucketize(cmd) assignment.
+    ap.add_argument("--force-vbin", type=int, default=-1,
+                    help="D048l 评测干预：强制 VAE 速度档 0..2，-1=自然分档；记入 eval_interventions")
     # TO38: reference obs injection (must match the trained policy's obs dim)
     ap.add_argument("--to-ref", action="store_true")
     ap.add_argument("--to-ref-npz", default="")
@@ -599,6 +605,8 @@ def rollout(
         "fwd_signed": round(fwd_signed, 3),
         "lat_signed": round(lat_signed, 3),
         "yaw_err": round(yaw_err, 4),
+        "yaw_err_deg": round(math.degrees(yaw_err), 1),   # D048l: 显式度数，防 rad 误读
+        "heading_gate_pass": bool(abs(yaw_err) <= math.radians(15.0)),  # 门=task_gate_flat04 的 15°
         "upright_final": round(upright_final, 3),
         "ended": ended,
         # D048f 阶段0 新增键
@@ -746,6 +754,7 @@ def main():
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
     cfg.res_stats = cli.res_stats  # D048h: env-side residual stat accumulation
+    cfg.force_vbin = cli.force_vbin  # D048l: eval-only intervention; -1 = natural binning
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
     cfg.to_ref = cli.to_ref
@@ -964,6 +973,22 @@ def main():
     # CLI 默认 0.4 = 残差放大 2.67 倍，D048d 阶梯评测即栽在此），落盘防再犯。
     out["eval_contract"] = 2
     out["res_scale"] = cli.res_scale
+    # D048l：单位防误读 + 评测干预显式记录（§5f 预注册）。分档边界与
+    # apt_flat_env._compute_q_des 同式（linspace(0, vx_max, n_bins+1) 去首尾），
+    # vx_max / n_bins 取 env cfg 现值（默认 0.8 / 3），避免字面量漂移。
+    out["units"] = {"yaw_err": "rad", "yaw_err_deg": "deg", "yaw_err_int": "rad*s"}
+    _fvb = cli.force_vbin if cli.force_vbin >= 0 else None
+    _edges = np.linspace(0.0, float(cfg.vx_max), int(cfg.latent_vae_n_bins) + 1)[1:-1]
+    _nvb = min(
+        max(int(np.searchsorted(_edges, cli.a_cmd_vx, side="left")), 0),
+        int(cfg.latent_vae_n_bins) - 1,
+    )
+    out["eval_interventions"] = {
+        "forced_vbin": _fvb,
+        "natural_vb": _nvb,
+        "cmd_vx": cli.a_cmd_vx,
+        "note": "D048l: forced_vbin 非 None 时为评测干预（覆写 VAE 速度档条件输入），非自然行为" if _fvb is not None else "none",
+    }
     # D048f 阶段0：指标扩展标注 + 冻结任务门常量落盘（评测自描述，判读方
     # 不必回查文档；门值来自 DS_CONTINUOUS_EXECUTION_PLAN §5，先于候选
     # 结果冻结）。D048h --res-stats 开启时翻转为 resdiag 契约（默认路径
