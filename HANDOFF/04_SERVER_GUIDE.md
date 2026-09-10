@@ -14,6 +14,8 @@
 
 ## 2. 目录布局（/home/cvgluser/ros2_data）
 
+- **执行根是手工 cp 的局部快照**（非全量 git 检出）：与 sync 克隆 HEAD 相比可能缺新模块——09-10 D048l 部署时缺 reward_terms.py（当场从 sync 克隆补拷解决）；server_* FORK 按纪律不部署。部署新代码时先比对模块齐全性再跑。
+
 ```text
 ros2_data/
 ├── apt_g1/                  # 主实验代码（= 本地 C:\...\gr00t\apt_g1 的服务端版本）
