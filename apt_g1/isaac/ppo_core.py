@@ -28,6 +28,7 @@ class AptPPOPolicy(nn.Module):
         obs_dim: int,
         aux_dim: int = 12,
         gate_k: int = 0,
+        vb_head: bool = False,
         hidden_dim: int = 256,
         phase_init_std: float = -4.0,
         aux_init_std: float = -4.0,
@@ -38,6 +39,11 @@ class AptPPOPolicy(nn.Module):
         self.obs_dim = obs_dim
         self.aux_dim = aux_dim
         self.gate_k = gate_k
+        # D049b：连续 vb 软权重臂的可选头（3 维 logits）。False = 不建头，
+        # 参数量/前向/RNG 路径与旧逐位一致；True 时与 gate 头完全同模式
+        # （Categorical 采样进 log_prob/entropy），env 消费的是
+        # softmax(logits)=w 本身（连续软权重），离散 sample 仅作 PPO 簿记。
+        self.vb_head = bool(vb_head)
         self.use_phase = use_phase
         self.latent_dim = latent_dim
         # E49：False = aux 头采样后丢弃（latent/token/to42 模式 action=act["phase"]）。
@@ -65,6 +71,9 @@ class AptPPOPolicy(nn.Module):
         self.aux_log_std = nn.Parameter(torch.full((aux_dim,), aux_init_std))
         if gate_k > 0:
             self.gate_logits = nn.Linear(hidden_dim, gate_k)
+        if self.vb_head:
+            # D049b：vb 头（3 维 logits→softmax=w），gate_logits 同款写法
+            self.vb_logits = nn.Linear(hidden_dim, 3)
         self.critic = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
             nn.Tanh(),
@@ -84,6 +93,8 @@ class AptPPOPolicy(nn.Module):
             out["phase_log_std"] = self.phase_log_std.expand_as(self.phase_mean(x))
         if self.gate_k > 0:
             out["gate_logits"] = self.gate_logits(x)
+        if self.vb_head:
+            out["vb_logits"] = self.vb_logits(x)
         return out
 
     def get_value(self, obs: torch.Tensor) -> torch.Tensor:
@@ -127,6 +138,17 @@ class AptPPOPolicy(nn.Module):
             out["gate"] = gate
             log_prob = log_prob + gd.log_prob(gate)
             entropy = entropy + gd.entropy()
+        if self.vb_head:
+            # D049b：与 gate 头同模式——categorical 采样进 log_prob/entropy，
+            # det 模式取 argmax。注意 env 每步消费的 w = softmax(logits)
+            # （调用方从 forward dict 取 vb_logits 组装动作），与本采样索引
+            # 解耦：softmax(logits) 即策略的确定性软权重，sample 只服务
+            # log_prob 比值计算的簿记。
+            vbd = Categorical(logits=p["vb_logits"])
+            vb = vbd.sample() if not deterministic else vbd.probs.argmax(-1)
+            out["vb"] = vb
+            log_prob = log_prob + vbd.log_prob(vb)
+            entropy = entropy + vbd.entropy()
         return out, log_prob, entropy, self.get_value(obs), p
 
 
@@ -197,10 +219,10 @@ def kl_diag_gaussian_reverse(
 def kl_categorical_reverse(
     old_logits: torch.Tensor, new_logits: torch.Tensor
 ) -> torch.Tensor:
-    """离散分布（gate 头）解析 KL(old‖new)，逐样本（D048i）。
+    """离散分布（gate/vb 头）解析 KL(old‖new)，逐样本（D048i）。
 
     不进步级看门的联合目标（owner 口径「按动作维求和」= 连续动作头）；策略带
-    gate 头时仅顺带记录 kl_gate。
+    gate 头时仅顺带记录 kl_gate。D049b 的 vb 头同款处理（仅记录 kl_vb）。
     """
     log_po = torch.log_softmax(old_logits, dim=-1)
     log_pn = torch.log_softmax(new_logits, dim=-1)
@@ -397,13 +419,13 @@ class PPOTrainer:
         self.optimizer.load_state_dict(copy.deepcopy(snap_o))
 
     def ksg_joint_logp(
-        self, p_fwd, obs, phase, aux, gate, aux_scored=True
+        self, p_fwd, obs, phase, aux, gate, aux_scored=True, vb=None
     ) -> torch.Tensor:
         """D048i B1：从 forward dict 重算存量 action 的联合 logp。
 
         分支口径照抄 update() 末尾 post_update_kl 的整批重算（decoder_ft /
-        aux_scored / phase / gate 四分支同构），供资格检查复用——既有
-        post_update_kl 的计算本身不动。
+        aux_scored / phase / gate 四分支同构；D049b 增 vb categorical 分支），
+        供资格检查复用——既有 post_update_kl 的计算本身不动。
         """
         if getattr(self.policy, "decoder_ft", False):
             aux_mean, _ = self.policy.action_mean(phase, obs)
@@ -418,10 +440,13 @@ class PPOTrainer:
         if gate is not None:
             gd = Categorical(logits=p_fwd["gate_logits"])
             lp = lp + gd.log_prob(gate)
+        if vb is not None:
+            vbd = Categorical(logits=p_fwd["vb_logits"])
+            lp = lp + vbd.log_prob(vb)
         return lp
 
     def ksg_qualification(
-        self, obs, phase, aux, gate, logp_old, aux_scored=True
+        self, obs, phase, aux, gate, logp_old, aux_scored=True, vb=None
     ) -> dict:
         """D048i B1：资格检查——重算联合 logp 与存储 logp_old 的偏差。
 
@@ -430,7 +455,9 @@ class PPOTrainer:
         """
         with torch.no_grad():
             p0 = self.policy.forward_actor(obs)
-            lp = self.ksg_joint_logp(p0, obs, phase, aux, gate, aux_scored)
+            lp = self.ksg_joint_logp(
+                p0, obs, phase, aux, gate, aux_scored, vb=vb
+            )
             d = lp - logp_old
             return {
                 "qual_logp_maxdev": float(d.abs().max().item()),
@@ -444,7 +471,8 @@ class PPOTrainer:
         + z(phase)头。vanilla 无 z 头（按键存在性跳过）；latent/token 模式的
         aux 头虽不执行但共享 encoder 主干，照测（KL 仍度量策略移动）；gate 头
         只顺带记录、不进联合目标（owner 口径「按动作维求和」= 连续动作头）。
-        返回 dict（全 float）：joint/z/res/gate。
+        D049b vb 头同款处理（kl_vb 仅记录）。
+        返回 dict（全 float）：joint/z/res/gate/vb。
         """
         with torch.no_grad():
             p_new = self.policy.forward_actor(obs_mb)
@@ -481,8 +509,17 @@ class PPOTrainer:
                     .mean()
                     .item()
                 )
+            kl_vb = 0.0
+            if "vb_logits" in old_buf and "vb_logits" in p_new:
+                kl_vb = float(
+                    kl_categorical_reverse(
+                        old_buf["vb_logits"][mb], p_new["vb_logits"]
+                    )
+                    .mean()
+                    .item()
+                )
             return {"joint": kl_z + kl_res, "z": kl_z, "res": kl_res,
-                    "gate": kl_gate}
+                    "gate": kl_gate, "vb": kl_vb}
 
     def ksg_watch_step(
         self, obs_mb, mb, old_buf, lr_round, target=None, backtracks=None
@@ -498,7 +535,8 @@ class PPOTrainer:
         target = self.kl_step_target if target is None else target
         backtracks = self.kl_backtracks if backtracks is None else backtracks
         snap = self.ksg_snapshot()
-        kl = {"joint": float("inf"), "z": 0.0, "res": 0.0, "gate": 0.0}
+        kl = {"joint": float("inf"), "z": 0.0, "res": 0.0, "gate": 0.0,
+              "vb": 0.0}
         for attempt in range(backtracks + 1):
             scale = 0.5 ** attempt
             for g, lr0 in zip(self.optimizer.param_groups, lr_round):
@@ -585,6 +623,11 @@ class PPOTrainer:
         gate = rollout.get("gate")
         if gate is not None:
             gate = gate.reshape(-1)
+        # D049b：vb 头的离散采样槽位（rollout 侧由 buf["vb"] 提供；旗标关的
+        # run 无此键 → None → 全部分支跳过，与旧行为逐位一致）
+        vb = rollout.get("vb")
+        if vb is not None:
+            vb = vb.reshape(-1)
         if phase_labels is not None:
             phase_labels = phase_labels.reshape(-1, phase_labels.shape[-1])
 
@@ -611,7 +654,7 @@ class PPOTrainer:
                 # B1 资格检查：重算存量 action 联合 logp vs rollout 存储值
                 # （分支口径经 ksg_joint_logp 与 post_update_kl 同构）
                 dqual = self.ksg_joint_logp(
-                    p_round0, obs, phase, aux, gate, aux_scored
+                    p_round0, obs, phase, aux, gate, aux_scored, vb=vb
                 ) - logp_old
                 qual_logp_maxdev = float(dqual.abs().max().item())
                 qual_ratio_maxdev = float((dqual.exp() - 1.0).abs().max().item())
@@ -643,6 +686,7 @@ class PPOTrainer:
             ksg_kl_z: list = []
             ksg_kl_res: list = []
             ksg_kl_gate: list = []
+            ksg_kl_vb: list = []
 
         losses = []
         # E49-C：KL 守卫的连续回滚计数与提前停止标志（作用域 = 整个 update()）
@@ -671,6 +715,10 @@ class PPOTrainer:
                 if gate is not None:
                     gd = Categorical(logits=p["gate_logits"])
                     lp = lp + gd.log_prob(gate[mb])
+                if vb is not None:
+                    # D049b：与 act() 同一约定——vb categorical 进联合 logp
+                    vbd = Categorical(logits=p["vb_logits"])
+                    lp = lp + vbd.log_prob(vb[mb])
                 logratio = lp - logp_old[mb]
                 ratio = logratio.exp()
                 # E49 训练健康指标：k3 估计的 approx_kl（逐点非负）、超出
@@ -696,6 +744,8 @@ class PPOTrainer:
                     ent_z = 0.0
                 if gate is not None:
                     ent = ent + gd.entropy()
+                if vb is not None:
+                    ent = ent + vbd.entropy()
                 loss = (
                     ploss
                     + self.value_coef * vloss
@@ -751,6 +801,7 @@ class PPOTrainer:
                     ksg_total += 1
                     ksg_scales.append(w_step["lr_scale"])
                     ksg_kl_gate.append(w_step["gate"])
+                    ksg_kl_vb.append(w_step["vb"])
                     if w_step["accepted"]:
                         ksg_acc += 1
                         ksg_kl_joint.append(w_step["joint"])
@@ -923,6 +974,9 @@ class PPOTrainer:
             agg["kl_gate_mean"] = (
                 float(np.mean(ksg_kl_gate)) if ksg_kl_gate else 0.0
             )
+            agg["kl_vb_mean"] = (
+                float(np.mean(ksg_kl_vb)) if ksg_kl_vb else 0.0
+            )
             with torch.no_grad():
                 _num = torch.sqrt(sum(
                     (p - s).pow(2).sum()
@@ -951,6 +1005,9 @@ class PPOTrainer:
             if gate is not None:
                 gd_all = Categorical(logits=p_all["gate_logits"])
                 lp_all = lp_all + gd_all.log_prob(gate)
+            if vb is not None:
+                vbd_all = Categorical(logits=p_all["vb_logits"])
+                lp_all = lp_all + vbd_all.log_prob(vb)
             logratio_all = lp_all - logp_old
             agg["post_update_kl"] = float(
                 (logratio_all.exp() - 1.0 - logratio_all).mean().item()

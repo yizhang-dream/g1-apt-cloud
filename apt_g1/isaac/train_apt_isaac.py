@@ -99,6 +99,15 @@ def build_args():
     # E48c: freeze the residual (zeroed in the env) for the first N control
     # steps so the z-head first learns a working controller on terrain.
     ap.add_argument("--res-freeze-steps", type=int, default=0)
+    # D049b：连续 vb 软权重臂（DS_CONTINUOUS_EXECUTION_PLAN §5j 主臂）。动作
+    # [z(16), aux(12), vb_logits(3)] = 31 维，末 3 维 softmax=w 进 decode 的
+    # vb_soft；obs +3（w 反馈）。骑在 plain --latent-mode 上（需带 vb 条件的
+    # --latent-speed-bins/--latent-dir-bins 分支），与 residual/token/decft/
+    # gate-sel/to42 互斥（下方 assert + env __init__ 双层校验）
+    ap.add_argument("--vb-from-policy", action="store_true",
+                    help="D049b: policy 3-dim vb logits -> softmax soft weights "
+                         "w consumed as decode vb_soft; action 31-dim, obs +3 "
+                         "(w feedback)")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -255,6 +264,8 @@ def main():
     )
     # D048j：旗标关时回显逐字不变
     pcap_cfg = " progress_cap_cmd=1" if cli.progress_cap_cmd else ""
+    # D049b：旗标关时回显逐字不变
+    vb_cfg = " vb_from_policy=1" if cli.vb_from_policy else ""
     print(
         f"[CFG] out={cli.out} num_envs={cli.num_envs} iters={cli.iters} "
         f"probe_iters={cli.probe_iters} "
@@ -262,7 +273,7 @@ def main():
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
         f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}"
-        f"{ksg_cfg}{pcap_cfg}",
+        f"{ksg_cfg}{pcap_cfg}{vb_cfg}",
         flush=True,
     )
 
@@ -331,6 +342,12 @@ def main():
         if cli.latent_residual:
             cfg.action_space = 16 + 29  # z(16) + full-joint residual(29)
             cfg.observation_space += 29  # residual action feedback
+        if cli.vb_from_policy:
+            # D049b：动作 [z(16), aux(12), vb_logits(3)] = 31 维；obs +3
+            # （当前软权重 w 反馈）。只在旗标开时 bump，且与 env 的 obs/动作
+            # 组装同步（z_sweep hotfix3 教训：两侧必须同步，默认路径零变化）
+            cfg.action_space = 16 + 12 + 3
+            cfg.observation_space += 3
     if cli.token_mode:
         assert not cli.latent_mode and not cli.decft and not cli.gate_sel, (
             "--token-mode is exclusive with latent/decft/gate_sel")
@@ -350,6 +367,15 @@ def main():
         cfg.action_space = 17        # z(16) + sel bit(1)
         cfg.observation_space += 2   # [sel_state, gate_bool]
     to42_active = cli.to42_sel != "off"
+    if cli.vb_from_policy:
+        # D049b：前置组合校验（env __init__ 的 _check_vb_from_policy 是第二层）
+        assert cli.latent_mode and not cli.latent_residual and not cli.token_mode \
+            and not cli.decft and not cli.gate_sel and cli.to42_sel == "off", (
+            "--vb-from-policy rides on plain --latent-mode, exclusive with "
+            "latent_residual/token/decft/gate_sel/to42")
+        assert cli.latent_speed_bins or cli.latent_dir_bins, (
+            "--vb-from-policy needs a vb-conditioned decode branch "
+            "(--latent-speed-bins or --latent-dir-bins)")
     if cli.decft:
         from apt_g1.isaac.decft_policy import OBS_DIM as DECFT_OBS_DIM
 
@@ -395,6 +421,7 @@ def main():
             obs_dim=cfg.observation_space,
             aux_dim=29 if cli.latent_residual else 12,
             gate_k=(2 if to42_active else (3 if cfg.use_gate_sel else 0)),
+            vb_head=cli.vb_from_policy,  # D049b
             hidden_dim=256,
             use_phase=(not cfg.use_gate_sel and not cfg.latent_mode
                        and not cli.token_mode),
@@ -441,6 +468,7 @@ def main():
         res_freeze_steps=cfg.res_freeze_steps,
         latent_mode=cfg.latent_mode,
         latent_residual=cfg.latent_residual,
+        vb_head=cli.vb_from_policy,  # D049b：结构信息键（非 VERIFY_KEY）
         action_space=cfg.action_space,
         obs_dim=cfg.observation_space,
         rew_contract=rew_contract,
@@ -577,6 +605,10 @@ def main():
         # phase z 保留 + 增加 gate(sel) 槽位；PPOTrainer.update 的 gate 分支
         # （Categorical log_prob/entropy 重算）原样复用
         buf["gate"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
+    if cli.vb_from_policy:
+        # D049b：vb 头离散采样槽位（log_prob/熵/资格检查重算的簿记量；env
+        # 消费的是 softmax(logits)，与此索引解耦）
+        buf["vb"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
 
     if buf_phase_none:
         buf["phase"] = None
@@ -625,6 +657,12 @@ def main():
     if cli.kl_step_guard:
         for _k in KSG_HIST_KEYS:
             hist[_k] = []
+    # D049b：策略软权重 w 的窗口统计（仅旗标开时初始化，train_log.json 键集合
+    # 与旧 run 保持一致）。vb_w_mean[3] = 本 iter 全部 T*N 控制步 w 的均值；
+    # vb_argmax_hist[3] = argmax 档位占比（w 最重的档位的步数占比）
+    if cli.vb_from_policy:
+        hist["vb_w_mean"] = []
+        hist["vb_argmax_hist"] = []
     # E49 诊断步骤③：分项诊断（--diag-log 开启时启用）。vanilla env 无
     # _last_rew_terms 快照，不支持。d_* 序列随 hist 整体序列化进 train_log.json。
     DIAG_KEYS = ("track_xy", "track_yaw", "upright", "height", "stillness")
@@ -663,6 +701,11 @@ def main():
         # 统计窗口不变：仍是本 iter 全部 T*N 个 reward 的算术均值，只在 iter 末
         # 的日志边界换算打印
         rew_sum = torch.zeros((), device="cuda:0")
+        if cli.vb_from_policy:
+            # D049b：窗口统计 GPU 累积器（与 rew_sum 同窗：本 iter 全部 T*N
+            # 控制步；iter 末一次 .tolist() 同步，热循环零同步）
+            vb_w_sum = torch.zeros(3, device="cuda:0")
+            vb_am_sum = torch.zeros(3, device="cuda:0")
         if diag:
             # E49 诊断：GPU 标量累积器（每 iter 重建；iter 末一次 .cpu() 换算，
             # 热循环零同步）。
@@ -705,7 +748,20 @@ def main():
                         # E48: [z(16), res(29)] -- the aux head IS the residual
                         action = torch.cat([act["phase"], act["aux"]], dim=1)
                     elif cfg.latent_mode:
-                        action = act["phase"]
+                        if cli.vb_from_policy:
+                            # D049b：[z(16), aux(12), vb_logits(3)] = 31 维。
+                            # 中段 12 维 = 采样后丢弃的 aux 头槽位（aux_executed
+                            # =False 约定不变，env 忽略）；vb 用 forward 的原始
+                            # logits——env 侧 softmax 得确定性 w，与离散采样
+                            # 索引解耦（softmax(logits) 恒被执行，sample 只进
+                            # buf["vb"] 簿记）
+                            buf["vb"][t] = act["vb"].detach()
+                            action = torch.cat(
+                                [act["phase"], act["aux"], p_fwd["vb_logits"]],
+                                dim=1,
+                            )
+                        else:
+                            action = act["phase"]
                     elif cfg.token_mode:
                         # E49: raw 64-d token coordinates (aux head sampled
                         # but discarded, same convention as latent mode)
@@ -756,6 +812,14 @@ def main():
                 )
             obs = obs_dict["policy"]
             rew_sum += rew.sum()
+            if cli.vb_from_policy:
+                # D049b：本控制步的策略软权重 w 并入窗口累积（_pre_physics_step
+                # 内已随动作更新；sum/one_hot 均 GPU 上完成，无同步）
+                _w = env._last_vb_w
+                vb_w_sum += _w.sum(0)
+                vb_am_sum += torch.nn.functional.one_hot(
+                    _w.argmax(-1), 3
+                ).sum(0).float()
             if diag:
                 # E49 诊断：本控制步的分项快照并入累积（与 rew_sum 同窗同方式；
                 # 快照缺失时跳过，不影响训练）
@@ -886,6 +950,14 @@ def main():
         # E49-C：新键一律 .get 防御（键缺失时不记录，不抛错）
         hist["vloss"].append(stats.get("vloss"))
         hist["expl_var"].append(stats.get("expl_var"))
+        if cli.vb_from_policy:
+            # D049b：窗口均值落账（.tolist() 每 iter 一次同步）
+            hist["vb_w_mean"].append(
+                [round(v, 5) for v in (vb_w_sum / (T * N)).tolist()]
+            )
+            hist["vb_argmax_hist"].append(
+                [round(v, 5) for v in (vb_am_sum / (T * N)).tolist()]
+            )
         if cli.kl_guard is not None:
             hist["kl_mb"].append(stats.get("kl_mb"))
             hist["kl_mb_all"].append(stats.get("kl_mb_all"))

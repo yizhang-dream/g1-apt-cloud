@@ -97,6 +97,69 @@ def _sonic_scale_isaac() -> np.ndarray:
     return SONIC_ACTION_SCALE_MUJOCO[G1_MUJOCO_TO_ISAACLAB_DOF].astype(np.float32)
 
 
+def _check_vb_from_policy(
+    *,
+    vb_from_policy: bool,
+    latent_mode: bool,
+    latent_dir_bins: bool,
+    latent_speed_bins: bool,
+    latent_residual: bool,
+    to42_sel: str,
+    latent_vae_n_bins: int,
+) -> None:
+    """D049b：vb_from_policy 前置校验（纯函数，无 isaaclab 依赖）。
+
+    tmp/d049_test 经 ast 提取本函数源码单测真身。vb_from_policy=False 时
+    无条件放行（默认路径零变化）；True 时校验前置条件，全部硬报错不静默。
+
+    force_vbin/force_vbin_soft 与本旗标**可组合**（§5j b 臂 force 电池复测
+    语义）：force 只覆写 decode 的 vb 输入，策略照常出 w（进 obs 反馈与
+    日志统计），b 臂结构（obs/动作空间/vb_head）不变——优先级见
+    `_resolve_decode_vb_mode`。训练侧"vb 与 force 干预不混用"的单变量纪律
+    由 train CLI assert 把守（训练恒无 force 干预，cfg.force_vbin=-1）。
+    """
+    if not vb_from_policy:
+        return
+    if not latent_mode:
+        raise ValueError(
+            "vb_from_policy 骑在 latent decode 路径上（需 --latent-mode）")
+    if latent_residual:
+        raise ValueError(
+            "vb_from_policy 与 latent_residual 动作布局冲突"
+            "（[z,res(29)] vs [z(16),aux(12),vb_logits(3)]）")
+    if not (latent_dir_bins or latent_speed_bins):
+        raise ValueError(
+            "vb_from_policy 需带 vb 条件的 decode 分支"
+            "（--latent-dir-bins 或 --latent-speed-bins，decode 才有 vb_soft 入口）")
+    if latent_vae_n_bins != 3:
+        raise ValueError(
+            "vb_from_policy 要求 3 档速度 VAE（策略 vb 头固定 3 logits），"
+            f"收到 latent_vae_n_bins={latent_vae_n_bins}")
+    if to42_sel != "off":
+        raise ValueError(
+            "vb_from_policy 与 to42_sel 互斥"
+            "（策略 softmax 连续软权重 vs 锁存离散选择状态机）")
+
+
+def _resolve_decode_vb_mode(
+    force_vbin: int, force_vbin_soft: tuple, vb_from_policy: bool
+) -> str:
+    """D049b：decode 速度条件来源优先级（纯函数，numpy 级可单测）。
+
+    force_vbin（硬档）> force_vbin_soft（软混）> policy w（vb_from_policy）
+    > 自然分桶。返回 "force_hard"/"force_soft"/"policy_w"/"natural"。
+    force 命中时策略 w 不进 decode，但 obs 反馈/日志统计照常（b 臂结构
+    不变，§5j b 臂 force 电池复测）。
+    """
+    if force_vbin >= 0:
+        return "force_hard"
+    if force_vbin_soft:
+        return "force_soft"
+    if vb_from_policy:
+        return "policy_w"
+    return "natural"
+
+
 @configclass
 class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # env
@@ -303,6 +366,19 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # 遇到则 print 警告一次并忽略。默认 -1 = 自然方位分桶。
     force_dbin: int = -1
 
+    # D049b：连续 vb 软权重臂（策略选档主臂，DS_CONTINUOUS_EXECUTION_PLAN
+    # §5j）。True 时动作布局 = [z(16), aux(12), vb_logits(3)]（31 维；中段
+    # 12 维是策略 aux 头槽位，latent 模式 aux 不执行、env 忽略），末 3 维
+    # logits→softmax = 连续软权重 w=(N,3)，latent decode 每步以 vb_soft=w
+    # 消费（复用 D048q 的 vb_soft 通路，来源从评测干预改为策略动作）；自然
+    # 分桶 vb 仍计算但仅日志对照；obs 追加当前 w 反馈 3 维。默认 False =
+    # 行为/obs/action 空间与旧逐位一致。与 to42_sel/latent_residual 互斥
+    # （__init__ 经 _check_vb_from_policy 校验）；与 force_vbin/force_vbin_soft
+    # **可组合**（§5j b 臂 force 电池复测）：decode 优先级 force_vbin（硬档）
+    # > force_vbin_soft（软混）> 策略 w > 自然分桶，force 覆写时 w 不进
+    # decode 但 obs 反馈/日志照常（_resolve_decode_vb_mode）。
+    vb_from_policy: bool = False
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -352,6 +428,19 @@ class AptFlatG1Env(DirectRLEnv):
                 raise ValueError(f"force_vbin_soft 档位 a/b 须 ∈{{0,1,2}}，收到 {_fvbs!r}")
             if not (0.0 <= _alpha <= 1.0):
                 raise ValueError(f"force_vbin_soft alpha 须 ∈[0,1]，收到 {_fvbs!r}")
+        # D049b：vb_from_policy 前置校验。注意必须用传入参数 cfg
+        # （DirectRLEnv 的 self.cfg 在 super().__init__ 内才赋值——3162292 教训）。
+        # force_vbin/force_vbin_soft 与本旗标可组合（§5j b 臂 force 电池）：
+        # decode 优先级见 _resolve_decode_vb_mode，策略 w 照常进 obs/日志。
+        _check_vb_from_policy(
+            vb_from_policy=cfg.vb_from_policy,
+            latent_mode=cfg.latent_mode,
+            latent_dir_bins=cfg.latent_dir_bins,
+            latent_speed_bins=cfg.latent_speed_bins,
+            latent_residual=cfg.latent_residual,
+            to42_sel=cfg.to42_sel,
+            latent_vae_n_bins=cfg.latent_vae_n_bins,
+        )
         self._force_dbin_warned = False  # 无 db 分支的 force_dbin 警告只打一次
         self._sonic_default = _sonic_default_isaac()
         self._sonic_scale = _sonic_scale_isaac()
@@ -580,6 +669,15 @@ class AptFlatG1Env(DirectRLEnv):
         self._prev_aux = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
         self._aux_rate = torch.zeros(self.num_envs, 12, dtype=torch.float32, device=self.device)
         self._last_res = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
+        # D049b：策略软权重 w（本步 decode 消费 / obs 反馈缓存）。旗标关时
+        # 置 None 不分配张量（零开销零变化）；_vb_w 在 _pre_physics_step 的
+        # latent 分支内随动作更新，_last_vb_w 进 _get_observations 末 3 维。
+        self._vb_w = None
+        self._last_vb_w = None
+        if self.cfg.vb_from_policy:
+            self._last_vb_w = torch.zeros(
+                self.num_envs, 3, dtype=torch.float32, device=self.device
+            )
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         # D048h: residual execution statistics accumulators (GPU-side pools,
         # synced once at pop; see _accum_res_stats / reset_res_stats /
@@ -751,7 +849,11 @@ class AptFlatG1Env(DirectRLEnv):
                             db, min(self.cfg.force_dbin, self.cfg.latent_vae_n_dbins - 1))
                     # decode 结果保持 GPU tensor 直送 _decoder_obs_parts，
                     # 去掉 .cpu().numpy() + from_numpy 的每步往返（数值逐位不变）
-                    if self.cfg.force_vbin_soft:
+                    _vb_mode = _resolve_decode_vb_mode(
+                        self.cfg.force_vbin, self.cfg.force_vbin_soft,
+                        self.cfg.vb_from_policy,
+                    )
+                    if _vb_mode == "force_soft":
                         # D048q 评测干预：软速度档（speed_embed 软混
                         # alpha·E[a]+(1−alpha)·E[b]，dtype 取 embedding 权重、
                         # device 对齐 vb；其余条件逐位不变）
@@ -761,6 +863,15 @@ class AptFlatG1Env(DirectRLEnv):
                         w[:, int(a)] = float(alpha)
                         w[:, int(b)] = 1.0 - float(alpha)
                         tokens = self._vae.decode(phase, sc, vb, db, vb_soft=w).detach()
+                    elif _vb_mode == "policy_w":
+                        # D049b 主臂：decode 以策略 softmax 软权重 w 为 vb_soft
+                        # （上方自然分桶 vb 仍计算但仅日志对照）。force 硬档在
+                        # 上方覆写 vb 时 _vb_mode="force_hard" 落 else 分支——
+                        # 策略 w 让位硬档（优先级 force_vbin > policy_w），但
+                        # w 仍进 obs 反馈/日志（b 臂 force 电池复测语义）。
+                        tokens = self._vae.decode(
+                            phase, sc, vb, db, vb_soft=self._vb_w
+                        ).detach()
                     else:
                         tokens = self._vae.decode(phase, sc, vb, db).detach()
                 elif self.cfg.latent_speed_bins:
@@ -783,7 +894,11 @@ class AptFlatG1Env(DirectRLEnv):
                               "latent-speed-bins decode 分支不受支持，已忽略"
                               "（需 --latent-dir-bins）", flush=True)
                         self._force_dbin_warned = True
-                    if self.cfg.force_vbin_soft:
+                    _vb_mode = _resolve_decode_vb_mode(
+                        self.cfg.force_vbin, self.cfg.force_vbin_soft,
+                        self.cfg.vb_from_policy,
+                    )
+                    if _vb_mode == "force_soft":
                         # D048q 评测干预：软速度档（软混构造与 dir-bins 分支同式）
                         a, b, alpha = self.cfg.force_vbin_soft
                         w = torch.zeros((vb.shape[0], n), device=vb.device,
@@ -791,6 +906,13 @@ class AptFlatG1Env(DirectRLEnv):
                         w[:, int(a)] = float(alpha)
                         w[:, int(b)] = 1.0 - float(alpha)
                         tokens = self._vae.decode(phase, sc, vb, vb_soft=w).detach()
+                    elif _vb_mode == "policy_w":
+                        # D049b 主臂：与 dir-bins 分支同式，decode 以策略 softmax
+                        # 软权重 w 为 vb_soft（自然分桶 vb 仅日志对照；force 硬档
+                        # 命中时让位，w 仍进 obs/日志）
+                        tokens = self._vae.decode(
+                            phase, sc, vb, vb_soft=self._vb_w
+                        ).detach()
                     else:
                         tokens = self._vae.decode(phase, sc, vb).detach()
                 else:
@@ -1066,6 +1188,15 @@ class AptFlatG1Env(DirectRLEnv):
                         res = torch.zeros_like(res)
                 else:
                     res = None
+                if self.cfg.vb_from_policy:
+                    # D049b：动作 = [z(16), aux(12), vb_logits(3)]。中段 12 维
+                    # 是策略 aux 头槽位（latent 模式 aux 不执行，env 忽略）；
+                    # 末 3 维 logits 经 softmax 得连续软权重 w——softmax(logits)
+                    # 即策略的确定性 w（离散 sample 只进 PPO log_prob 簿记，
+                    # 不进 env），本步 decode 以 vb_soft=w 消费（见
+                    # _compute_q_des），obs 反馈用 _last_vb_w。
+                    self._vb_w = torch.softmax(actions[:, 28:31], dim=-1)
+                    self._last_vb_w = self._vb_w.detach()
                 aux = torch.zeros(
                     self.num_envs, 12, dtype=torch.float32, device=self.device
                 )
@@ -1193,6 +1324,11 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.latent_residual:
             # E48: residual action feedback (like _last_aux for the aux modes)
             parts.append(self._last_res)
+        if self.cfg.vb_from_policy:
+            # D049b：当前软权重 w 反馈 3 维（对齐论文「喂当前 gait selection
+            # 输出」；追加位置参照 latent 模式 z 反馈 _last_phase 的写法——
+            # _pre_physics_step 内随本步动作更新后，obs 在同一步末尾组装）
+            parts.append(self._last_vb_w)
         if self.cfg.token_phase_obs:
             # E49-B: the walk clock made visible. _latent_phase was advanced
             # inside _compute_q_des earlier this control step, so obs carries
@@ -1430,6 +1566,10 @@ class AptFlatG1Env(DirectRLEnv):
         self._prev_aux[env_ids] = 0.0
         self._aux_rate[env_ids] = 0.0
         self._last_res[env_ids] = 0.0
+        if self.cfg.vb_from_policy:
+            # D049b：新局 w 反馈回零（首步 obs 在动作到达前以零 w 起步，
+            # 与 _last_phase/_last_aux 的复位口径一致）
+            self._last_vb_w[env_ids] = 0.0
         self._disturb[env_ids] = False
         # schedule a single push per episode with probability disturbance_prob
         self._disturb_step[env_ids] = -1

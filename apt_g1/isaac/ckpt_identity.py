@@ -87,12 +87,17 @@ def build_identity(
     vae_md5,
     decoder_md5,
     git_head: str | None = None,
+    vb_head: bool = False,
 ) -> dict:
     """Construct the identity dict embedded in every checkpoint.
 
     ``git_head=None`` -> computed here (subprocess); pass the train_log value
     to keep a single source. ``vae_md5`` / ``decoder_md5`` are computed once
     at the asset-load site by the caller (avoid re-reading large files).
+    ``vb_head`` (D049b): informational structure key -- deliberately NOT a
+    VERIFY_KEY (legacy format=1 identities lack it and must not be rejected);
+    b-arm vs old ckpt incompatibility is caught by the verified obs_dim /
+    action_space dims.
     """
     return {
         "format": FORMAT,
@@ -106,6 +111,7 @@ def build_identity(
         "res_freeze_steps": int(res_freeze_steps),
         "latent_mode": bool(latent_mode),
         "latent_residual": bool(latent_residual),
+        "vb_head": bool(vb_head),
         "action_space": None if action_space is None else int(action_space),
         "obs_dim": None if obs_dim is None else int(obs_dim),
         "rew_contract": rew_contract,

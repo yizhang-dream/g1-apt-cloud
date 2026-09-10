@@ -188,6 +188,15 @@ def build_args():
                     help="D048q 评测干预：强制 VAE 方向档 0..7（Q2 方位语义闭环"
                          "画像），-1=自然方位分桶（仅带 db 的 latent-dir-bins 分支"
                          "生效）；记入 eval_interventions")
+    # D049b：b 臂自然评测——策略末 3 维 vb logits→softmax 软权重 w 直接进
+    # decode 的 vb_soft。与 --force-vbin/--force-vbin-soft **可组合**
+    # （§5j b 臂 force 电池复测：force 覆写 decode 的 vb 输入，策略 w 不进
+    # decode 但照常进 obs 反馈与日志；b 臂结构在任何组合下保持）
+    ap.add_argument("--vb-from-policy", action="store_true",
+                    help="D049b: policy 3-dim vb logits -> softmax soft weights "
+                         "w consumed as decode vb_soft; action 31-dim, obs +3 "
+                         "(w feedback); combinable with --force-vbin* (force "
+                         "overrides the decode vb input, w still feeds obs/logs)")
     # TO38: reference obs injection (must match the trained policy's obs dim)
     ap.add_argument("--to-ref", action="store_true")
     ap.add_argument("--to-ref-npz", default="")
@@ -351,6 +360,10 @@ def rollout(
     fall = None
     ep_done = False
     ended = "full"  # D048e: "term"（摔倒）/ "trunc"（episode 时限截断）/ "full"
+    # D049b：策略软权重 w 的逐步统计（旗标开时收集；env._last_vb_w 由
+    # _pre_physics_step 随本步动作更新，(1,3)）
+    vb_pol = bool(getattr(env, "_vb_from_policy", False))
+    vb_ws = [] if vb_pol else None
 
     # D048e 评测契约 v2 ②③：航向系指标需要"局首快照（命令设定后、首个 act 前）
     # →终末快照"两端的 xy/yaw/quat。term/trunc 步的 robot.data 已被 step 内部
@@ -465,7 +478,7 @@ def rollout(
                 action[:, :12] = aux
                 action[:, 12] = act["gate"].float()
             elif latent_policy:
-                act, _, _, _, _ = _act()
+                act, _, _, _, p_fwd = _act()
                 action = act["latent"]
                 if getattr(env, "_latent_residual", False):
                     # E48: append the full-joint residual (policy aux head).
@@ -475,6 +488,22 @@ def rollout(
                     else:
                         res = torch.zeros_like(act["aux"])
                     action = torch.cat([action, res], dim=1)
+                if getattr(env, "_vb_from_policy", False):
+                    # D049b：[z(16), aux(12), vb_logits(3)] = 31 维。中段 12
+                    # 维 = aux 头槽位（latent 模式 env 忽略）；vb 槽位放
+                    # forward 的原始 logits——env 侧 softmax 得确定性 w
+                    # （det/sample 模式同式，softmax(logits) 恒被执行，与
+                    # 策略离散采样索引解耦）
+                    action = torch.cat(
+                        [
+                            action,
+                            torch.zeros(
+                                1, 12, dtype=torch.float32, device=env.device
+                            ),
+                            p_fwd["vb_logits"],
+                        ],
+                        dim=1,
+                    )
             else:
                 action = torch.zeros(1, 14, dtype=torch.float32, device=env.device)
                 action[:, 2:] = aux
@@ -518,6 +547,10 @@ def rollout(
             ugs.append(
                 float(env.robot.data.projected_gravity_b[0, :2].norm().item())
             )
+            if vb_pol:
+                # D049b：本控制步的策略软权重 w（与 heights/vxs 同窗：
+                # done 步不进逐步统计）
+                vb_ws.append(env._last_vb_w[0].detach().cpu().numpy())
             # 存活步：终末指针刷新为当前 root 状态（schedule 自然跑满时即为
             # 局末值，与 term/trunc 截留口径对齐）
             final_xy = xy
@@ -600,7 +633,7 @@ def rollout(
             and abs(yaw_err) <= math.radians(15.0)
             and upright >= 0.90
         )
-    return {
+    result = {
         "steps": len(heights),
         "completed": fall is None and len(heights) >= total_steps - 1,
         "survived_budget": survived_budget,
@@ -627,6 +660,18 @@ def rollout(
         "task_success": task_success,
         "init": init_fp,
     }
+    if vb_pol and vb_ws:
+        # D049b：w 使用统计（各局 mean w + argmax 档位占比）；旗标关时
+        # 不加键，旧 JSON 键集合不变
+        _vb_arr = np.stack(vb_ws)
+        result["vb_w_mean"] = [
+            round(float(x), 4) for x in _vb_arr.mean(axis=0)
+        ]
+        result["vb_argmax_frac"] = [
+            round(float((_vb_arr.argmax(axis=1) == k).mean()), 4)
+            for k in range(3)
+        ]
+    return result
 
 
 def _agg_res_diag(diags):
@@ -665,6 +710,40 @@ def _agg_res_diag(diags):
 
 def main():
     cli = build_args().parse_args()
+
+    # D048q：parse "a,b,alpha" -> (a, b, alpha) tuple (soft speed-bin blend);
+    # mutually exclusive with --force-vbin (hard bin vs soft blend).
+    # Default "" -> () = no intervention (byte-identical legacy decode path).
+    # D049b：解析块从 AppLauncher 之后上移到此处（纯 python 无 isaaclab 依赖，
+    # 合法路径行为逐位不变），--vb-from-policy 的有效旗标判定（_vb_on）在
+    # policy 构造前就需要它的结果。
+    _force_vbin_soft = ()
+    if cli.force_vbin_soft:
+        _parts = [p.strip() for p in cli.force_vbin_soft.split(",")]
+        if len(_parts) != 3:
+            raise ValueError(f"--force-vbin-soft 需 3 个逗号分隔字段 a,b,alpha，"
+                             f"收到 {cli.force_vbin_soft!r}")
+        _a, _b, _alpha = int(_parts[0]), int(_parts[1]), float(_parts[2])
+        if not (0 <= _a <= 2 and 0 <= _b <= 2):
+            raise ValueError(f"--force-vbin-soft 档位 a/b 须 ∈{{0,1,2}}，"
+                             f"收到 {cli.force_vbin_soft!r}")
+        if not (0.0 <= _alpha <= 1.0):
+            raise ValueError(f"--force-vbin-soft alpha 须 ∈[0,1]，"
+                             f"收到 {cli.force_vbin_soft!r}")
+        _force_vbin_soft = (_a, _b, _alpha)
+    if _force_vbin_soft and cli.force_vbin >= 0:
+        raise ValueError("--force-vbin 与 --force-vbin-soft 互斥"
+                         "（硬档覆写 vs 软混覆写，D048q 口径）")
+    # D049b：--vb-from-policy 与 --force-vbin/--force-vbin-soft **可组合**
+    # （§5j b 臂 force 电池复测：decode 速度条件被 force 覆写，策略 w 不进
+    # decode 但照常进 obs 反馈与日志；b 臂结构 obs 108/动作 31/vb_head 在
+    # 任何组合下保持）。decode 优先级 force_vbin > force_vbin_soft > 策略 w
+    # > 自然分桶（env 侧 _resolve_decode_vb_mode）。组合事实记入
+    # eval_interventions。vanilla/decft 分支不支持 vb（误用时关闭而非半生效；
+    # 缺 --latent-mode 的组合仍由 env __init__ 硬报错）。
+    _vb_on = bool(cli.vb_from_policy)
+    if _vb_on and (cli.env != "apt" or cli.decft):
+        _vb_on = False
 
     # D048f ⑧：缺 checkpoint 在 AppLauncher 之前快速失败，不烧 GPU 启动。
     # v1 行为 = WARNING 后用未训练 policy 跑完全程并写出看似合法的 JSON
@@ -733,6 +812,8 @@ def main():
             cfg.observation_space += cfg.elev_grid * cfg.elev_grid
         if cli.latent_residual:
             cfg.observation_space += 29  # residual action feedback
+        if _vb_on:
+            cfg.observation_space += 3  # D049b: 当前软权重 w 反馈
         if cli.to_ref:
             cfg.observation_space += 12  # TO38 reference block
         policy = AptPPOPolicy(
@@ -740,6 +821,7 @@ def main():
             aux_dim=29 if cli.latent_residual else 12,
             use_phase=not cli.latent_mode and not cli.token_mode,
             latent_dim=64 if cli.token_mode else (16 if cli.latent_mode else 0),
+            vb_head=_vb_on,  # D049b
         ).to("cuda:0")
     cfg.scene.num_envs = 1
     cfg.terrain = make_terrain_importer_cfg(
@@ -765,28 +847,10 @@ def main():
     cfg.res_clip = cli.res_clip
     cfg.res_stats = cli.res_stats  # D048h: env-side residual stat accumulation
     cfg.force_vbin = cli.force_vbin  # D048l: eval-only intervention; -1 = natural binning
-    # D048q: parse "a,b,alpha" -> (a, b, alpha) tuple (soft speed-bin blend);
-    # mutually exclusive with --force-vbin (hard bin vs soft blend).
-    # Default "" -> () = no intervention (byte-identical legacy decode path).
-    _force_vbin_soft = ()
-    if cli.force_vbin_soft:
-        _parts = [p.strip() for p in cli.force_vbin_soft.split(",")]
-        if len(_parts) != 3:
-            raise ValueError(f"--force-vbin-soft 需 3 个逗号分隔字段 a,b,alpha，"
-                             f"收到 {cli.force_vbin_soft!r}")
-        _a, _b, _alpha = int(_parts[0]), int(_parts[1]), float(_parts[2])
-        if not (0 <= _a <= 2 and 0 <= _b <= 2):
-            raise ValueError(f"--force-vbin-soft 档位 a/b 须 ∈{{0,1,2}}，"
-                             f"收到 {cli.force_vbin_soft!r}")
-        if not (0.0 <= _alpha <= 1.0):
-            raise ValueError(f"--force-vbin-soft alpha 须 ∈[0,1]，"
-                             f"收到 {cli.force_vbin_soft!r}")
-        _force_vbin_soft = (_a, _b, _alpha)
-    if _force_vbin_soft and cli.force_vbin >= 0:
-        raise ValueError("--force-vbin 与 --force-vbin-soft 互斥"
-                         "（硬档覆写 vs 软混覆写，D048q 口径）")
     cfg.force_vbin_soft = _force_vbin_soft
     cfg.force_dbin = cli.force_dbin  # D048q: eval-only db intervention; -1 = natural
+    # D049b：与 force_* 直接组合传递（结构恒 b 臂；decode 优先级在 env 侧）
+    cfg.vb_from_policy = _vb_on
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
     cfg.to_ref = cli.to_ref
@@ -824,8 +888,12 @@ def main():
         "decoder_md5": decoder_md5,
     }
     if cli.latent_mode:
-        # train side: action_space = 45 (z16+res29) with residual, else 16
-        ident_expect["action_space"] = 45 if cli.latent_residual else 16
+        # train side: action_space = 45 (z16+res29) with residual, else 16;
+        # D049b vb 臂 = 31（[z16, aux12, vb3]；b 臂与旧 ckpt 维度互不兼容是
+        # 预期，此处 + load_state_dict 双层显式报错不静默）
+        ident_expect["action_space"] = (
+            31 if _vb_on else (45 if cli.latent_residual else 16)
+        )
     elif cli.token_mode:
         ident_expect["action_space"] = 64
     elif cli.decft or cli.env == "vanilla":
@@ -880,6 +948,7 @@ def main():
     env._vanilla = cli.env == "vanilla"
     env._decft = cli.decft
     env._latent_residual = cli.latent_residual
+    env._vb_from_policy = _vb_on  # D049b: rollout 消费（动作组装 + w 统计）
     obs_dict, _ = env.reset()
     env._last_obs = obs_dict["policy"]
 
@@ -1034,9 +1103,48 @@ def main():
         _iv["note"] = "D048q: force_vbin_soft 评测干预（decode speed_embed 软混 alpha·E[a]+(1−alpha)·E[b]，覆写速度档条件），非自然行为"
     elif _fdb is not None:
         _iv["note"] = "D048q: forced_dbin 评测干预（覆写 VAE 方向档条件输入，仅带 db 的 latent-dir-bins 分支生效），非自然行为"
+    elif _vb_on:
+        _iv["note"] = "D049b: vb_from_policy 自然评测（decode vb_soft=策略 softmax 软权重 w，非强制干预）"
     else:
         _iv["note"] = "none"
+    if _vb_on:
+        # D049b：与 forced_vbin/soft 并存时（b 臂 force 电池复测）显式注明
+        # decode 被覆写、策略 w 仅进 obs 反馈/日志
+        _iv["vb_from_policy"] = True
+        if _fvb is not None or _force_vbin_soft:
+            _iv["note"] = (
+                "D049b: vb_from_policy 与 force 覆写并存——decode 速度条件被 "
+                "force 干预覆写（优先级 force_vbin 硬档 > force_vbin_soft 软混 "
+                "> 策略 w），策略 w 不进 decode、仅进 obs 反馈与日志统计"
+            )
     out["eval_interventions"] = _iv
+    # D049b：vb 旗标与 w 使用统计（跨局聚合 = 各局 vb_w_mean/vb_argmax_frac
+    # 的均值；逐局值在各 rollout 条目）
+    out["vb_from_policy"] = bool(_vb_on)
+    if _vb_on:
+        _vb_means, _vb_argmax = [], []
+        for _grp in out.values():
+            if not isinstance(_grp, dict):
+                continue
+            for _cell in _grp.values():
+                if not isinstance(_cell, dict):
+                    continue
+                for _r in _cell.values():
+                    if isinstance(_r, dict) and isinstance(_r.get("vb_w_mean"), list):
+                        _vb_means.append(_r["vb_w_mean"])
+                    if isinstance(_r, dict) and isinstance(_r.get("vb_argmax_frac"), list):
+                        _vb_argmax.append(_r["vb_argmax_frac"])
+        if _vb_means:
+            _vm = np.array(_vb_means)
+            out["vb_w_stats"] = {
+                "n_rollouts": len(_vb_means),
+                "mean_w": [round(float(x), 4) for x in _vm.mean(axis=0)],
+                "argmax_frac": (
+                    [round(float(x), 4) for x in np.array(_vb_argmax).mean(axis=0)]
+                    if _vb_argmax
+                    else None
+                ),
+            }
     # D048f 阶段0：指标扩展标注 + 冻结任务门常量落盘（评测自描述，判读方
     # 不必回查文档；门值来自 DS_CONTINUOUS_EXECUTION_PLAN §5，先于候选
     # 结果冻结）。D048h --res-stats 开启时翻转为 resdiag 契约（默认路径
@@ -1070,6 +1178,7 @@ def main():
             "it": (ckpt_ident or {}).get("it"),
             "entry": (ckpt_ident or {}).get("entry"),
             "git_head": (ckpt_ident or {}).get("git_head"),
+            "vb_head": (ckpt_ident or {}).get("vb_head"),  # D049b 信息键
         },
     }
     if res_stats_on:
@@ -1124,6 +1233,7 @@ def main():
         "res_stats": cli.res_stats,
         "latent_mode": cli.latent_mode,
         "latent_residual": cli.latent_residual,
+        "vb_from_policy": bool(_vb_on),  # D049b（与 force_* 可组合，结构恒 b 臂）
         "latent_speed_bins": cli.latent_speed_bins,
         "latent_dir_bins": cli.latent_dir_bins,
         "latent_vae_path": cli.latent_vae_path,
