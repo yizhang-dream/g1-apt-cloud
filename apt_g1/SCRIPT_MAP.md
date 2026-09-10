@@ -74,6 +74,7 @@
 | `probe_vae_e39.py` | 分析 | E39 双探针：fresh 分类器 z→8 方向 + z→3 速度 vs 多数类 | E39 |
 | `probe_vae_e39_bins.py` | 分析 | **per-bin 方向泄漏探针**（按速度 bin 分组，`[out_dir]` 参数可探 e43） | E40 归因 |
 | `probe_fastbin_data.py` | 分析 | **数据侧探针**：快 bin 数据的方向分布（直行占比/左右平衡） | E40 归因 |
+| `probe_vae_vbin_semantics.py` | 分析 | **D048m decode 档位语义离线探针**：同 z/相位扫 vb∈{0,1,2} 解码，测 token 流相位变化率排序（E39 标签生成量 walk_phase_rate，去 mode 掩码全帧当 walk）+档间 token 距离——判别 D048l 档位→速度闭环反转（b1→0.61/b2→0.45，与名义档位反向）发生在 VAE 条件层还是闭环执行层；预注册四分叉 monotone_up（条件层排序正常，反转归因执行层）/inverted（条件层自身反转）/flat（vb 不动节奏）/mixed（看 per_z），相邻相对差 10% 门；decode 调用/加载逐字镜像 apt_flat_env latent 分支（decode 第 1 参=策略 z、第 2 参=walk clock 的 sin/cos、db 固定前向档 4、vb 整流常量=force_vbin 语义），VAE 维数从 state_dict 形状反推（canonical e39=env 默认）；纯 torch 零仿真 CPU 可跑，产物 JSON（args/vae_md5/code_md5/per_z/aggregate/verdict）+stdout 表 | D048m |
 | `eval_mjlab_fwd.py` | 评测 | **mjlab 从零策略原生任务评测**（自家 sim、60s 直行命令、[seed steps noise video]） | M-FROM0 |
 | `replay_render_mujoco.py` | 渲染 | **MuJoCo 3D 真实模型 offscreen 渲染**（回放 Isaac rollout npz → mp4，MUJOCO_GL=egl） | 渲染管道升级 |
 | `plot_latent_cmp.py` | 分析 | **E27–E30 对比图**（产出 `outputs/latent_cmp.png`） | E30 |
