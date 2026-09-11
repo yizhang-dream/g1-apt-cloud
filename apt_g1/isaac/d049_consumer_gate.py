@@ -6,7 +6,7 @@ log_prob 而 env 执行 softmax(logits) 确定性 w，回报与采样索引独�
 E[A∇log p(k)]=0，vb 头无合法策略梯度；ksg joint 不含 kl_vb）后、训练发射前
 的三个消费者门。判据全部预注册在本文件常量里，数值随 JSON 落盘入档。
 
-子门（--gate 1|2|3|all）：
+子门（--gate 1|2|3|4|all）：
   G1 契约一致性：act() 采样 → buffer → 送 env → update() 重算的同一张量贯穿。
      ① 真采样（两种子两次 act 的 vb_action 不同）
      ② mock train 循环拼接后 action[45:48]==vb_action（residual 48 维布局，
@@ -35,6 +35,14 @@ E[A∇log p(k)]=0，vb 头无合法策略梯度；ksg joint 不含 kl_vb）后�
      后 vb 头参数与其余参数逐位还原、Adam 状态（exp_avg/exp_avg_sq/step）
      逐位还原；④ 对照：正常 lr(3e-4) 只动 vb 头的小步被接受（lr_scale=1、
      kl_vb≤0.05）= 守卫不过度触发。
+  G4 D051 BC 目标正确性（§5k，发射前强制）：将上线的同一 vb_bc_loss +
+     「只动 vb_logits」约束在合成 (obs, cmd) 数据上小规模拟合复现——随机
+     encoder 特征上 800 步把 obs[67] 的 cmd 教成目标软权重 w*，判据：
+     ① 全命令网格 {0,0.1,…,0.8} 上 |ŵ·v − proj_v(cmd)| ≤ 0.05（ŵ=每格
+        softmax 均值，proj_v=裁剪到 anchors 凸包）；
+     ② 零更新对照臂至少一格超差（区分学习 vs 先验偏置）。
+     本门过 = BC 目标/损失/约束三件无误；真实 env 校准曲线若仍平按分支丙
+     归因特征通路，不回退本门结论。
 
 用法（服务器 .venv_isaac 或本机 torch-cpu 均可实跑；无 torch 环境仅 py_compile）：
     PYTHONPATH=. python apt_g1/isaac/d049_consumer_gate.py --gate all \
@@ -53,7 +61,7 @@ from pathlib import Path
 import torch
 from torch.distributions import Categorical, Normal
 
-from apt_g1.isaac.ppo_core import AptPPOPolicy, PPOTrainer
+from apt_g1.isaac.ppo_core import AptPPOPolicy, PPOTrainer, vb_bc_loss
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -78,6 +86,26 @@ G2_INIT_TOL = 0.05  # 初始加权速度 vs 2/3 的容差（sanity）
 # G3 预注册判据
 G3_KL_TARGET = 0.05
 G3_BACKTRACKS = 6
+
+# G4 预注册判据（DS_CONTINUOUS_EXECUTION_PLAN §5k，D051 BC 热启动发射前
+# 强制；改这里 = 改判据，需 owner 重冻）
+G4_ANCHORS = (0.29, 0.47, 1.31)
+G4_CMD_GRID = tuple(i * 0.1 for i in range(9))
+G4_SPEED_TOL = 0.05
+G4_FIT_STEPS = 800  # 拟合步数（预注册为「小规模拟合复现」）
+# G4 自由参数（非判据，定档记录 2026-09-11 本机 torch-cpu 扫描）：合成数据
+# 形状 / 优化超参。噪声尺度定档依据：cmd 通道经随机 encoder 的逐样本 SNR
+# 随噪声尺度骤降——全尺度 randn（s=1.0）下 mean-softmax 的 cmd 响应结构性
+# 趋平（lr∈[1e-3,1e-2] 全扫 max_err≈0.25，与目标/损失正确性无关），门失去
+# 区分力；s=0.05、lr=0.3 时判据在预注册步数内稳定复现（8 种子全过，
+# worst max_err 0.045）。encoder 结构与 G2 同款（随机特征上可拟合性检验）
+G4_NOISE_SCALE = 0.05
+G4_FIT_LR = 0.3
+G4_N = 512
+G4_OBS_DIM = 68  # obs[67] = cmd 槽位（真实 env obs 布局中 _commands 块起始）
+G4_SEED = 4001  # 训练数据 + treated 臂初始化
+G4_EVAL_SEED = 4101  # 网格评估 obs 批（与训练批不同 = 留出核验）
+G4_CTRL_SEED = 4201  # 零更新对照臂初始化
 
 # env._vb_action_slice 的两模式切片（apt_flat_env.py 单一事实源；此处硬编码
 # 为消费方自检值，若 env 侧布局变更本门应失败提示同步）
@@ -496,12 +524,109 @@ def gate3() -> tuple[bool, dict]:
 
 
 # ---------------------------------------------------------------------------
+# G4 D051 BC 目标正确性（§5k：随机 encoder 特征上的 cmd→w* 拟合复现）
+# ---------------------------------------------------------------------------
+def _g4_grid_errs(policy: AptPPOPolicy, obs_base: torch.Tensor) -> list:
+    """G4 判据量：策略在 G4_CMD_GRID 全网格上的逐格误差 |ŵ·v − proj_v(cmd)|。
+
+    ŵ = 每格全部样本行 softmax 的均值（与 train 预热末校准快照同口径）；
+    proj_v(cmd) = cmd 裁剪到 anchors 凸包 [v0, v2]。obs_base 的 obs[:, 67]
+    被逐格改写为网格值（cmd 必须经 obs 可读，网格判据才有意义）。
+    """
+    errs = []
+    with torch.no_grad():
+        for gv in G4_CMD_GRID:
+            og = obs_base.clone()
+            og[:, 67] = gv
+            w = torch.softmax(
+                policy.forward_actor(og)["vb_logits"], dim=-1
+            ).mean(dim=0)
+            spd = float(w @ torch.tensor(G4_ANCHORS))
+            proj = min(max(gv, G4_ANCHORS[0]), G4_ANCHORS[2])
+            errs.append(abs(spd - proj))
+    return errs
+
+
+def gate4() -> tuple[bool, dict]:
+    """G4：D051 BC 目标正确性子门（§5k，发射前强制）。
+
+    用将上线的同一损失（ppo_core.vb_bc_loss）与「只动 vb_logits 线性层」
+    约束，在合成 (obs, cmd) 数据上小规模拟合复现，检验：
+    ① 全命令网格 |ŵ·v − proj_v(cmd)| ≤ 0.05（BC 目标映射 + CE 损失 +
+       线性层约束的机制正确性，随机 encoder 特征上可拟合）；
+    ② 零更新对照臂（同样前向、不训练）至少一格超差（区分学习 vs 先验
+       偏置：均匀初始化 w·v≈0.69 与网格目标 0.29..0.8 的跨度 0.51 远超
+       2×容差，常数响应不可能全格入带）。
+    本门过 = BC 预热的目标/损失/约束三件无误；真实 env obs 上校准曲线若
+    仍平，按预注册分支丙归因特征通路（encoder 对 obs[67] 敏感度），不回
+    退本门结论。
+    """
+    detail: dict = {}
+
+    # ---- 主臂：BC 拟合复现（同一 vb_bc_loss + 独立 Adam 只更新 vb_logits）----
+    torch.manual_seed(G4_SEED)
+    policy = AptPPOPolicy(
+        obs_dim=G4_OBS_DIM, aux_dim=12, gate_k=0, vb_head=True,
+        hidden_dim=32, use_phase=False, latent_dim=0,
+        vb_init_std=G2_TREATED_VB_INIT_STD,  # 与 G2 同款构造（σ 与 BC 无关）
+    )
+    cmd = torch.rand(G4_N)  # cmd ∈ [0,1]（真实命令域 vx_max=0.8 的包络）
+    obs = torch.randn(G4_N, G4_OBS_DIM) * G4_NOISE_SCALE
+    obs[:, 67] = cmd
+    bc_opt = torch.optim.Adam(policy.vb_logits.parameters(), lr=G4_FIT_LR)
+    fit_loss = 0.0
+    for _ in range(G4_FIT_STEPS):
+        loss = vb_bc_loss(policy, obs, cmd)
+        bc_opt.zero_grad()
+        loss.backward()
+        bc_opt.step()
+        fit_loss = float(loss.detach())
+    # 网格评估：留出批随机 obs，obs[:, 67]=网格值，no_grad 前向 softmax
+    torch.manual_seed(G4_EVAL_SEED)
+    obs_eval = torch.randn(G4_N, G4_OBS_DIM) * G4_NOISE_SCALE
+    errs = _g4_grid_errs(policy, obs_eval)
+    detail["g4_treated_grid_errs"] = [round(e, 4) for e in errs]
+    detail["g4_treated_max_err"] = max(errs)
+    detail["g4_fit_final_loss"] = fit_loss
+    ok1 = all(e <= G4_SPEED_TOL for e in errs)
+    _report(
+        f"G4.1 BC fit: |w.v - proj_v(cmd)| <= {G4_SPEED_TOL} at all "
+        f"{len(G4_CMD_GRID)} grid points",
+        ok1,
+        f"max_err={max(errs):.4f} final_loss={fit_loss:.4f} "
+        f"steps={G4_FIT_STEPS} lr={G4_FIT_LR}",
+    )
+    ok = ok1
+
+    # ---- 对照臂：零更新（同样前向、不训练）至少一格超差 ----
+    torch.manual_seed(G4_CTRL_SEED)
+    ctrl = AptPPOPolicy(
+        obs_dim=G4_OBS_DIM, aux_dim=12, gate_k=0, vb_head=True,
+        hidden_dim=32, use_phase=False, latent_dim=0,
+        vb_init_std=G2_TREATED_VB_INIT_STD,
+    )
+    cerrs = _g4_grid_errs(ctrl, obs_eval)
+    detail["g4_control_grid_errs"] = [round(e, 4) for e in cerrs]
+    detail["g4_control_max_err"] = max(cerrs)
+    ok2 = max(cerrs) > G4_SPEED_TOL
+    _report(
+        "G4.2 zero-update control: at least one grid point off "
+        "(learning, not prior bias)",
+        ok2,
+        f"max_err={max(cerrs):.4f}",
+    )
+    ok = ok and ok2
+    return ok, detail
+
+
+# ---------------------------------------------------------------------------
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="D049b-fix consumer gate: vb continuous-action contract "
-                    "(G1 contract / G2 credit assignment / G3 rollback)"
+                    "(G1 contract / G2 credit assignment / G3 rollback / "
+                    "G4 D051 BC target correctness)"
     )
-    ap.add_argument("--gate", choices=["1", "2", "3", "all"], default="all",
+    ap.add_argument("--gate", choices=["1", "2", "3", "4", "all"], default="all",
                     help="which gate(s) to run (default: all)")
     ap.add_argument("--out", default=None,
                     help="report JSON path (default: apt_g1/outputs/"
@@ -522,6 +647,9 @@ def main() -> None:
     if args.gate in ("3", "all"):
         ok3, d3 = gate3()
         gates_run["G3"] = {"pass": bool(ok3), **d3}
+    if args.gate in ("4", "all"):
+        ok4, d4 = gate4()
+        gates_run["G4"] = {"pass": bool(ok4), **d4}
 
     all_pass = all(g["pass"] for g in gates_run.values()) and bool(gates_run)
     report = {
@@ -543,6 +671,10 @@ def main() -> None:
             "g2_control_seeds": list(G2_CONTROL_SEEDS),
             "g3_kl_target": G3_KL_TARGET,
             "g3_backtracks": G3_BACKTRACKS,
+            "g4_anchors": list(G4_ANCHORS),
+            "g4_cmd_grid": list(G4_CMD_GRID),
+            "g4_speed_tol": G4_SPEED_TOL,
+            "g4_fit_steps": G4_FIT_STEPS,
         },
         "gates": gates_run,
         "all_pass": bool(all_pass),

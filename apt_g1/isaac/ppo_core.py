@@ -242,6 +242,48 @@ def kl_categorical_reverse(
     return (torch.softmax(old_logits, dim=-1) * (log_po - log_pn)).sum(-1)
 
 
+def vb_bc_target_w(
+    cmd: torch.Tensor, anchors=(0.29, 0.47, 1.31)
+) -> torch.Tensor:
+    """D051：BC 目标软权重 w*(cmd)——把 cmd 投影到 anchors 凸包后分段线性
+    分配到相邻两档。
+
+    语义 = argmin_{w∈Δ²} (w·v − cmd)²，v = anchors（speedA init 档位图
+    D048n；§5k 预注册）。cmd ≤ v0 → (1,0,0)；cmd ≥ v2 → (0,0,1)；
+    v0..v1 / v1..v2 在相邻两档间线性分配（档位边界 v1 处两段一致 =(0,1,0)）。
+    数值自检点：0.4→(0.389,0.611,0)、0.6→(0,0.845,0.155)。
+    纯函数（只依赖 torch），train 预热与 d049_consumer_gate G4 共用同一
+    实现（单一事实源）。cmd 任意 shape（m/s），返回 (..., 3)。
+    """
+    v0, v1, v2 = (float(a) for a in anchors)
+    c = torch.clamp(cmd, min=v0, max=v2)
+    flat = c.reshape(-1)
+    w = torch.zeros(flat.numel(), 3, dtype=c.dtype, device=c.device)
+    m_lo = flat <= v1  # 下半段 [v0, v1]：分配到 0/1 两档
+    r_lo = (v1 - flat[m_lo]) / (v1 - v0)
+    w[m_lo, 0] = r_lo
+    w[m_lo, 1] = 1.0 - r_lo
+    m_hi = flat > v1  # 上半段 [v1, v2]：分配到 1/2 两档
+    r_hi = (v2 - flat[m_hi]) / (v2 - v1)
+    w[m_hi, 1] = r_hi
+    w[m_hi, 2] = 1.0 - r_hi
+    return w.reshape(*c.shape, 3)
+
+
+def vb_bc_loss(
+    policy: "AptPPOPolicy", obs: torch.Tensor, cmd: torch.Tensor
+) -> torch.Tensor:
+    """D051：vb 头 BC 监督损失——CE(softmax(vb_logits(obs)), w*(cmd))。
+
+    交叉熵以 w* 为目标分布（log_softmax 形式规避 log 0，§5k 预注册）。
+    只应配「仅 policy.vb_logits 参数进 optimizer」的更新（encoder/z/res/
+    vb_log_std 全冻结 = 单变量纪律）；本函数自身不改任何参数、纯前向+求和。
+    """
+    p = policy.forward_actor(obs)
+    w_star = vb_bc_target_w(cmd)
+    return -(w_star * torch.log_softmax(p["vb_logits"], dim=-1)).sum(-1).mean()
+
+
 class PPOTrainer:
     def __init__(
         self,
@@ -651,6 +693,22 @@ class PPOTrainer:
         vb = rollout.get("vb_action")
         if vb is not None:
             vb = vb.reshape(T * N, -1)
+        # D051 伴生插桩（D050-② 内置，§5k；只读不改训练）：advantage 与
+        # buffer vb_action 的逐维 Pearson 相关（3 维），判读 BC 预热后 PPO
+        # 更新侧学习信号是否出现。adv 源 = 与 ratio 计算同一个 adv_f（Pearson
+        # 对仿射不变，归一化前后同值）；std 取与 1/n 协方差同口径的有偏估计
+        #（= np.corrcoef 标准口径，torch.std 默认无偏会差 sqrt((n-1)/n) 因子）；
+        # NaN/退化（std=0 → 0/0）自然记 NaN。vb 头关闭（无 vb_action 键）→
+        # None，消费方 .get
+        adv_vb_corr = None
+        if vb is not None:
+            with torch.no_grad():
+                _a = adv_f - adv_f.mean()
+                _v = vb - vb.mean(dim=0, keepdim=True)
+                _den = _a.pow(2).mean().sqrt() * _v.pow(2).mean(dim=0).sqrt()
+                adv_vb_corr = [
+                    float(c) for c in (_a.unsqueeze(1) * _v).mean(dim=0) / _den
+                ]
         if phase_labels is not None:
             phase_labels = phase_labels.reshape(-1, phase_labels.shape[-1])
 
@@ -1020,6 +1078,8 @@ class PPOTrainer:
                 _den = torch.sqrt(sum(s.pow(2).sum() for s in theta_start))
                 agg["param_rel_move"] = float((_num / (_den + 1e-12)).item())
         agg["expl_var"] = expl_var
+        # D051：伴生插桩落账（vb 头关闭时为 None）
+        agg["adv_vb_corr"] = adv_vb_corr
         # E49: 整轮更新结束后的统一 KL 测量——no_grad 下用更新后的 policy 对
         # 整批 rollout obs 重算联合 logp（与 minibatch 的 logp 同口径，含
         # aux_executed / decoder_ft 分支），k3 估计与 approx_kl 同族，但样本

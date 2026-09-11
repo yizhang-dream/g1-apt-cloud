@@ -119,6 +119,18 @@ def build_args():
                          "分配（σ=e^-1 使 softmax 软权重有实质探索变异，"
                          "σ=e^-4 时 w 近确定、score-function 信号过弱），"
                          "复验 b 臂按门验证配置取 -1.0")
+    # D051：BC 热启动 vb 头（DS_CONTINUOUS_EXECUTION_PLAN §5k 预注册）。
+    # 主训练循环前先教 vb_logits「obs 里的 vx 命令 → 目标软权重 w*」映射
+    #（只动 vb_logits 线性层，encoder/z/res/vb_log_std 全冻结），再验 PPO
+    # 能否接住。默认 0 = 关（D049-R1 对照臂行为逐位不变）
+    ap.add_argument("--vb-bc-warmup-steps", type=int, default=0,
+                    help="D051: BC warmup steps for the vb head before PPO "
+                         "(default 0 = off; requires --vb-from-policy)")
+    ap.add_argument("--vb-bc-lr", type=float, default=1e-3,
+                    help="D051: BC warmup Adam lr (vb_logits linear layer only)")
+    ap.add_argument("--vb-bc-anchors", type=str, default="0.29,0.47,1.31",
+                    help="D051: comma-separated speed anchors (m/s) of the BC "
+                         "target w*(cmd)")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -256,7 +268,7 @@ def main():
         AptFlatG1VanillaEnvCfg,
     )
     from apt_g1.isaac import ckpt_identity
-    from apt_g1.isaac.ppo_core import AptPPOPolicy, PPOTrainer
+    from apt_g1.isaac.ppo_core import AptPPOPolicy, PPOTrainer, vb_bc_loss
     from apt_g1.isaac.terrain_cfg import make_terrain_importer_cfg
 
     torch.manual_seed(cli.seed)
@@ -277,6 +289,13 @@ def main():
     pcap_cfg = " progress_cap_cmd=1" if cli.progress_cap_cmd else ""
     # D049b：旗标关时回显逐字不变
     vb_cfg = " vb_from_policy=1" if cli.vb_from_policy else ""
+    if cli.vb_bc_warmup_steps > 0:
+        # D051：预热配置回显（发射链 smoke 检查 w 校准快照用；>0 蕴含
+        # vb_from_policy=1，旗标关路径回显仍逐字不变）
+        vb_cfg += (
+            f" vb_bc_warmup_steps={cli.vb_bc_warmup_steps}"
+            f" vb_bc_lr={cli.vb_bc_lr} vb_bc_anchors={cli.vb_bc_anchors!r}"
+        )
     print(
         f"[CFG] out={cli.out} num_envs={cli.num_envs} iters={cli.iters} "
         f"probe_iters={cli.probe_iters} "
@@ -684,6 +703,10 @@ def main():
     if cli.vb_from_policy:
         hist["vb_w_mean"] = []
         hist["vb_argmax_hist"] = []
+        # D051：advantage×vb_action 逐维 Pearson 相关（伴生插桩，update 侧
+        # vb 头关闭时 stats 记 None → hist 记 null；键仍只在旗标开时新增，
+        # 旧 run 的 train_log.json 键集合不变）
+        hist["adv_vb_corr"] = []
     # E49 诊断步骤③：分项诊断（--diag-log 开启时启用）。vanilla env 无
     # _last_rew_terms 快照，不支持。d_* 序列随 hist 整体序列化进 train_log.json。
     DIAG_KEYS = ("track_xy", "track_yaw", "upright", "height", "stillness")
@@ -710,6 +733,110 @@ def main():
     # 调度长度不压缩）
     iters_run = cli.probe_iters or cli.iters
     dead_streak = 0  # D048i：连续死轮计数（accepted==0 的更新轮）
+
+    # ------------------------------------------------------------------
+    # D051：BC 热启动 vb 头（DS_CONTINUOUS_EXECUTION_PLAN §5k 预注册）。
+    # 单变量纪律：对照 = D049-R1 b-fix，唯一新增 = 发射前 BC 预热——只在
+    # 线 rollout（act 正常采样、命令正常重采样）中对「当前 obs + 同期 cmd」
+    # 做 CE 监督，独立 Adam 只更新 vb_logits 线性层（encoder/z/res/
+    # vb_log_std 全冻结，不污染共享特征分布）。steps=0（默认）整块跳过，
+    # 行为与 D049-R1 逐位一致
+    # ------------------------------------------------------------------
+    if cli.vb_bc_warmup_steps > 0:
+        assert cli.vb_from_policy, (
+            "--vb-bc-warmup-steps requires --vb-from-policy "
+            "(D051 BC warmup only applies to the vb-head arm)"
+        )
+        assert policy.vb_head and hasattr(policy, "vb_logits"), (
+            "vb_from_policy run must carry an AptPPOPolicy vb_head"
+        )
+        assert obs.shape[1] > 67, (
+            f"obs dim {obs.shape[1]} has no cmd slot at index 67 (D051 "
+            "calibration grid rewrites obs[:, 67])"
+        )
+        bc_anchors = tuple(
+            float(s) for s in cli.vb_bc_anchors.split(",") if s.strip()
+        )
+        assert len(bc_anchors) == 3, (
+            f"--vb-bc-anchors needs 3 comma-separated floats, got "
+            f"{cli.vb_bc_anchors!r}"
+        )
+        bc_opt = torch.optim.Adam(
+            policy.vb_logits.parameters(), lr=cli.vb_bc_lr
+        )
+        print(
+            f"[BC-WARMUP] start steps={cli.vb_bc_warmup_steps} "
+            f"lr={cli.vb_bc_lr} anchors={bc_anchors} "
+            f"(only vb_logits trains; encoder/z/res/vb_log_std frozen)",
+            flush=True,
+        )
+        bc_last_loss = 0.0
+        for bc_t in range(cli.vb_bc_warmup_steps):
+            # 采样在 no_grad（BC 前向要 grad：vb_bc_loss 内部自开——这里
+            # 在默认 enable_grad 上下文，act 分支单独关掉即可）
+            with torch.no_grad():
+                bc_act, _bc_lp, _bc_ent, _bc_val, _bc_fwd = policy.act(
+                    obs, deterministic=False
+                )
+            # 动作布局与主 rollout 的 vb 臂同款（residual 48 / plain 31，
+            # 末 3 维 = 采样的 vb_action，env 侧 softmax 得带噪软权重）
+            bc_action = torch.cat(
+                [bc_act["phase"], bc_act["aux"], bc_act["vb_action"]], dim=1
+            )
+            # BC 目标用 step 之前的 obs（act 的输入）与同期 cmd 快照
+            #（env._commands = (num_envs,3) 的 vx,vy,yaw，取 vx 列）
+            bc_obs = obs
+            bc_cmd = env._commands[:, 0].detach().clone()
+            bc_obs_dict, _bc_rew, _bc_term, _bc_trunc, _ = env.step(bc_action)
+            bc_loss = vb_bc_loss(policy, bc_obs, bc_cmd)
+            bc_opt.zero_grad()
+            bc_loss.backward()
+            bc_opt.step()
+            bc_last_loss = float(bc_loss.detach())
+            obs = bc_obs_dict["policy"]
+            if (bc_t + 1) % 100 == 0 or bc_t + 1 == cli.vb_bc_warmup_steps:
+                with torch.no_grad():
+                    _bc_w = torch.softmax(
+                        policy.forward_actor(obs)["vb_logits"], dim=-1
+                    ).mean(dim=0)
+                print(
+                    f"[BC-WARMUP] step={bc_t + 1}/{cli.vb_bc_warmup_steps} "
+                    f"loss={bc_last_loss:.5f} "
+                    f"w_mean=[{', '.join(f'{v:.3f}' for v in _bc_w.tolist())}]",
+                    flush=True,
+                )
+        # 预热末校准快照：当前 obs 一份，obs[:, 67]（cmd 槽位，env obs 布局
+        # 中 _commands 块起始索引）逐档改写为命令网格读确定性响应（it0 判读
+        # 锚）。每档用全部 env 行（9×num_envs），前向 softmax 后逐档取均值
+        # → 9×3 校准表
+        bc_grid = tuple(i * 0.1 for i in range(9))
+        bc_n = env.num_envs
+        obs_grid = obs.detach().clone().repeat(len(bc_grid), 1)
+        for _gi, _gv in enumerate(bc_grid):
+            obs_grid[_gi * bc_n : (_gi + 1) * bc_n, 67] = _gv
+        with torch.no_grad():
+            _calib_logits = policy.forward_actor(obs_grid)["vb_logits"]
+            bc_calib = torch.softmax(_calib_logits, dim=-1).reshape(
+                len(bc_grid), bc_n, 3
+            ).mean(dim=1)
+        bc_calib_rows = [
+            [round(v, 5) for v in row] for row in bc_calib.tolist()
+        ]
+        hist["vb_bc_calib"] = bc_calib_rows  # 9×3 校准表（行序 = bc_grid）
+        hist["vb_bc_info"] = {
+            "steps": int(cli.vb_bc_warmup_steps),
+            "final_loss": bc_last_loss,
+            "lr": float(cli.vb_bc_lr),
+            "anchors": list(bc_anchors),
+            "grid": list(bc_grid),
+        }
+        print("[BC-WARMUP] calibration w(cmd) (cmd -> [w0, w1, w2]):", flush=True)
+        for _gv, _row in zip(bc_grid, bc_calib_rows):
+            print(
+                f"    cmd={_gv:.1f} -> [{', '.join(f'{v:.4f}' for v in _row)}]",
+                flush=True,
+            )
+        print("BC warmup done, entering PPO", flush=True)
 
     for it in range(start_it, iters_run):
         t0 = time.time()
@@ -990,6 +1117,9 @@ def main():
             hist["vb_argmax_hist"].append(
                 [round(v, 5) for v in (vb_am_sum / (T * N)).tolist()]
             )
+            # D051：伴生插桩落账（update 侧 adv_vb_corr = 3 维 Pearson 列表
+            # 或 None；.get 防御与 kl/守卫键同风格）
+            hist["adv_vb_corr"].append(stats.get("adv_vb_corr"))
         if cli.kl_guard is not None:
             hist["kl_mb"].append(stats.get("kl_mb"))
             hist["kl_mb_all"].append(stats.get("kl_mb_all"))
