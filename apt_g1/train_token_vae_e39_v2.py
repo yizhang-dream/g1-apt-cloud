@@ -214,6 +214,10 @@ def main():
     ap.add_argument("--parity-check", action="store_true", default=False,
                     help="仅跑零 UL/mode 前向对账后退出")
     ap.add_argument("--out-dir", type=str, default="outputs/token_vae_e39")
+    ap.add_argument("--db-npy", type=str, default=None,
+                    help="D052 G2: 外部 (N,) int64 db 标签文件（beta 参考系，"
+                         "bin4=前向），替代 angle_bin db 赋值（窗口/类平衡/"
+                         "dbin 落盘照旧；缺省=原行为）")
     args = ap.parse_args()
     if args.parity_check:
         parity_check()
@@ -253,6 +257,22 @@ def main():
     edges = np.quantile(rate[base_mode == 2], [1.0 / 3.0, 2.0 / 3.0])
     vb = np.clip(np.digitize(rate, edges), 0, 2).astype(np.int64)
     db = angle_bin
+    _db_extra = {}
+    if args.db_npy:  # D052 G2: 外部 db 标签（beta 参考系），窗口/类平衡路径照旧不动
+        import hashlib  # 局部 import：v2 无 e39 的 _md5_file 助手，保持最小 diff
+        db = np.load(args.db_npy).astype(np.int64)
+        assert len(db) == len(tok), \
+            f"--db-npy N mismatch: {len(db)} != tokens {len(tok)}"
+        assert int(db.min()) >= 0 and int(db.max()) <= 7, \
+            "--db-npy labels outside [0,7]"
+        _h = hashlib.md5()
+        with open(args.db_npy, "rb") as f:
+            for _chunk in iter(lambda: f.read(1 << 20), b""):
+                _h.update(_chunk)
+        _db_extra = {"label_source": f"external:{args.db_npy}",
+                     "label_md5": _h.hexdigest()}
+        print(f"db labels: external {args.db_npy} md5={_db_extra['label_md5']}",
+              flush=True)
     print("v-bin counts", np.bincount(vb, minlength=3))
     print("d-bin counts", np.bincount(db, minlength=8))
     if use_inputs:
@@ -267,7 +287,11 @@ def main():
                                 else f"embed_idx={walk_idx} (WALK)"}, f, indent=1)
     with open(os.path.join(out_dir, "dbin_meta.json"), "w") as f:
         json.dump({"n_bins": 8,
-                   "bin_counts": [int(c) for c in np.bincount(db, minlength=8)]},
+                   "bin_counts": [int(c) for c in np.bincount(db, minlength=8)],
+                   "label_source": _db_extra.get("label_source",
+                                                 "angle_bin_default"),
+                   "label_md5": _db_extra.get("label_md5"),
+                   "bin4_is_forward": bool(args.db_npy)},  # D052: 外部标签=前向语义
                   f, indent=1)
 
     window, latent_dim, hidden = 10, 16, 256

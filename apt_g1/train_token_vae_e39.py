@@ -199,6 +199,10 @@ def main():
     ap.add_argument("--vb-npy", type=str, default="",
                     help="D048n: 外部 (N,) int64 vb 标签文件，替代内部相位 rate 分位"
                          " vb 赋值（PCA/rate/pca.npz/dbin 落盘照旧；空=原行为）")
+    ap.add_argument("--db-npy", type=str, default=None,
+                    help="D052 G2: 外部 (N,) int64 db 标签文件（beta 参考系，"
+                         "bin4=前向），替代 angle_bin db 赋值（窗口/类平衡/"
+                         "dbin 落盘照旧；缺省=原行为）")
     args = ap.parse_args()
     torch.manual_seed(0)
     np.random.seed(0)
@@ -229,6 +233,17 @@ def main():
         print(f"vb labels: external {args.vb_npy} md5={_vb_extra['label_md5']}",
               flush=True)
     db = angle_bin
+    _db_extra = {}
+    if args.db_npy:  # D052 G2: 外部 db 标签（beta 参考系），PCA/rate 路径照旧不动
+        db = np.load(args.db_npy).astype(np.int64)
+        assert len(db) == len(tok), \
+            f"--db-npy N mismatch: {len(db)} != tokens {len(tok)}"
+        assert int(db.min()) >= 0 and int(db.max()) <= 7, \
+            "--db-npy labels outside [0,7]"
+        _db_extra = {"label_source": f"external:{args.db_npy}",
+                     "label_md5": _md5_file(args.db_npy)}
+        print(f"db labels: external {args.db_npy} md5={_db_extra['label_md5']}",
+              flush=True)
     print("v-bin counts", np.bincount(vb))
     print("d-bin counts", np.bincount(db, minlength=8))
     np.savez(os.path.join(out_dir, "pca.npz"), pmean=pmean, V2=V2,
@@ -241,7 +256,11 @@ def main():
         json.dump({"n_bins": 8,
                    "bin_counts": [int(c) for c in np.bincount(db, minlength=8)],
                    **({"bin0_is_forward": True, "bin4_is_forward": False}
-                      if args.bin0_forward else {"bin4_is_forward": True})},
+                      if args.bin0_forward and not args.db_npy else
+                      {"bin4_is_forward": True}),  # --db-npy 外部标签强制 bin4=前向
+                   "label_source": _db_extra.get("label_source",
+                                                 "angle_bin_default"),
+                   "label_md5": _db_extra.get("label_md5")},
                   f, indent=1)
 
     phase2 = np.stack([np.sin(phi), np.cos(phi)], axis=1).astype(np.float32)
