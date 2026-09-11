@@ -489,15 +489,15 @@ def rollout(
                         res = torch.zeros_like(act["aux"])
                     action = torch.cat([action, res], dim=1)
                 if getattr(env, "_vb_from_policy", False):
-                    # D049b：vb 槽位放 forward 的原始 logits——env 侧 softmax
-                    # 得确定性 w（det/sample 模式同式，softmax(logits) 恒被
-                    # 执行，与策略离散采样索引解耦）。切片位置随模式（与 env
-                    # _vb_action_slice 同步）：residual 配方 [z,res,vb]=48
-                    # （vb 直接接 res 段后）；plain [z,aux,vb]=31（中段 12 维
-                    # aux 槽位 env 忽略）
+                    # D049b-fix：vb 槽位放 act 的连续 vb_action（det 默认模式
+                    # =vb_logits，softmax 与旧确定性 w 逐位一致=评测口径不变；
+                    # --sample 模式为带噪动作，与训练 rollout 同口径）。切片
+                    # 位置随模式（与 env _vb_action_slice 同步）：residual
+                    # 配方 [z,res,vb]=48（vb 直接接 res 段后）；plain
+                    # [z,aux,vb]=31（中段 12 维 aux 槽位 env 忽略）
                     if getattr(env, "_latent_residual", False):
                         action = torch.cat(
-                            [action, p_fwd["vb_logits"]], dim=1
+                            [action, act["vb_action"]], dim=1
                         )
                     else:
                         action = torch.cat(
@@ -507,7 +507,7 @@ def rollout(
                                     1, 12, dtype=torch.float32,
                                     device=env.device,
                                 ),
-                                p_fwd["vb_logits"],
+                                act["vb_action"],
                             ],
                             dim=1,
                         )

@@ -373,8 +373,9 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # 遇到则 print 警告一次并忽略。默认 -1 = 自然方位分桶。
     force_dbin: int = -1
 
-    # D049b：连续 vb 软权重臂（策略选档主臂，DS_CONTINUOUS_EXECUTION_PLAN
-    # §5j）。True 时动作末 3 维 = vb logits→softmax = 连续软权重 w=(N,3)，
+    # D049b-fix：连续 vb 软权重臂（策略选档主臂，DS_CONTINUOUS_EXECUTION_PLAN
+    # §5j）。True 时动作末 3 维 = vb 连续动作（act 高斯采样自 vb_logits，det
+    # 模式 =vb_logits）→softmax = 软权重 w=(N,3)，
     # latent decode 每步以 vb_soft=w 消费（复用 D048q 的 vb_soft 通路，来源
     # 从评测干预改为策略动作）；自然分桶 vb 仍计算但仅日志对照；obs 追加
     # 当前 w 反馈 3 维。动作布局随模式（_vb_action_slice）：
@@ -1198,9 +1199,10 @@ class AptFlatG1Env(DirectRLEnv):
                 else:
                     res = None
                 if self.cfg.vb_from_policy:
-                    # D049b：动作末 3 维 = vb_logits，softmax 得连续软权重 w
-                    # ——softmax(logits) 即策略的确定性 w（离散 sample 只进
-                    # PPO log_prob 簿记，不进 env），本步 decode 以 vb_soft=w
+                    # D049b-fix：动作末 3 维 = vb_action（策略高斯采样自
+                    # vb_logits 的连续动作，det 模式 =vb_logits），softmax 得
+                    # 软权重 w——softmax(vb_action) 即带噪软权重，本段代码对
+                    # 采样/确定性两种来源零改动通用。本步 decode 以 vb_soft=w
                     # 消费（见 _compute_q_des），obs 反馈用 _last_vb_w。
                     # 切片位置随模式（_vb_action_slice）：residual 配方
                     # [z,res,vb]→45:48（vb 在 res 段之后，res 消费 16:45 与

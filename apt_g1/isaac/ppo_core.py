@@ -34,15 +34,21 @@ class AptPPOPolicy(nn.Module):
         aux_init_std: float = -4.0,
         use_phase: bool = True,
         latent_dim: int = 0,
+        vb_init_std: float = -4.0,
     ):
         super().__init__()
         self.obs_dim = obs_dim
         self.aux_dim = aux_dim
         self.gate_k = gate_k
-        # D049b：连续 vb 软权重臂的可选头（3 维 logits）。False = 不建头，
-        # 参数量/前向/RNG 路径与旧逐位一致；True 时与 gate 头完全同模式
-        # （Categorical 采样进 log_prob/entropy），env 消费的是
-        # softmax(logits)=w 本身（连续软权重），离散 sample 仅作 PPO 簿记。
+        # D049b-fix：连续 vb 软权重臂的可选头（3 维 logits）。False = 不建头，
+        # 参数量/前向/RNG 路径与旧逐位一致；True 时动作 = 连续高斯采样
+        # vb_action = vb_logits + exp(vb_log_std)·ε（log_std 头与 z/res 的
+        # phase_log_std/aux_log_std 完全同款：nn.Parameter 全 init_std 填充），
+        # 同一张量贯穿 buffer → env（softmax(vb_action)=带噪软权重 w）→
+        # update() 重算，动作-概率契约闭合。旧 categorical 索引簿记实现
+        # （sample 进 log_prob 而 env 执行 softmax(logits)，E[A∇log p(k)]=0）
+        # 已整体删除，不留旗标——旧 D049b ckpt 缺 vb_log_std 键，strict 加载
+        # 即明确报错（owner 冻结口径：判执行失败不兼容是预期）。
         self.vb_head = bool(vb_head)
         self.use_phase = use_phase
         self.latent_dim = latent_dim
@@ -72,8 +78,10 @@ class AptPPOPolicy(nn.Module):
         if gate_k > 0:
             self.gate_logits = nn.Linear(hidden_dim, gate_k)
         if self.vb_head:
-            # D049b：vb 头（3 维 logits→softmax=w），gate_logits 同款写法
+            # D049b-fix：vb 头（3 维 logits→softmax=w）+ 高斯 log_std 参数头
+            # （z/res 的 log_std 同款写法：Parameter 全量 init 值填充）
             self.vb_logits = nn.Linear(hidden_dim, 3)
+            self.vb_log_std = nn.Parameter(torch.full((3,), vb_init_std))
         self.critic = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
             nn.Tanh(),
@@ -95,6 +103,7 @@ class AptPPOPolicy(nn.Module):
             out["gate_logits"] = self.gate_logits(x)
         if self.vb_head:
             out["vb_logits"] = self.vb_logits(x)
+            out["vb_log_std"] = self.vb_log_std.expand_as(out["vb_logits"])
         return out
 
     def get_value(self, obs: torch.Tensor) -> torch.Tensor:
@@ -139,16 +148,19 @@ class AptPPOPolicy(nn.Module):
             log_prob = log_prob + gd.log_prob(gate)
             entropy = entropy + gd.entropy()
         if self.vb_head:
-            # D049b：与 gate 头同模式——categorical 采样进 log_prob/entropy，
-            # det 模式取 argmax。注意 env 每步消费的 w = softmax(logits)
-            # （调用方从 forward dict 取 vb_logits 组装动作），与本采样索引
-            # 解耦：softmax(logits) 即策略的确定性软权重，sample 只服务
-            # log_prob 比值计算的簿记。
-            vbd = Categorical(logits=p["vb_logits"])
-            vb = vbd.sample() if not deterministic else vbd.probs.argmax(-1)
-            out["vb"] = vb
-            log_prob = log_prob + vbd.log_prob(vb)
-            entropy = entropy + vbd.entropy()
+            # D049b-fix：vb 动作 = 连续高斯采样（z/res 头完全同构）——
+            # vb_action = vb_logits + exp(vb_log_std)·ε，det 模式取均值
+            # （=vb_logits，softmax 与旧确定性 w 逐位一致，评测口径不变）。
+            # 调用方把 act 返回的 vb_action 同值存进 buffer、拼进送 env 的
+            # 动作段（env 侧 softmax(vb_action) 即带噪软权重），update() 用
+            # buffer 值对 Normal(vb_logits, vb_log_std) 重算 log_prob——
+            # 回报经由 softmax(vb_action) 依赖采样值，E[A∇log p]≠0，
+            # vb 头获得合法策略梯度
+            vbd = Normal(p["vb_logits"], p["vb_log_std"].exp())
+            vb_action = vbd.mean if deterministic else vbd.sample()
+            out["vb_action"] = vb_action
+            log_prob = log_prob + vbd.log_prob(vb_action).sum(-1)
+            entropy = entropy + vbd.entropy().sum(-1)
         return out, log_prob, entropy, self.get_value(obs), p
 
 
@@ -219,10 +231,11 @@ def kl_diag_gaussian_reverse(
 def kl_categorical_reverse(
     old_logits: torch.Tensor, new_logits: torch.Tensor
 ) -> torch.Tensor:
-    """离散分布（gate/vb 头）解析 KL(old‖new)，逐样本（D048i）。
+    """离散分布（gate 头）解析 KL(old‖new)，逐样本（D048i）。
 
     不进步级看门的联合目标（owner 口径「按动作维求和」= 连续动作头）；策略带
-    gate 头时仅顺带记录 kl_gate。D049b 的 vb 头同款处理（仅记录 kl_vb）。
+    gate 头时仅顺带记录 kl_gate。D049b-fix 后 vb 头为连续高斯动作，其更新约束
+    用 kl_diag_gaussian_reverse（解析 KL）并纳入 ksg joint 目标，不再走本函数。
     """
     log_po = torch.log_softmax(old_logits, dim=-1)
     log_pn = torch.log_softmax(new_logits, dim=-1)
@@ -424,7 +437,9 @@ class PPOTrainer:
         """D048i B1：从 forward dict 重算存量 action 的联合 logp。
 
         分支口径照抄 update() 末尾 post_update_kl 的整批重算（decoder_ft /
-        aux_scored / phase / gate 四分支同构；D049b 增 vb categorical 分支），
+        aux_scored / phase / gate 四分支同构；D049b-fix 后 vb 分支为高斯
+        log_prob——vb 实参 = buffer 存储的连续 vb_action，对
+        Normal(vb_logits, vb_log_std) 求密度，与 act() 同一分布参数），
         供资格检查复用——既有 post_update_kl 的计算本身不动。
         """
         if getattr(self.policy, "decoder_ft", False):
@@ -441,8 +456,9 @@ class PPOTrainer:
             gd = Categorical(logits=p_fwd["gate_logits"])
             lp = lp + gd.log_prob(gate)
         if vb is not None:
-            vbd = Categorical(logits=p_fwd["vb_logits"])
-            lp = lp + vbd.log_prob(vb)
+            # D049b-fix：vb 分量 = 高斯 log_prob（z/res 重算路径同款）
+            vbd = Normal(p_fwd["vb_logits"], p_fwd["vb_log_std"].exp())
+            lp = lp + vbd.log_prob(vb).sum(-1)
         return lp
 
     def ksg_qualification(
@@ -468,10 +484,11 @@ class PPOTrainer:
         """D048i B3：候选步后 KL(old‖new) 评估（no_grad，当前 minibatch 观测）。
 
         每头闭式 KL 按动作维求和、再按 minibatch 样本平均；联合 = res(aux)头
-        + z(phase)头。vanilla 无 z 头（按键存在性跳过）；latent/token 模式的
-        aux 头虽不执行但共享 encoder 主干，照测（KL 仍度量策略移动）；gate 头
-        只顺带记录、不进联合目标（owner 口径「按动作维求和」= 连续动作头）。
-        D049b vb 头同款处理（kl_vb 仅记录）。
+        + z(phase)头 + vb 头。vanilla 无 z 头（按键存在性跳过）；latent/token
+        模式的 aux 头虽不执行但共享 encoder 主干，照测（KL 仍度量策略移动）；
+        gate 头只顺带记录、不进联合目标（owner 口径「按动作维求和」= 连续
+        动作头）。D049b-fix：vb 头为连续高斯动作（vb_logits, vb_log_std），
+        解析 KL 纳入联合目标——joint = kl_z + kl_res + kl_vb（不再仅记录）。
         返回 dict（全 float）：joint/z/res/gate/vb。
         """
         with torch.no_grad():
@@ -511,14 +528,19 @@ class PPOTrainer:
                 )
             kl_vb = 0.0
             if "vb_logits" in old_buf and "vb_logits" in p_new:
+                # D049b-fix：vb 头高斯解析 KL(old‖new)，纳入联合目标
+                # （old = 本轮更新开始策略的 forward 分布参数，含 vb_log_std）
                 kl_vb = float(
-                    kl_categorical_reverse(
-                        old_buf["vb_logits"][mb], p_new["vb_logits"]
+                    kl_diag_gaussian_reverse(
+                        old_buf["vb_logits"][mb],
+                        old_buf["vb_log_std"][mb],
+                        p_new["vb_logits"],
+                        p_new["vb_log_std"],
                     )
                     .mean()
                     .item()
                 )
-            return {"joint": kl_z + kl_res, "z": kl_z, "res": kl_res,
+            return {"joint": kl_z + kl_res + kl_vb, "z": kl_z, "res": kl_res,
                     "gate": kl_gate, "vb": kl_vb}
 
     def ksg_watch_step(
@@ -623,11 +645,12 @@ class PPOTrainer:
         gate = rollout.get("gate")
         if gate is not None:
             gate = gate.reshape(-1)
-        # D049b：vb 头的离散采样槽位（rollout 侧由 buf["vb"] 提供；旗标关的
-        # run 无此键 → None → 全部分支跳过，与旧行为逐位一致）
-        vb = rollout.get("vb")
+        # D049b-fix：vb 头的连续动作槽位（rollout 侧由 buf["vb_action"] 提供，
+        # = act() 采样并送 env 执行的同一张量；旗标关的 run 无此键 → None →
+        # 全部分支跳过，与旧行为逐位一致）
+        vb = rollout.get("vb_action")
         if vb is not None:
-            vb = vb.reshape(-1)
+            vb = vb.reshape(T * N, -1)
         if phase_labels is not None:
             phase_labels = phase_labels.reshape(-1, phase_labels.shape[-1])
 
@@ -673,6 +696,13 @@ class PPOTrainer:
                         old_buf["aux_mean"], old_buf["aux_log_std"],
                         old_buf["aux_mean"], old_buf["aux_log_std"],
                     ).mean()
+                if "vb_logits" in old_buf:
+                    # D049b-fix：vb 头已是连续高斯，纳入公式自检（同组 μ/σ
+                    # 对自身解析 KL 应≈0，与 joint=z+res+vb 口径一致）
+                    kl_self = kl_self + kl_diag_gaussian_reverse(
+                        old_buf["vb_logits"], old_buf["vb_log_std"],
+                        old_buf["vb_logits"], old_buf["vb_log_std"],
+                    ).mean()
                 qual_kl_self = float(kl_self)
             # B4 的 θ_start（B2 时刻快照，覆盖 optimizer 全部参数，含 decft
             # 双 param_group）
@@ -716,9 +746,11 @@ class PPOTrainer:
                     gd = Categorical(logits=p["gate_logits"])
                     lp = lp + gd.log_prob(gate[mb])
                 if vb is not None:
-                    # D049b：与 act() 同一约定——vb categorical 进联合 logp
-                    vbd = Categorical(logits=p["vb_logits"])
-                    lp = lp + vbd.log_prob(vb[mb])
+                    # D049b-fix：与 act() 同一约定——buffer 的连续 vb_action
+                    # 对 Normal(vb_logits, vb_log_std) 重算高斯 log_prob
+                    # （z/res 的重算路径同款）
+                    vbd = Normal(p["vb_logits"], p["vb_log_std"].exp())
+                    lp = lp + vbd.log_prob(vb[mb]).sum(-1)
                 logratio = lp - logp_old[mb]
                 ratio = logratio.exp()
                 # E49 训练健康指标：k3 估计的 approx_kl（逐点非负）、超出
@@ -745,7 +777,8 @@ class PPOTrainer:
                 if gate is not None:
                     ent = ent + gd.entropy()
                 if vb is not None:
-                    ent = ent + vbd.entropy()
+                    # D049b-fix：vb 高斯微分熵（同 z/res 公式）
+                    ent = ent + vbd.entropy().sum(-1)
                 loss = (
                     ploss
                     + self.value_coef * vloss
@@ -834,8 +867,10 @@ class PPOTrainer:
                             # KL(new‖old)。两点局限：① decoder_ft 模式 old 侧用
                             # forward 头近似（该模式实际 mean 走
                             # policy.action_mean，forward 的 aux_mean 是占位零
-                            # 张量，E49 不用该模式）；② gate 头为离散分布，不进
-                            # 本 KL。
+                            # 张量，E49 不用该模式）；② gate 头为离散分布、vb 头
+                            # （D049b-fix 高斯）均不进本 KL 路径——vb 的更新约束
+                            # 由 ksg 步级看门的 joint（=z+res+vb）覆盖，两守卫
+                            # CLI 互斥。
                             p_new = self.policy.forward_actor(obs[mb])
                             kl_t = None
                             if phase is not None:
@@ -1006,8 +1041,8 @@ class PPOTrainer:
                 gd_all = Categorical(logits=p_all["gate_logits"])
                 lp_all = lp_all + gd_all.log_prob(gate)
             if vb is not None:
-                vbd_all = Categorical(logits=p_all["vb_logits"])
-                lp_all = lp_all + vbd_all.log_prob(vb)
+                vbd_all = Normal(p_all["vb_logits"], p_all["vb_log_std"].exp())
+                lp_all = lp_all + vbd_all.log_prob(vb).sum(-1)
             logratio_all = lp_all - logp_old
             agg["post_update_kl"] = float(
                 (logratio_all.exp() - 1.0 - logratio_all).mean().item()

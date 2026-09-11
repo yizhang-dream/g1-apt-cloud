@@ -99,18 +99,26 @@ def build_args():
     # E48c: freeze the residual (zeroed in the env) for the first N control
     # steps so the z-head first learns a working controller on terrain.
     ap.add_argument("--res-freeze-steps", type=int, default=0)
-    # D049b：连续 vb 软权重臂（DS_CONTINUOUS_EXECUTION_PLAN §5j 主臂）。动作
-    # 末 3 维 = vb_logits（softmax=w 进 decode 的 vb_soft）+ obs +3（w 反馈）。
+    # D049b-fix：连续 vb 软权重臂（DS_CONTINUOUS_EXECUTION_PLAN §5j 主臂）。
+    # 动作末 3 维 = vb 连续动作（act 高斯采样自 vb_logits；softmax=w 进 decode
+    # 的 vb_soft，det 模式=vb_logits 即原确定性 w）+ obs +3（w 反馈）。
     # 骑在 --latent-mode 上（需带 vb 条件的 --latent-speed-bins/--latent-dir-bins
     # 分支）；与 latent_residual **可组合**（§5j b 臂=D048i 配方逐字：
     # [z(16), res(29), vb(3)]=48，唯一自变量=vb 来源），plain latent 组合
     # = [z(16), aux(12), vb(3)]=31。与 token/decft/gate-sel/to42 互斥
     # （下方 assert + env __init__ 双层校验）
     ap.add_argument("--vb-from-policy", action="store_true",
-                    help="D049b: policy 3-dim vb logits -> softmax soft weights "
+                    help="D049b: policy 3-dim vb action (gaussian sample of "
+                         "vb_logits; det=vb_logits) -> softmax soft weights "
                          "w consumed as decode vb_soft; obs +3 (w feedback); "
                          "action 48-dim with --latent-residual (D048i recipe), "
                          "31-dim plain latent")
+    ap.add_argument("--vb-init-std", type=float, default=-4.0,
+                    help="D049b-fix: vb_log_std 初始值（log 尺度）。默认 -4.0"
+                         "=z/res 同款约定；消费者测试门 G2 在 -1.0 验证信用"
+                         "分配（σ=e^-1 使 softmax 软权重有实质探索变异，"
+                         "σ=e^-4 时 w 近确定、score-function 信号过弱），"
+                         "复验 b 臂按门验证配置取 -1.0")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -347,7 +355,7 @@ def main():
             cfg.action_space = 16 + 29  # z(16) + full-joint residual(29)
             cfg.observation_space += 29  # residual action feedback
         if cli.vb_from_policy:
-            # D049b：动作末 3 维 vb_logits + obs +3（当前软权重 w 反馈）。
+            # D049b-fix：动作末 3 维 vb 连续动作 + obs +3（当前软权重 w 反馈）。
             # 布局随模式（与 env _vb_action_slice 同步）：latent_residual
             # （D048i 配方）= [z(16), res(29), vb(3)] = 48；plain latent =
             # [z(16), aux(12), vb(3)] = 31。只在旗标开时 bump，且与 env 的
@@ -431,6 +439,7 @@ def main():
             aux_dim=29 if cli.latent_residual else 12,
             gate_k=(2 if to42_active else (3 if cfg.use_gate_sel else 0)),
             vb_head=cli.vb_from_policy,  # D049b
+            vb_init_std=cli.vb_init_std,  # D049b-fix: 默认 -4.0 与 z/res 同款；门验证配置 -1.0
             hidden_dim=256,
             use_phase=(not cfg.use_gate_sel and not cfg.latent_mode
                        and not cli.token_mode),
@@ -615,9 +624,10 @@ def main():
         # （Categorical log_prob/entropy 重算）原样复用
         buf["gate"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
     if cli.vb_from_policy:
-        # D049b：vb 头离散采样槽位（log_prob/熵/资格检查重算的簿记量；env
-        # 消费的是 softmax(logits)，与此索引解耦）
-        buf["vb"] = torch.zeros(T, N, dtype=torch.long, device="cuda:0")
+        # D049b-fix：vb 连续动作槽位（T,N,3 float）——act() 采样得到的
+        # vb_action 同值贯穿：本 buffer → 送 env 的动作末 3 维（env 侧
+        # softmax 得软权重 w）→ update() 的 log_prob/熵/资格检查重算
+        buf["vb_action"] = torch.zeros(T, N, 3, device="cuda:0")
 
     if buf_phase_none:
         buf["phase"] = None
@@ -661,6 +671,8 @@ def main():
         "kl_analytic_z_mean",
         "kl_analytic_res_mean",
         "kl_gate_mean",
+        # D049b-fix：kl_vb 已进 ksg joint 目标（joint=z+res+vb），单列均值照记
+        "kl_vb_mean",
         "param_rel_move",
     )
     if cli.kl_step_guard:
@@ -756,25 +768,28 @@ def main():
                     if cfg.latent_mode and cfg.latent_residual:
                         # E48/D049b：[z(16), res(29)]——aux 头即 29d 残差执行
                         # 动作（aux_executed=True，进 ratio/log_prob 既有逻辑
-                        # 不动）；vb_from_policy 时再接末 3 维 vb_logits=48 维
-                        # （切片位置与 env _vb_action_slice 同步）
+                        # 不动）；vb_from_policy 时再接末 3 维 vb_action=48 维
+                        # （切片位置与 env _vb_action_slice 同步：45:48）
                         action = torch.cat([act["phase"], act["aux"]], dim=1)
                         if cli.vb_from_policy:
-                            buf["vb"][t] = act["vb"].detach()
+                            # D049b-fix：act 采样 / buffer / 送 env 同一张量
+                            # （连续 vb_action，env softmax 得软权重 w）
+                            buf["vb_action"][t] = act["vb_action"].detach()
                             action = torch.cat(
-                                [action, p_fwd["vb_logits"]], dim=1
+                                [action, act["vb_action"]], dim=1
                             )
                     elif cfg.latent_mode:
                         if cli.vb_from_policy:
-                            # D049b：[z(16), aux(12), vb_logits(3)] = 31 维。
+                            # D049b-fix：[z(16), aux(12), vb_action(3)] = 31 维。
                             # 中段 12 维 = 采样后丢弃的 aux 头槽位（aux_executed
-                            # =False 约定不变，env 忽略）；vb 用 forward 的原始
-                            # logits——env 侧 softmax 得确定性 w，与离散采样
-                            # 索引解耦（softmax(logits) 恒被执行，sample 只进
-                            # buf["vb"] 簿记）
-                            buf["vb"][t] = act["vb"].detach()
+                            # =False 约定不变，env 忽略）；vb 段 = act 采样的
+                            # 连续 vb_action（det 模式 =vb_logits）——env 侧
+                            # softmax 得软权重 w，同一张量存 buffer 并供
+                            # update() 对 Normal(vb_logits, vb_log_std) 重算
+                            # log_prob（动作-概率契约闭合）
+                            buf["vb_action"][t] = act["vb_action"].detach()
                             action = torch.cat(
-                                [act["phase"], act["aux"], p_fwd["vb_logits"]],
+                                [act["phase"], act["aux"], act["vb_action"]],
                                 dim=1,
                             )
                         else:
