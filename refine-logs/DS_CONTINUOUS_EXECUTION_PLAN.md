@@ -254,7 +254,7 @@
 
 **G1 契约统一（裁定写入 meta，运行时一致）**：db 参考系统一到 env 侧公式 `db=floor((beta+π)/(2π)·8) mod 8`（bin4=前向、扇区边界相位与 eval/自然分桶逐字同构）——由 G0 三参考系直方图裁决，若 beta 版分布劣于世界系绝对角版（如 yaw 提取不可靠）则退世界系版并显式登记两端映射。低速帧继承规则保留（v<0.05 继承前一有效 bin，段首无有效帧=bin4 维持前向语义非 bin0——与现役规则差异入账）。eval `--force-dbin` 与自然分桶公式不动（本来就统一的一侧）。
 
-**G2 标签重建+VAE 重训**：build_d052_db_labels.py（仿 D048n：align_segments/checksum/md5 溯源同构，产出 db_labels.npy (N,) int64+meta 含参考系/bin 规则/直方图）；train_token_vae_e39.py 加 `--db-npy` 通道（镜像 --vb-npy 的校验+溯源块，替换点仅 db 赋值处，dbin_meta.json 增 label_source/label_md5/forward 档位旗标）；重训 **dirA VAE**（vb 沿用 speedA 标签=双轴修复版，架构冻结，其余超参照抄 speedA）。**G2 门（init 档位图）**：force-dbin 0-7×init×3 seed=24 局（Q2 同构减半），判据=db8 档方向响应的环形性（lat_signed/航向按 bin 单调环绕或至少前向档 db4 行为与邻档显著分离）vs Q2 基线（canon 块状/speedA 弱一个量级）。
+**G2 标签重建+VAE 重训**：build_d052_db_labels.py（仿 D048n：align_segments/checksum/md5 溯源同构，产出 db_labels.npy (N,) int64+meta 含参考系/bin 规则/直方图）；train_token_vae_e39.py 加 `--db-npy` 通道（镜像 --vb-npy 的校验+溯源块，替换点仅 db 赋值处，dbin_meta.json 增 label_source/label_md5/forward 档位旗标）；重训 **dirA VAE**（vb 沿用 speedA 标签=双轴修复版，架构冻结，其余超参照抄 speedA——**勘误（09-12 执行时）**：speedA 实际训练命令无 --epochs 旗标=脚本默认 30ep〔driver 原文回查〕，本文初稿「100ep」系笔误，dirA 按逐字复刻取 30ep）。**G2 门（init 档位图）**：force-dbin 0-7×init×3 seed=24 局（Q2 同构减半），判据=db8 档方向响应的环形性（lat_signed/航向按 bin 单调环绕或至少前向档 db4 行为与邻档显著分离）vs Q2 基线（canon 块状/speedA 弱一个量级）。
 
 **G3 闭环复测（零训练）**：Q2 同款 48 局 on dirA（2 VAE 对照可裁）+若 G2 显著好转→D051 配方（BC 热启动+db 修复 VAE）训练级接续另立预注册。
 
