@@ -131,6 +131,14 @@ def build_args():
     ap.add_argument("--vb-bc-anchors", type=str, default="0.29,0.47,1.31",
                     help="D051: comma-separated speed anchors (m/s) of the BC "
                          "target w*(cmd)")
+    # D053 obs-head 臂（DS_CONTINUOUS_EXECUTION_PLAN §5m）：obs 追加 2 维
+    # [sin(yaw_rel), cos(yaw_rel)]（yaw_rel = wrap_pi(当前 yaw − episode
+    # 初始 yaw)，与 eval yaw_err 同源提取）。默认 0 = 关（obs 维度/路径/
+    # 日志逐字节不变）；开启时 obs 137→139（D051 b 臂配方）
+    ap.add_argument("--obs-heading", type=int, default=0,
+                    help="D053: append heading observability block "
+                         "[sin(yaw_rel), cos(yaw_rel)] (+2 obs dims; default "
+                         "0 = off, byte-identical legacy path)")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -289,6 +297,8 @@ def main():
     pcap_cfg = " progress_cap_cmd=1" if cli.progress_cap_cmd else ""
     # D049b：旗标关时回显逐字不变
     vb_cfg = " vb_from_policy=1" if cli.vb_from_policy else ""
+    # D053：旗标关时回显逐字不变
+    heading_cfg = " obs_heading=1" if cli.obs_heading else ""
     if cli.vb_bc_warmup_steps > 0:
         # D051：预热配置回显（发射链 smoke 检查 w 校准快照用；>0 蕴含
         # vb_from_policy=1，旗标关路径回显仍逐字不变）
@@ -303,7 +313,7 @@ def main():
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
         f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}"
-        f"{ksg_cfg}{pcap_cfg}{vb_cfg}",
+        f"{ksg_cfg}{pcap_cfg}{vb_cfg}{heading_cfg}",
         flush=True,
     )
 
@@ -346,6 +356,7 @@ def main():
     cfg.latent_dir_bins = cli.latent_dir_bins
     cfg.latent_residual = cli.latent_residual
     cfg.vb_from_policy = cli.vb_from_policy  # D049b hotfix：env 侧旗标接线（86c1057 漏传，b 臂 env 恒走自然桶致 obs 105!=cfg 108 断言，smoke Exp 10559 拦截；eval 侧 853 行本就有）
+    cfg.obs_heading = bool(cli.obs_heading)  # D053 obs-head：env 侧旗标接线（默认 0=零变化）
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
     cfg.res_l2_scale = cli.res_l2
@@ -418,6 +429,24 @@ def main():
         cfg.decft_mode = True
         cfg.action_space = 29  # normalized joint targets (decoder output)
         cfg.observation_space = DECFT_OBS_DIM  # 91 base + 930 hist + 2 phase
+    # D053 obs-head：obs +2 [sin(yaw_rel), cos(yaw_rel)]（§5m）。放在所有
+    # 既有 bump 块之后（decft 分支整体覆写 observation_space，若允许组合也
+    # 必须在其后补 +2）；与 env _get_observations 的追加（vb_w 反馈之后）
+    # 严格同步（z_sweep hotfix3 教训：两侧必须同步，默认路径零变化）。
+    # 旗标关 = 不进此分支，cfg.observation_space 表达式与改动前逐字节一致。
+    _obs_dim_pre_heading = cfg.observation_space
+    if cli.obs_heading:
+        cfg.observation_space += 2
+        # D053：身份断言按旗标分支——旗标开时 obs 恰为「无旗标同配方 +2」
+        # （D051 b 臂配方 latent_residual+vb_from_policy 无 elevation：
+        # 137→139）；旗标关路径零新增断言，既有 137/134/108 维度契约逐字
+        # 不变（env 的 obs.shape[1]==cfg.observation_space 断言两种维度均
+        # 通过，ckpt 身份块 obs_dim 同源自 cfg）。
+        assert cfg.observation_space == _obs_dim_pre_heading + 2, (
+            cfg.observation_space, _obs_dim_pre_heading)
+        if (cli.latent_mode and cli.latent_residual and cli.vb_from_policy
+                and not cli.use_elevation):
+            assert cfg.observation_space == 139, cfg.observation_space
     cfg.aux_scale = cli.aux_scale
     cfg.aux_l2_scale = cli.aux_l2
     cfg.aux_rate_scale = cli.aux_rate
@@ -707,6 +736,11 @@ def main():
         # vb 头关闭时 stats 记 None → hist 记 null；键仍只在旗标开时新增，
         # 旧 run 的 train_log.json 键集合不变）
         hist["adv_vb_corr"] = []
+    # D053 obs-head：yaw_rel 监控（§5m spot check：首步≈(0,1)/训练中偏移量；
+    # 仅旗标开时初始化，train_log.json 键集合与旧 run 保持一致）。
+    # yaw_rel_mean[2] = 本 iter 全部 T*N 控制步 obs 尾 2 维 [sin, cos] 的均值
+    if cli.obs_heading:
+        hist["yaw_rel_mean"] = []
     # E49 诊断步骤③：分项诊断（--diag-log 开启时启用）。vanilla env 无
     # _last_rew_terms 快照，不支持。d_* 序列随 hist 整体序列化进 train_log.json。
     DIAG_KEYS = ("track_xy", "track_yaw", "upright", "height", "stillness")
@@ -854,6 +888,10 @@ def main():
             # 控制步；iter 末一次 .tolist() 同步，热循环零同步）
             vb_w_sum = torch.zeros(3, device="cuda:0")
             vb_am_sum = torch.zeros(3, device="cuda:0")
+        if cli.obs_heading:
+            # D053：obs 尾 2 维 [sin(yaw_rel), cos(yaw_rel)] 的窗口累积器
+            # （同窗口径，iter 末一次同步）
+            yaw_rel_sum = torch.zeros(2, device="cuda:0")
         if diag:
             # E49 诊断：GPU 标量累积器（每 iter 重建；iter 末一次 .cpu() 换算，
             # 热循环零同步）。
@@ -971,6 +1009,11 @@ def main():
                 )
             obs = obs_dict["policy"]
             rew_sum += rew.sum()
+            if cli.obs_heading:
+                # D053：obs 尾 2 维 = [sin(yaw_rel), cos(yaw_rel)]（§5m b 臂
+                # 配方下 env heading 块即 parts 末块；obs 尾 2 维假设由上方
+                # b 臂组合断言钉住，勿在 heading 之后再追加其他 obs 块）
+                yaw_rel_sum += obs[:, -2:].sum(0)
             if cli.vb_from_policy:
                 # D049b：本控制步的策略软权重 w 并入窗口累积（_pre_physics_step
                 # 内已随动作更新；sum/one_hot 均 GPU 上完成，无同步）
@@ -1120,6 +1163,11 @@ def main():
             # D051：伴生插桩落账（update 侧 adv_vb_corr = 3 维 Pearson 列表
             # 或 None；.get 防御与 kl/守卫键同风格）
             hist["adv_vb_corr"].append(stats.get("adv_vb_corr"))
+        if cli.obs_heading:
+            # D053：yaw_rel 窗口均值落账 [sin, cos]（首 it 局首步≈(0,1)）
+            hist["yaw_rel_mean"].append(
+                [round(v, 5) for v in (yaw_rel_sum / (T * N)).tolist()]
+            )
         if cli.kl_guard is not None:
             hist["kl_mb"].append(stats.get("kl_mb"))
             hist["kl_mb_all"].append(stats.get("kl_mb_all"))
@@ -1200,6 +1248,11 @@ def main():
                     f" qdev={stats.get('qual_ratio_maxdev', 0.0):.2e}"
                     f" prm={stats.get('param_rel_move', 0.0):.2e}"
                 )
+            if cli.obs_heading:
+                # D053：yaw_rel 均值尾巴（§5m spot check：episode 首步
+                # (sin,cos)≈(0,1)；训练中读偏移量，与 hist["yaw_rel_mean"] 同源）
+                _yr = (yaw_rel_sum / (T * N)).tolist()
+                ev_line += f" yaw_sin={_yr[0]:+.3f} yaw_cos={_yr[1]:.3f}"
             print(
                 f"[{it}/{cli.iters}] rew={mean_rew:.3f} fall={fall_rate:.3f} "
                 f"to={to_rate:.3f} "

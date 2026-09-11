@@ -389,6 +389,17 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # decode 但 obs 反馈/日志照常（_resolve_decode_vb_mode）。
     vb_from_policy: bool = False
 
+    # D053 obs-head 臂（DS_CONTINUOUS_EXECUTION_PLAN §5m，09-12 立项）：航向
+    # 可观测性。True 时 obs 追加 2 维 [sin(yaw_rel), cos(yaw_rel)]，其中
+    # yaw_rel = wrap_pi(当前机体 yaw − episode 初始 yaw)，episode 首步
+    # = (0, 1)。yaw 提取与 eval_apt_isaac.py `_yaw_of` 同源（同为 root_quat_w
+    # w-first 的标准公式 atan2(2(wz+xy), 1−2(y²+z²))，同符号约定；env 内
+    # elevation 采样分支的内联式亦同）——D048b 双旋转 bug 前科，错符号=
+    # 教反方向，故口径逐字对齐 eval yaw_err_deg（wrap 到 [−π,π]）。追加位置
+    # 在 vb_w 反馈之后（§5m 冻结；D053 b 臂配方下即 parts 末尾）。默认
+    # False = 完全零变化（obs 维度/路径/日志逐字节不变）。
+    obs_heading: bool = False
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -687,6 +698,14 @@ class AptFlatG1Env(DirectRLEnv):
         if self.cfg.vb_from_policy:
             self._last_vb_w = torch.zeros(
                 self.num_envs, 3, dtype=torch.float32, device=self.device
+            )
+        # D053 obs-head：每 env 独立的 episode 初始 yaw（_reset_idx 在写入
+        # root state 后按同源公式回填）。旗标关时置 None 不分配张量
+        # （零开销零变化，与 _last_vb_w 同款模式）。
+        self._init_yaw = None
+        if self.cfg.obs_heading:
+            self._init_yaw = torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
             )
         self._q_des = torch.zeros(self.num_envs, 29, dtype=torch.float32, device=self.device)
         # D048h: residual execution statistics accumulators (GPU-side pools,
@@ -1343,6 +1362,22 @@ class AptFlatG1Env(DirectRLEnv):
             # 输出」；追加位置参照 latent 模式 z 反馈 _last_phase 的写法——
             # _pre_physics_step 内随本步动作更新后，obs 在同一步末尾组装）
             parts.append(self._last_vb_w)
+        if self.cfg.obs_heading:
+            # D053 obs-head（§5m）：航向可观测性 2 维 [sin(yaw_rel),
+            # cos(yaw_rel)]，yaw_rel = wrap_pi(当前 yaw − episode 初始 yaw)，
+            # episode 首步 = (0, 1)。yaw 提取与 eval_apt_isaac._yaw_of 逐字
+            # 同源（root_quat_w w-first：atan2(2(wz+xy), 1−2(y²+z²))），与
+            # eval yaw_err_deg 同 yaw 同符号（yaw_err = wrap(final−yaw0)，本
+            # 行同式向量版）；追加位置 = vb_w 反馈之后（§5m 冻结，D053 b 臂
+            # 配方下即 parts 末尾，obs 尾 2 维 = 训练日志 yaw_rel 均值口径）。
+            q = self.robot.data.root_quat_w
+            w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+            yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+            yaw_rel = (
+                torch.remainder(yaw - self._init_yaw + math.pi, 2.0 * math.pi)
+                - math.pi
+            )
+            parts.append(torch.stack([torch.sin(yaw_rel), torch.cos(yaw_rel)], dim=1))
         if self.cfg.token_phase_obs:
             # E49-B: the walk clock made visible. _latent_phase was advanced
             # inside _compute_q_des earlier this control step, so obs carries
@@ -1521,6 +1556,18 @@ class AptFlatG1Env(DirectRLEnv):
         )
         default_root[:, 3:7] = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
         self.robot.write_root_state_to_sim(default_root, env_ids)
+        if self.cfg.obs_heading:
+            # D053 obs-head：episode 初始 yaw（每 env 独立）。直接从本行刚
+            # 写入的 root quat（default_root[:, 3:7]，w-first）按 eval 同源
+            # 公式提取（eval_apt_isaac._yaw_of / 本文件 elevation 采样分支
+            # 内联式，三方同源）；当前 spawn 恒 identity quat → yaw0=0，
+            # yaw_rel 即世界系 yaw 本身——保留通用 wrap(yaw−yaw0) 形式，
+            # 未来随机朝向 spawn 无需改此口径。
+            qw = default_root[:, 3:7]
+            _w, _x, _y, _z = qw[:, 0], qw[:, 1], qw[:, 2], qw[:, 3]
+            self._init_yaw[env_ids] = torch.atan2(
+                2.0 * (_w * _z + _x * _y), 1.0 - 2.0 * (_y * _y + _z * _z)
+            )
 
         # joint state: SONIC default angles, zero velocity
         default_jp = torch.zeros(

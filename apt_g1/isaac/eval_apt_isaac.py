@@ -197,6 +197,16 @@ def build_args():
                          "w consumed as decode vb_soft; action 31-dim, obs +3 "
                          "(w feedback); combinable with --force-vbin* (force "
                          "overrides the decode vb input, w still feeds obs/logs)")
+    # D053 obs-head 臂（DS_CONTINUOUS_EXECUTION_PLAN §5m）：镜像 train 侧
+    # --obs-heading。obs 追加 2 维 [sin(yaw_rel), cos(yaw_rel)]（yaw_rel =
+    # wrap_pi(当前 yaw − episode 初始 yaw)，与 yaw_err 同源提取），obs
+    # 137→139（D051 b 臂配方），ckpt 身份核验 obs_dim 同步 +2。默认 0 = 关
+    # （判读口径/obs 维度/JSON 键集合逐字节不变）；vanilla/decft 不支持
+    # （同 _vb_on：误用时静默关闭而非半生效，ckpt obs_dim 双层兜底）
+    ap.add_argument("--obs-heading", type=int, default=0,
+                    help="D053: expect obs +2 heading block [sin(yaw_rel), "
+                         "cos(yaw_rel)] (D051 b-arm recipe 137->139; default "
+                         "0 = off, byte-identical legacy eval)")
     # TO38: reference obs injection (must match the trained policy's obs dim)
     ap.add_argument("--to-ref", action="store_true")
     ap.add_argument("--to-ref-npz", default="")
@@ -751,6 +761,11 @@ def main():
     _vb_on = bool(cli.vb_from_policy)
     if _vb_on and (cli.env != "apt" or cli.decft):
         _vb_on = False
+    # D053：--obs-heading 有效旗标判定（镜像 _vb_on：vanilla/decft 误用时
+    # 关闭而非半生效；ckpt 身份核验 obs_dim 双层兜底误配置）
+    _obs_heading_on = bool(cli.obs_heading)
+    if _obs_heading_on and (cli.env != "apt" or cli.decft):
+        _obs_heading_on = False
 
     # D048f ⑧：缺 checkpoint 在 AppLauncher 之前快速失败，不烧 GPU 启动。
     # v1 行为 = WARNING 后用未训练 policy 跑完全程并写出看似合法的 JSON
@@ -821,6 +836,12 @@ def main():
             cfg.observation_space += 29  # residual action feedback
         if _vb_on:
             cfg.observation_space += 3  # D049b: 当前软权重 w 反馈
+        if _obs_heading_on:
+            # D053 obs-head：+2 航向块（镜像 train 侧 bump，置于全部既有
+            # bump 之后；与 env _get_observations 在 vb_w 反馈之后的追加
+            # 同步——obs_dim 流入下方 policy/ident_expect/cfg 落盘同源）。
+            # 旗标关 = 不进此分支，维度表达式与改动前逐字节一致。
+            cfg.observation_space += 2
         if cli.to_ref:
             cfg.observation_space += 12  # TO38 reference block
         policy = AptPPOPolicy(
@@ -858,6 +879,7 @@ def main():
     cfg.force_dbin = cli.force_dbin  # D048q: eval-only db intervention; -1 = natural
     # D049b：与 force_* 直接组合传递（结构恒 b 臂；decode 优先级在 env 侧）
     cfg.vb_from_policy = _vb_on
+    cfg.obs_heading = _obs_heading_on  # D053: env 侧旗标接线（默认 0=零变化）
     cfg.yaw_scale = cli.yaw_scale
     cfg.heading_scale = cli.heading_scale
     cfg.to_ref = cli.to_ref
@@ -894,6 +916,17 @@ def main():
         "vae_md5": vae_md5,
         "decoder_md5": decoder_md5,
     }
+    if _obs_heading_on:
+        # D053 obs-head：身份期望旗标分支——obs_dim 恒为「无旗标同配方 +2」
+        # （bump 在上方 cfg 组装 apt 分支，此处 obs_dim 与 policy/train/ckpt
+        # 同源自 cfg；对照 train 侧同款断言）。D051 b 臂配方
+        # （latent_residual+vb_from_policy、无 elevation）钉 139：
+        # 91 base +14 latent +29 res +3 vb +2 heading。旗标关路径零新增
+        # 断言，obs_dim 表达式与改动前逐字节一致（obs_dim 缺 --obs-heading
+        # 对 139 ckpt 由 verify_ckpt_identity obs_dim 失配 exit 6 拒绝，
+        # 对 137 ckpt 误开旗标同样失配拒绝——双向防误配置）。
+        if cli.latent_mode and cli.latent_residual and _vb_on and not cli.use_elevation:
+            assert ident_expect["obs_dim"] == 139, ident_expect["obs_dim"]
     if cli.latent_mode:
         # train side: D048i residual 配方 = 45（z16+res29），+vb(D049b) = 48
         # （[z16, res29, vb3]，§5j b 臂）；plain latent = 16，+vb = 31
@@ -1130,6 +1163,10 @@ def main():
     # D049b：vb 旗标与 w 使用统计（跨局聚合 = 各局 vb_w_mean/vb_argmax_frac
     # 的均值；逐局值在各 rollout 条目）
     out["vb_from_policy"] = bool(_vb_on)
+    if _obs_heading_on:
+        # D053：结构旗标落盘（发射链取证）。仅旗标开时新增键——旧默认评测
+        # 的 JSON 顶层键集合逐字节不变（train hist 同款纪律）
+        out["obs_heading"] = True
     if _vb_on:
         _vb_means, _vb_argmax = [], []
         for _grp in out.values():
