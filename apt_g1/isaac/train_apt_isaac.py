@@ -35,6 +35,9 @@ def build_args():
     ap.add_argument("--rollout", type=int, default=24)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--vx-max", type=float, default=0.8)
+    # D054 curr 臂（§5n）：命令采样下界（env cfg.vx_min 既有，采样
+    # uniform(vx_min, vx_max)；vx_min=vx_max 即单命令课程）。默认 0 = 零变化
+    ap.add_argument("--vx-min", type=float, default=0.0)
     # E34: randomize commanded yaw during training (domain randomization) so
     # the policy learns to steer toward the commanded heading. Default 0,0 =
     # E31 behavior (constant yaw=0, which caused the systematic drift).
@@ -139,6 +142,13 @@ def build_args():
                     help="D053: append heading observability block "
                          "[sin(yaw_rel), cos(yaw_rel)] (+2 obs dims; default "
                          "0 = off, byte-identical legacy path)")
+    # D054 yaw-rew 臂（DS_CONTINUOUS_EXECUTION_PLAN §5n）：航向误差奖励
+    # +w·(1−|yaw_rel|/π)（yaw_rel 与 obs-heading 块同源同符号；旧 heading 项
+    # 保持不动，叠加非替换）。默认 0 = 关（reward 路径/分解日志逐字节不变）
+    ap.add_argument("--yaw-rew-scale", type=float, default=0.0,
+                    help="D054: heading-error reward weight "
+                         "+w*(1-|yaw_rel|/pi), same-source as the obs "
+                         "heading block (default 0 = off, byte-identical)")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -299,6 +309,11 @@ def main():
     vb_cfg = " vb_from_policy=1" if cli.vb_from_policy else ""
     # D053：旗标关时回显逐字不变
     heading_cfg = " obs_heading=1" if cli.obs_heading else ""
+    # D054：旗标默认零时回显逐字不变（>0 才显示）
+    yaw_rew_cfg = (
+        f" yaw_rew_scale={cli.yaw_rew_scale}" if cli.yaw_rew_scale > 0.0 else ""
+    )
+    vx_min_cfg = f" vx_min={cli.vx_min}" if cli.vx_min > 0.0 else ""
     if cli.vb_bc_warmup_steps > 0:
         # D051：预热配置回显（发射链 smoke 检查 w 校准快照用；>0 蕴含
         # vb_from_policy=1，旗标关路径回显仍逐字不变）
@@ -313,7 +328,7 @@ def main():
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
         f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}"
-        f"{ksg_cfg}{pcap_cfg}{vb_cfg}{heading_cfg}",
+        f"{ksg_cfg}{pcap_cfg}{vb_cfg}{heading_cfg}{yaw_rew_cfg}{vx_min_cfg}",
         flush=True,
     )
 
@@ -328,6 +343,7 @@ def main():
     cfg.sonic_decoder_path = cli.decoder_path
     cfg.router_model_dir = cli.router_model_dir
     cfg.vx_max = cli.vx_max
+    cfg.vx_min = cli.vx_min  # D054 curr：env 采样下界接线（默认 0=零变化）
     cfg.yaw_min = cli.yaw_min
     cfg.yaw_max = cli.yaw_max
     cfg.disturbance_prob = 0.0 if cli.disturbance_ramp_iters > 0 else cli.disturbance_prob
@@ -357,6 +373,7 @@ def main():
     cfg.latent_residual = cli.latent_residual
     cfg.vb_from_policy = cli.vb_from_policy  # D049b hotfix：env 侧旗标接线（86c1057 漏传，b 臂 env 恒走自然桶致 obs 105!=cfg 108 断言，smoke Exp 10559 拦截；eval 侧 853 行本就有）
     cfg.obs_heading = bool(cli.obs_heading)  # D053 obs-head：env 侧旗标接线（默认 0=零变化）
+    cfg.yaw_rew_scale = cli.yaw_rew_scale  # D054 yaw-rew：奖励项接线（默认 0=零变化；>0 与 obs_heading 共享 _init_yaw，obs 维度不 bump）
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
     cfg.res_l2_scale = cli.res_l2

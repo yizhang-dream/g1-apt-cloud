@@ -400,6 +400,19 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # False = 完全零变化（obs 维度/路径/日志逐字节不变）。
     obs_heading: bool = False
 
+    # D054 yaw-rew 臂（DS_CONTINUOUS_EXECUTION_PLAN §5n，09-12 立项）：航向
+    # 误差奖励缺失项。>0 时 _get_rewards 在 heading 项之后追加
+    # +yaw_rew_scale·(1−|yaw_rel|/π)，其中 yaw_rel 与 obs_heading 块**同源同
+    # 符号**（同一 root_quat_w 的 atan2 提取 + 同一 wrap_pi(yaw−_init_yaw)，
+    # 两处公式逐字对拍由 test_yaw_rew.py AST 钉住——D048b 双旋转前科，错符号
+    # =教反方向）。旧 heading 项保持不动：不侧滑 vs 不转歪语义正交，叠加非
+    # 替换（§5n 预注册）。本旗标与 obs_heading **共享 _init_yaw 基础设施**
+    # （__init__ 分配 / _reset_idx 回填守卫随之扩展），但 obs 追加块仍仅
+    # obs_heading 守卫——yaw_rew 单开不加 obs 维度（observation_space 不随
+    # 本旗标变，train 侧 bump 只跟 cli.obs_heading 走）。默认 0.0 = 完全零
+    # 变化（reward 数值/分解日志键集合/路径逐字节不变）。
+    yaw_rew_scale: float = 0.0
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -701,9 +714,16 @@ class AptFlatG1Env(DirectRLEnv):
             )
         # D053 obs-head：每 env 独立的 episode 初始 yaw（_reset_idx 在写入
         # root state 后按同源公式回填）。旗标关时置 None 不分配张量
-        # （零开销零变化，与 _last_vb_w 同款模式）。
+        # （零开销零变化，与 _last_vb_w 同款模式）。D054 yaw-rew 单开
+        # （obs_heading=0 且 yaw_rew_scale>0）走 elif 支分配同一张量（奖励项
+        # 消费 _init_yaw；obs 维度不 bump）——两支体逐字相同，test_yaw_rew.py
+        # AST 钉 token 同构防漂移；obs_heading 单开路径不进 elif，逐位不变。
         self._init_yaw = None
         if self.cfg.obs_heading:
+            self._init_yaw = torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            )
+        elif self.cfg.yaw_rew_scale > 0.0:
             self._init_yaw = torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             )
@@ -1460,6 +1480,24 @@ class AptFlatG1Env(DirectRLEnv):
             sp = torch.clamp(torch.norm(base_lin_vel[:, :2], dim=1), min=1e-3)
             heading = torch.clamp(base_lin_vel[:, 0] / sp, -1.0, 1.0)
             reward = reward + self.cfg.heading_scale * (0.5 + 0.5 * heading)
+        yaw_rew_term = None
+        if self.cfg.yaw_rew_scale > 0.0:
+            # D054 yaw-rew 臂（§5n）：航向误差奖励 +yaw_rew_scale·(1−|yaw_rel|/π)。
+            # yaw_rel 与 obs_heading 块（_get_observations）同源同符号：同一
+            # root_quat_w 的 atan2 提取 + 同一 wrap_pi(yaw−_init_yaw)（提取/
+            # wrap 两式与 obs 块逐字对拍，test_yaw_rew.py AST 钉住；两处共用
+            # _init_yaw，单开时由 __init__/_reset_idx 的 elif 支分配/回填）。
+            # 线性落在 [0,1]、yaw_rel=0 → scale、|yaw_rel|=π → 0，与既有正向
+            # 奖励风格一致（§5n：scale 0.4=与 heading_scale 同量级初值）。
+            q = self.robot.data.root_quat_w
+            w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+            yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+            yaw_rel = (
+                torch.remainder(yaw - self._init_yaw + math.pi, 2.0 * math.pi)
+                - math.pi
+            )
+            yaw_rew_term = 1.0 - yaw_rel.abs() / math.pi
+            reward = reward + self.cfg.yaw_rew_scale * yaw_rew_term
         progress_term = None
         if self.cfg.progress_scale > 0.0:
             # D048j: cap_cmd=False 时 progress_bonus 与旧内联公式
@@ -1509,6 +1547,11 @@ class AptFlatG1Env(DirectRLEnv):
         }
         if progress_term is not None:
             self._last_rew_terms["progress"] = progress_term
+        if yaw_rew_term is not None:
+            # D054：yaw_rew 分项（未加权的 1−|yaw_rel|/π，与 track_* 同口径；
+            # 权重在 reward 式里）——仅旗标开时补记，train_log 键集合与旧 run
+            # 一致（diag 消费键 DIAG_KEYS 不扩，与 progress 同款先记后用）。
+            self._last_rew_terms["yaw_rew"] = yaw_rew_term
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1563,6 +1606,14 @@ class AptFlatG1Env(DirectRLEnv):
             # 内联式，三方同源）；当前 spawn 恒 identity quat → yaw0=0，
             # yaw_rel 即世界系 yaw 本身——保留通用 wrap(yaw−yaw0) 形式，
             # 未来随机朝向 spawn 无需改此口径。
+            qw = default_root[:, 3:7]
+            _w, _x, _y, _z = qw[:, 0], qw[:, 1], qw[:, 2], qw[:, 3]
+            self._init_yaw[env_ids] = torch.atan2(
+                2.0 * (_w * _z + _x * _y), 1.0 - 2.0 * (_y * _y + _z * _z)
+            )
+        elif self.cfg.yaw_rew_scale > 0.0:
+            # D054 yaw-rew 单开：同一回填（与上支逐字同式，test_yaw_rew.py
+            # AST 钉 token 同构）；obs_heading 单开路径不进此支，逐位不变。
             qw = default_root[:, 3:7]
             _w, _x, _y, _z = qw[:, 0], qw[:, 1], qw[:, 2], qw[:, 3]
             self._init_yaw[env_ids] = torch.atan2(
