@@ -149,6 +149,14 @@ def build_args():
                     help="D054: heading-error reward weight "
                          "+w*(1-|yaw_rel|/pi), same-source as the obs "
                          "heading block (default 0 = off, byte-identical)")
+    # D055 max-vx 臂（DS_CONTINUOUS_EXECUTION_PLAN §5o）：前向速度奖励
+    # +w·clamp(vx_body, 0, vx_cap)/vx_cap（vx_body=机体前向速度
+    # base_lin_vel[:,0]；vx_cap=2.0 cfg 写死不暴露 CLI）。默认 0 = 关
+    # （reward 路径/分解日志逐字节不变）。R4 配方 --max-vx-scale 2.0（§5o）
+    ap.add_argument("--max-vx-scale", type=float, default=0.0,
+                    help="D055: forward-speed reward weight "
+                         "+w*clamp(vx_body,0,vx_cap)/vx_cap (vx_cap=2.0 fixed "
+                         "in env cfg; default 0 = off, byte-identical)")
     # E32: heading/yaw reward strengthening (fights high-speed drift)
     ap.add_argument("--yaw-scale", type=float, default=0.5)
     ap.add_argument("--heading-scale", type=float, default=0.0)
@@ -314,6 +322,10 @@ def main():
         f" yaw_rew_scale={cli.yaw_rew_scale}" if cli.yaw_rew_scale > 0.0 else ""
     )
     vx_min_cfg = f" vx_min={cli.vx_min}" if cli.vx_min > 0.0 else ""
+    # D055：旗标默认零时回显逐字不变（>0 才显示）
+    max_vx_cfg = (
+        f" max_vx_scale={cli.max_vx_scale}" if cli.max_vx_scale > 0.0 else ""
+    )
     if cli.vb_bc_warmup_steps > 0:
         # D051：预热配置回显（发射链 smoke 检查 w 校准快照用；>0 蕴含
         # vb_from_policy=1，旗标关路径回显仍逐字不变）
@@ -328,7 +340,7 @@ def main():
         f"token_stats={cli.token_stats!r} "
         f"kl_guard={cli.kl_guard} kl_shrink={cli.kl_guard_shrink} "
         f"kl_grow={cli.kl_guard_grow} kl_max_rolls={cli.kl_guard_max_rolls}"
-        f"{ksg_cfg}{pcap_cfg}{vb_cfg}{heading_cfg}{yaw_rew_cfg}{vx_min_cfg}",
+        f"{ksg_cfg}{pcap_cfg}{vb_cfg}{heading_cfg}{yaw_rew_cfg}{vx_min_cfg}{max_vx_cfg}",
         flush=True,
     )
 
@@ -374,6 +386,7 @@ def main():
     cfg.vb_from_policy = cli.vb_from_policy  # D049b hotfix：env 侧旗标接线（86c1057 漏传，b 臂 env 恒走自然桶致 obs 105!=cfg 108 断言，smoke Exp 10559 拦截；eval 侧 853 行本就有）
     cfg.obs_heading = bool(cli.obs_heading)  # D053 obs-head：env 侧旗标接线（默认 0=零变化）
     cfg.yaw_rew_scale = cli.yaw_rew_scale  # D054 yaw-rew：奖励项接线（默认 0=零变化；>0 与 obs_heading 共享 _init_yaw，obs 维度不 bump）
+    cfg.max_vx_scale = cli.max_vx_scale  # D055 max-vx：奖励项接线（默认 0=零变化；vx_cap=2.0 cfg 写死不暴露 CLI）
     cfg.res_scale = cli.res_scale
     cfg.res_clip = cli.res_clip
     cfg.res_l2_scale = cli.res_l2

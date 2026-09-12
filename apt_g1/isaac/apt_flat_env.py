@@ -413,6 +413,19 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # 变化（reward 数值/分解日志键集合/路径逐字节不变）。
     yaw_rew_scale: float = 0.0
 
+    # D055 max-vx 臂（DS_CONTINUOUS_EXECUTION_PLAN §5o，09-12 立项）：前向
+    # 速度奖励缺失项（R4 token 直出收官判别实验唯一新代码，照 anti_stop 分支
+    # 口径写）。>0 时 _get_rewards 追加
+    # +max_vx_scale·clamp(vx_body, 0, vx_cap)/vx_cap，vx_body=base_lin_vel[:, 0]
+    # （奖励口径=机体前向速度，预注册注明；判读另用净前向口径）。线性落在
+    # [0,1]、vx=0 → 0、vx≥cap → 1，走/站奖励差从 0.43 抬至 ≥2.0 打破站立
+    # 地板（E49-rew-floor 主嫌）。默认 0.0 = 完全零变化（reward 数值/分解
+    # 日志键集合/路径逐字节不变）。
+    max_vx_scale: float = 0.0
+    # max-vx 奖励封顶速度（m/s）——cfg 写死不暴露 CLI（§5o 预注册 2.0=地板
+    # 对账推算值非扫描结果；乙/边缘时下一刀=scale 扫描而非 cap）。
+    vx_cap: float = 2.0
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -1525,6 +1538,14 @@ class AptFlatG1Env(DirectRLEnv):
             reward = reward - self.cfg.anti_stop_scale * torch.clamp(
                 self.cfg.anti_stop_thresh - base_lin_vel[:, 0], min=0.0, max=None
             )
+        max_vx_term = None
+        if self.cfg.max_vx_scale > 0.0:
+            # D055 max-vx 臂（§5o）：前向速度奖励 +max_vx_scale·clamp(vx_body,0,vx_cap)/vx_cap。
+            # vx_body=base_lin_vel[:, 0]（奖励口径=机体前向速度，预注册注明；
+            # 判读另用净前向口径）。线性落在 [0,1]、vx=0 → 0、vx≥cap → 1
+            # （负 vx 由 clamp 下界归零，不反向罚），与既有正向奖励风格一致。
+            max_vx_term = torch.clamp(base_lin_vel[:, 0], 0.0, self.cfg.vx_cap) / self.cfg.vx_cap
+            reward = reward + self.cfg.max_vx_scale * max_vx_term
         if self.cfg.aux_l2_scale > 0.0:
             reward = reward - self.cfg.aux_l2_scale * (self._last_aux ** 2).sum(-1)
         if self.cfg.aux_rate_scale > 0.0:
@@ -1552,6 +1573,11 @@ class AptFlatG1Env(DirectRLEnv):
             # 权重在 reward 式里）——仅旗标开时补记，train_log 键集合与旧 run
             # 一致（diag 消费键 DIAG_KEYS 不扩，与 progress 同款先记后用）。
             self._last_rew_terms["yaw_rew"] = yaw_rew_term
+        if max_vx_term is not None:
+            # D055：max_vx 分项（未加权的 clamp(vx_body,0,vx_cap)/vx_cap，与
+            # track_* 同口径；权重在 reward 式里）——仅旗标开时补记，train_log
+            # 键集合与旧 run 一致（diag 消费键 DIAG_KEYS 不扩，同款先记后用）。
+            self._last_rew_terms["max_vx"] = max_vx_term
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
