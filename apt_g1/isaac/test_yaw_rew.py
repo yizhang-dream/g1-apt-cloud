@@ -148,11 +148,33 @@ def _env_heading_block():
     )
 
 
+def _strip_outer_parens(text: str) -> str:
+    """剥掉语句开头的整组外层括号——Python 3.10 ast.unparse 渲染元组赋值带括号
+    `(w, x, y, z) = (...)`，3.12+ 不带；归一后跨版本前缀匹配一致（CVGL py3.10 实证）。"""
+    t = text.lstrip()
+    while t.startswith("("):
+        # 找与首括号配对的那个右括号，其后必须跟 " =" 或 ","（整组包裹才剥）
+        depth, end = 0, -1
+        for i, ch in enumerate(t):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end == -1 or not t[end + 1 :].lstrip().startswith("="):
+            break
+        t = t[1:end] + t[end + 1 :]
+        t = t.lstrip()
+    return t
+
+
 def _stmt_tokens(if_node: ast.If, prefixes: tuple[str, ...]) -> dict[str, str]:
     """守卫块体内以 prefixes 开头的语句，归一空白后的 token 串（字面同构对比用）。"""
     out: dict[str, str] = {}
     for s in if_node.body:
-        u = ast.unparse(s)
+        u = _strip_outer_parens(ast.unparse(s))
         for p in prefixes:
             if u.startswith(p):
                 out[p] = u.replace(" ", "")
