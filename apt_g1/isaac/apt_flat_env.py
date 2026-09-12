@@ -426,6 +426,21 @@ class AptFlatG1EnvCfg(DirectRLEnvCfg):
     # 对账推算值非扫描结果；乙/边缘时下一刀=scale 扫描而非 cap）。
     vx_cap: float = 2.0
 
+    # D056 netfwd 臂（DS_CONTINUOUS_EXECUTION_PLAN §5p，09-12 立项）：净前向
+    # 奖励缺失项（照 max_vx 分支口径写）。>0 时 _get_rewards 在 max_vx 块后
+    # 追加 +net_vx_scale·clamp(net_vx, 0, vx_cap)/vx_cap，其中
+    # net_vx = base_lin_vel[:,0]·cos(yaw_rel) − base_lin_vel[:,1]·sin(yaw_rel)
+    # =机体线速度旋到**初始航向系**的前向分量（净前向口径一阶式；cos 因子
+    # 自动惩罚偏航：偏 60° 速度贡献减半——一项奖励同时教跑+教直，与判读
+    # 口径对齐〔D048r CEM fitness 同构〕）。yaw_rel 与 yaw_rew 块**同源同
+    # 符号**（同一 root_quat_w 的 atan2 提取 + 同一 wrap_pi(yaw−_init_yaw)），
+    # 与 obs_heading/yaw_rew **共享 _init_yaw 基础设施**（__init__ 分配/
+    # _reset_idx 回填链扩第三条 elif 同体分支——obs_heading/yaw_rew 单开
+    # 路径逐位不变），obs 维度不 bump。封顶复用上值 vx_cap=2.0 不新开
+    # cfg/CLI。默认 0.0 = 完全零变化（reward 数值/分解日志键集合/路径逐
+    # 字节不变）。
+    net_vx_scale: float = 0.0
+
     # 2 Hz gait-gate hold (paper: gait selection at 2 Hz, decoder held 0.5 s)
     use_2hz_gate: bool = True
     gate_hold_steps: int = 25  # 25 control steps @ 50 Hz = 0.5 s
@@ -730,13 +745,20 @@ class AptFlatG1Env(DirectRLEnv):
         # （零开销零变化，与 _last_vb_w 同款模式）。D054 yaw-rew 单开
         # （obs_heading=0 且 yaw_rew_scale>0）走 elif 支分配同一张量（奖励项
         # 消费 _init_yaw；obs 维度不 bump）——两支体逐字相同，test_yaw_rew.py
-        # AST 钉 token 同构防漂移；obs_heading 单开路径不进 elif，逐位不变。
+        # AST 钉 token 同构防漂移；D056 netfwd 单开同理走第三条 elif 同体
+        # 支（test_yaw_rew case3 对前两条支做 AST 精确匹配，扩条件会破冻结
+        # 断言，故不并条件只加支）。obs_heading 单开路径不进任何 elif，逐位
+        # 不变。
         self._init_yaw = None
         if self.cfg.obs_heading:
             self._init_yaw = torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             )
         elif self.cfg.yaw_rew_scale > 0.0:
+            self._init_yaw = torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            )
+        elif self.cfg.net_vx_scale > 0.0:
             self._init_yaw = torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             )
@@ -1546,6 +1568,26 @@ class AptFlatG1Env(DirectRLEnv):
             # （负 vx 由 clamp 下界归零，不反向罚），与既有正向奖励风格一致。
             max_vx_term = torch.clamp(base_lin_vel[:, 0], 0.0, self.cfg.vx_cap) / self.cfg.vx_cap
             reward = reward + self.cfg.max_vx_scale * max_vx_term
+        net_vx_term = None
+        if self.cfg.net_vx_scale > 0.0:
+            # D056 netfwd 臂（§5p）：净前向奖励 +net_vx_scale·clamp(net_vx,0,vx_cap)/vx_cap。
+            # net_vx=机体线速度旋到初始航向系的前向分量（净前向口径一阶式，
+            # cos 因子自动惩罚偏航）；yaw_rel 与 yaw_rew 块同源同符号（同一
+            # root_quat_w 的 atan2 提取 + 同一 wrap_pi(yaw−_init_yaw)）。
+            # base_lin_vel=root_lin_vel_b 机体系（本函数首行，Isaac 惯例）——
+            # §5p 旋转式前提核对成立。线性落在 [0,1]、net_vx≤0 → 0（clamp
+            # 下界归零，后退/大偏航净前向不反向罚）、net_vx≥cap → 1；vx_cap
+            # 复用 D055 cfg 值（2.0，不暴露 CLI）。
+            q = self.robot.data.root_quat_w
+            w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+            yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+            yaw_rel = (
+                torch.remainder(yaw - self._init_yaw + math.pi, 2.0 * math.pi)
+                - math.pi
+            )
+            net_vx = base_lin_vel[:, 0] * torch.cos(yaw_rel) - base_lin_vel[:, 1] * torch.sin(yaw_rel)
+            net_vx_term = torch.clamp(net_vx, 0.0, self.cfg.vx_cap) / self.cfg.vx_cap
+            reward = reward + self.cfg.net_vx_scale * net_vx_term
         if self.cfg.aux_l2_scale > 0.0:
             reward = reward - self.cfg.aux_l2_scale * (self._last_aux ** 2).sum(-1)
         if self.cfg.aux_rate_scale > 0.0:
@@ -1578,6 +1620,11 @@ class AptFlatG1Env(DirectRLEnv):
             # track_* 同口径；权重在 reward 式里）——仅旗标开时补记，train_log
             # 键集合与旧 run 一致（diag 消费键 DIAG_KEYS 不扩，同款先记后用）。
             self._last_rew_terms["max_vx"] = max_vx_term
+        if net_vx_term is not None:
+            # D056：net_vx 分项（未加权的 clamp(net_vx,0,vx_cap)/vx_cap，与
+            # track_* 同口径；权重在 reward 式里）——仅旗标开时补记，train_log
+            # 键集合与旧 run 一致（diag 消费键 DIAG_KEYS 不扩，同款先记后用）。
+            self._last_rew_terms["net_vx"] = net_vx_term
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1640,6 +1687,15 @@ class AptFlatG1Env(DirectRLEnv):
         elif self.cfg.yaw_rew_scale > 0.0:
             # D054 yaw-rew 单开：同一回填（与上支逐字同式，test_yaw_rew.py
             # AST 钉 token 同构）；obs_heading 单开路径不进此支，逐位不变。
+            qw = default_root[:, 3:7]
+            _w, _x, _y, _z = qw[:, 0], qw[:, 1], qw[:, 2], qw[:, 3]
+            self._init_yaw[env_ids] = torch.atan2(
+                2.0 * (_w * _z + _x * _y), 1.0 - 2.0 * (_y * _y + _z * _z)
+            )
+        elif self.cfg.net_vx_scale > 0.0:
+            # D056 netfwd 单开：同一回填（与上两支逐字同式，test_net_vx.py
+            # AST 钉 token 同构）；obs_heading/yaw_rew 单开路径不进此支，
+            # 逐位不变。
             qw = default_root[:, 3:7]
             _w, _x, _y, _z = qw[:, 0], qw[:, 1], qw[:, 2], qw[:, 3]
             self._init_yaw[env_ids] = torch.atan2(
