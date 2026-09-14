@@ -38,6 +38,15 @@ FPS = 50.0                      # 上游契约：转换 npz 统一 50Hz（口径
 EP_RE = re.compile(r"_ep\d+_")  # episode = stem 中该段相同者同类
 
 
+def _safe_join(base_dir: str, name: str) -> str:
+    """常量文件名拼 + 落盘路径限制在 base_dir 内（防目录参数携带 ../ 逃逸）。"""
+    base = os.path.realpath(base_dir)
+    p = os.path.realpath(os.path.join(base_dir, name))
+    if not p.startswith(base + os.sep):
+        raise ValueError(f"unsafe output path escapes {base}: {name}")
+    return p
+
+
 def episode_key(stem: str) -> str:
     r"""stem -> episode 键：`_ep\d+_` 段（如 `_ep03_`）；无该段的 stem 自成一类。"""
     m = EP_RE.search(stem)
@@ -142,7 +151,7 @@ def main() -> None:
     kept = mine(args.conv_dir, args.win_s, args.stride_s,
                 args.v_med_min, args.per_ep_max)
 
-    out_path = os.path.join(args.conv_dir, "walk_segments.json")
+    out_path = _safe_join(args.conv_dir, "walk_segments.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(kept, f, ensure_ascii=False, indent=1)
 
