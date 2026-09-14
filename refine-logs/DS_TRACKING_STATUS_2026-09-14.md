@@ -59,6 +59,9 @@ init 档位图（Isaac 电池走 CVGL）。判读框架预注册在 §5q（甲=�
   G9=Brainco_Pick_Cloth_On_Bed。
 - 日志 `/tmp/wbt/conv_mp1.log`~`conv_mp9.log`；产物 `~/ros2_data/apt_g1/data/ds_wbt/g1wbt_conv/`
   （npz/ + manifest.json，发射时点已 181 npz）。发射器 `/tmp/wbt/launch_mp_convert.sh`。
+- **~2h 检查点实测（watcher）**：全局 ~4 run/min、已转 410；mp1（Laundry 长杆）争用下
+  16.4 帧/s，**完成窗口=今夜 00:00-06:00**（小组退出释放 CPU 后提速；rt_mae 全程
+  mean 0.141/max 0.193 n=381，低于冒烟水平——质量面持续健康）。
 - 完成判据：9 进程全退 + 各日志出现 `SUMMARY: converted` 与 `[signature]` 聚合行。
 - 进程查法必须用方括号防自匹配：`pgrep -f "convert_wbt_g1_parque[t]"`（**pkill 自杀坑已踩一次**：
   ssh 命令行含匹配串会把远端 shell 一起杀）。
