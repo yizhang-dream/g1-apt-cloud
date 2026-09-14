@@ -160,11 +160,16 @@ def split_runs(trans_xy, jump_thresh_m=JUMP_THRESH_M, min_frames=MIN_RUN_FRAMES)
 def assert_joint_signature(jp29, quat):
     """关节签名断言（逐 run，纯 numpy）——验证 29 关节 = MuJoCo 序假设。
 
-    膝 idx3/idx9 median>0.05 且 max<2.2（膝常弯、限位 ~2.05）；L 肩滚 idx16
-    median>=-0.2；R 肩滚 idx23 median<=0.2（肩滚围绕默认 ±0.2 附近）。
-    四元数模长 ∈[0.98,1.02]：越界 -> 归一化由调用方执行，这里记 warning；
-    非有限或近零 -> 直接失败。任一硬断言失败 raise ValueError（调用方记
-    manifest error 条目跳过该 run，不猜测）。返回 warnings 列表。
+    per-run 只拦粗错（不可能值）：膝 idx3/idx9 max<2.2（限位 ~2.05）且
+    median>-0.25（膝大幅持续负弯=序错/镜像特征）；L 肩滚 idx16
+    median>=-0.2；R 肩滚 idx23 median<=0.2。膝 median<=0.05 不再报错
+    （站立 episode 膝位自然在 0 附近——冒烟实测 6/6 被旧口径误杀，
+    09-14 修正），降级为 warning 供全集聚合审阅（正偏证据看
+    signature_summary.json 的全量 min/max 表，roundtrip MAE 仍为关节序
+    终极兜底）。四元数模长 ∈[0.98,1.02]：越界 -> 归一化由调用方执行，
+    这里记 warning；非有限或近零 -> 直接失败。任一硬断言失败 raise
+    ValueError（调用方记 manifest error 条目跳过该 run，不猜测）。
+    返回 warnings 列表。
     """
     jp = np.asarray(jp29, dtype=np.float64)
     q = np.asarray(quat, dtype=np.float64)
@@ -180,9 +185,12 @@ def assert_joint_signature(jp29, quat):
                     f"frames (min {nrm.min():.4f} max {nrm.max():.4f}); normalized")
     for idx in (3, 9):  # 左/右膝
         med, mx = float(np.median(jp[:, idx])), float(jp[:, idx].max())
-        if not (med > 0.05 and mx < 2.2):
+        if not (med > -0.25 and mx < 2.2):
             raise ValueError(f"knee joint idx{idx} signature failed: median={med:.3f} "
-                             f"max={mx:.3f} (expect median>0.05, max<2.2)")
+                             f"max={mx:.3f} (expect median>-0.25, max<2.2)")
+        if med <= 0.05:
+            warn.append(f"knee idx{idx} median {med:.3f} <= 0.05 "
+                        f"(standing-like run; corpus-level check in signature_summary)")
     med16 = float(np.median(jp[:, 16]))
     if med16 < -0.2:
         raise ValueError(f"L shoulder roll idx16 median {med16:.3f} < -0.2")
@@ -249,13 +257,18 @@ def run_selftest():
     quat = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (200, 1))
     check("signature: 正常步态通过无警告", assert_joint_signature(base, quat) == [])
     flat = base.copy()
-    flat[:, 3] = 0.01  # 膝伸直 -> 序错特征
+    flat[:, 3] = 0.01  # 站立位膝伸直 -> 09-14 起降级为 warning 不再报错
+    wflat = assert_joint_signature(flat, quat)
+    check("signature: 膝 idx3 median<=0.05 只警告不报错",
+          len(wflat) == 1 and "knee idx3" in wflat[0] and "standing-like" in wflat[0])
+    negk = base.copy()
+    negk[:, 9] = -0.4  # 膝大幅持续负弯 -> 序错/镜像硬特征
     try:
-        assert_joint_signature(flat, quat)
+        assert_joint_signature(negk, quat)
         knee_fail = False
     except ValueError:
         knee_fail = True
-    check("signature: 膝 idx3 median<=0.05 报错跳过", knee_fail)
+    check("signature: 膝 idx9 median<-0.25 报错跳过", knee_fail)
     lroll = base.copy()
     lroll[:, 16] = -0.5  # L 肩滚越界（若 L/R 腿序错会镜像出此类特征）
     try:
@@ -603,6 +616,9 @@ def main():
 
     # ---- 逐 episode：跳变切段 -> 逐 run：签名断言 -> 编码 -> npz + manifest
     manifest, skipped, n_entries, stop = [], 0, 0, False
+    jp_lo = np.full(29, np.inf)   # 全集聚合关节值域（MuJoCo 序 name-assert 证据）
+    jp_hi = np.full(29, -np.inf)
+    knee_med_agg = []
     for ep_rec in episodes:
         if stop:
             break
@@ -673,6 +689,9 @@ def main():
                      trans_m=seg["trans_m"], meta=np.array(json.dumps(meta)))
             manifest.append(meta)
             n_entries += 1
+            jp_lo = np.minimum(jp_lo, seg["jp_mj"].min(axis=0))
+            jp_hi = np.maximum(jp_hi, seg["jp_mj"].max(axis=0))
+            knee_med_agg.append(float(np.median(seg["jp_mj"][:, 3])))
             rt = "" if seg["roundtrip_mae"] is None else f" rt_mae={seg['roundtrip_mae']:.4f}"
             print(f"[convert] {repo} ep{ep} run{run_idx}: {b - a}@30 -> "
                   f"{seg['n_rows']}@50 v_med={v_med:.2f} lat={seg['lattice_rate']:.1e}{rt}",
@@ -700,6 +719,18 @@ def main():
     rts = [m["roundtrip_mae"] for m in ok if m.get("roundtrip_mae") is not None]
     print(f"SUMMARY: converted {len(ok)}/{len(manifest)} (skipped existing {skipped})"
           + (f" | roundtrip MAE mean {np.mean(rts):.4f} rad, max {np.max(rts):.4f}" if rts else ""))
+    # 全集聚合签名证据（09-14 起 per-run 膝 median 降级 warning 后的序证据载体）：
+    # 只打印到 stdout（证据进运行日志；随时可从各 npz 的 jp_mj 重算，不另落文件）
+    if np.isfinite(jp_lo).all():
+        knees = [(i, MUJOCO_JOINT_NAMES[i], round(float(jp_lo[i]), 2), round(float(jp_hi[i]), 2))
+                 for i in (3, 9)]
+        rolls = [(i, MUJOCO_JOINT_NAMES[i], round(float(jp_lo[i]), 2), round(float(jp_hi[i]), 2))
+                 for i in (16, 23)]
+        print(f"[signature] n_runs={len(knee_med_agg)} knee_med_over_runs "
+              f"min/mean/max = {min(knee_med_agg):.3f}/{np.mean(knee_med_agg):.3f}/"
+              f"{max(knee_med_agg):.3f}")
+        print(f"[signature] knee ranges {knees}")
+        print(f"[signature] shoulder-roll ranges {rolls}")
 
 
 if __name__ == "__main__":
