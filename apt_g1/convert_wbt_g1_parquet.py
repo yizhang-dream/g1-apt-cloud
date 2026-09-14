@@ -352,6 +352,12 @@ def run_selftest():
           and bool(np.allclose(t_batch, t_loop, atol=1e-6))
           and a_batch.shape == (5, 29) and bool(np.allclose(a_batch, a_loop, atol=1e-6)))
 
+    # 线程池逐帧 decoder（批维静态=1 的批路径替代，2026-09-14 服务器实测后加）：
+    # 数值与逐帧/批版同构（mock session 下三者一致），仅调度并发不同
+    a_thr = decode_actions_threaded(dec_small, _MockDec(), "i", "o")
+    check("batch-encode: 线程池逐帧 decoder 与逐帧路径同值（(5,29)，np.stack 序）",
+          a_thr.shape == (5, 29) and bool(np.allclose(a_thr, a_loop, atol=1e-6)))
+
     # 护栏：等值放行；mock 第二个 session（scale 不同 -> 返回不同值）-> RuntimeError
     try:
         assert_batch_encode_equivalence(t_batch, t_loop,
@@ -420,9 +426,28 @@ def encode_tokens_batch(obs_batch, session, iname):
 
 def decode_actions_batch(dec_obs_batch, session, iname, oname):
     """roundtrip 批解码：build_decoder_obs 逐帧收集的 (n,994) 一次
-    session.run 取回 (n,29) actions（原逐帧 [0][0] 的批对应物是 [0]）。"""
+    session.run 取回 (n,29) actions（原逐帧 [0][0] 的批对应物是 [0]）。
+
+    2026-09-14 服务器实测：decoder ONNX 输入批维静态=1（INVALID_ARGUMENT
+    Got n Expected 1，813/813 拒批；encoder 批维动态可批、护栏已过），本函数
+    对现役 decoder 不可用，保留供可批模型/单测；批路径走 threaded 版。"""
     out = session.run([oname], {iname: np.asarray(dec_obs_batch)})
     return out[0]
+
+
+def decode_actions_threaded(dec_obs_batch, session, iname, oname, workers=8):
+    """decoder 批维静态=1 下的批路径替代：线程池逐帧推理（ORT Run 并发安全、
+    释放 GIL）。每帧调用与逐帧形状一致（[None] 增维 + [0][0] 取回），数值
+    同构，仅调度并发不同——非静默回退（docstring 与此注释即声明）。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    n = len(dec_obs_batch)
+
+    def _one(i):
+        return session.run([oname], {iname: dec_obs_batch[i][None]})[0][0]
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return np.stack(list(ex.map(_one, range(n))))
 
 
 def lattice_rate_of(tokens):
@@ -537,8 +562,8 @@ def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
                     "gravity_dir": grav[idx].astype(np.float32),
                 }
                 dec_obs_batch[t] = dec.build_decoder_obs(tokens[t], hist)[0]
-            acts = decode_actions_batch(dec_obs_batch, dec.session,
-                                        dec.input_name, dec.output_name)
+            acts = decode_actions_threaded(dec_obs_batch, dec.session,
+                                           dec.input_name, dec.output_name)
             # 与逐帧公式完全同式（向量化）：q_des = sonic_default_isaac +
             # acts*sonic_scale_isaac，与 jp_isaac 逐帧绝对差；err0（default
             # baseline）不受批影响照旧。
