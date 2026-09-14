@@ -340,6 +340,22 @@
 
 - **判读结果（09-12 当日闭环，Exp 10659-10665，tracker D056）：丁=存活-速度互换新形态（甲乙丙全不命中，预注册三分支未留此位置如实开新条目）**：netfwd 臂净前向 0.005+**6/6 存活+yaw 17-21°（全系列方向最好记录）**；split 臂 0.135+6/6+侧漂 2-3m；D055 偏航摔未复现（12 局零摔）。**方向可学性首次实证**（cos 因子压 yaw 17-21° 稳定=先会跑再学直的方向半边成立）；速度半边败于纯 clamp 站立局部最优（站立项 0 无惩罚、训练内 it180 spd 1.075/fwd −0.6=速度能力在、cos 惩罚不足以压偏航收益）。**三配置 Pareto 三角**：速度-存活-方向无任何奖励配置同时拿到（D055 速+死/netfwd 活站直/split 中漂）。续刀 owner 裁量不自动触发（净前向反站立改造：potential-based shaping/混合项；或收束）。
 
+## §5q D057：WBT 语料接入与 speedA 式 VAE 重训——语料效应第三点（09-14 立项，owner「那就开始训练这份语料吧」；摸底 09-13 见 tracker D056 后记；零 RL 预算，一次 VAE 重训）
+
+**动机**：UnifoLM-WBT（宇树 G1 全身遥操真机语料，Apache-2.0，LeRobot 格式）摸底结论：22 个已发布子集全为家务任务、**无 >1.694 m/s 高速材料**（最行走富集子集 WalkToTable 200 局 v_p90 全 ≤0.51），但数据契约好——`robot_q_current[36]`=根位姿 7+29 关节原生 G1 关节空间（双 schema 并存，新款带显式 state_base_pose/base_command），30Hz，**免 M2 直接进 D044 同构 token 管线**。科学问题=**语料效应第三点**：D048n 已证 speedA(B4-lite) init 档位图 {0.29,0.47,1.31} 严格单调（速度标签→冻结解码器因果链）+ctrlB 弱单调（语料效应并行发现）；换一份速度分布截然不同（低速带 0.1-0.5、真机载荷/重心转移）的语料重训同架构 speedA——若 init 档位图随语料分布平移，则「语料分布→档位-速度映射」方向性复证；同时为 D056 丙分支归因的「材料层」提供首个可检材料（方向多样语料，本实验 db 轴仅观察项）。
+
+**设计（G0-G5）**：
+- **G0 扫描选料**：22 子集 data-only 下载（hf-mirror 跳视频，UA 坑已记）→ episode 级速度统计 → 行走富集判据：子集内行走窗（v_med≥0.10 m/s、连续≥4s）总时长 ≥10 分钟入选。
+- **G1 转换器**：`convert_wbt_g1_parquet.py`（双 schema 自适应；odom 跳变切段 |Δpos|>0.5m/帧；关节签名断言〔膝 idx3/9 正偏、肩滚 idx16≥0/idx23≤0〕+deploy MJCF 限位对拍；30→50Hz 上采样；build_obs g1-mode ref-rel；冻结 encoder tokens；npz+manifest D044 同构——roundtrip 门兼作关节序兜底错序必炸）。
+- **G2 冒烟门（过门才放全量）**：抽 6 段（快/中/慢各 2）roundtrip MAE ≤0.16 rad（D038 参照 0.109+上采样余量）∧ lattice_rate ≤1e-2 ∧ anchor sanity 过；超门停线报 owner（30→50Hz 上采样损伤否证，D036 均为降采样无先例）。
+- **G3 全量转换+挖掘**：入选子集全转 + 行走窗挖掘（v_med≥0.10、≥4s、50% overlap、每 episode ≤3 窗防单 take 过采样）。
+- **G4 inputs+标签+训练**：`build_wbt_vae_inputs.py` 产 v1 训练器四件套（token/mode=WALK(2)/angle_bin+segment_bounds；同发 mode_id/ul 备 v2）+ `vb_speed.npy`（WBT 行走参考帧三分位 edges，build_d048n frame_speed_bwd 同口径 XY 后向差分）；`train_token_vae_e39.py --vb-npy` 默认 30ep（3060 CUDA 已验通——NVML 驱动坏不影响 torch）。
+- **G5 init 档位图**：D048n G2 recipe 原样（probe_vae_vbin_semantics/force-vbin 族；**Isaac 依赖=条件门**——GPU 驱动恢复前挂起，训练照跑）。
+
+**判读**：**甲（语料效应复证）**=WBT speedA init 三档严格单调 ∧ 全档低于 B4-lite 对应档（{0.29,0.47,1.31}）→ 语料分布决定档位-速度映射，「接口层速度瓶颈/材料层」证据链强化；**乙（部分）**=单调成立但档位交叉/持平 → 如实分离报告（edges 数值入账）；**丙（不单调或材料不可用）**=语料效应在此语料不成立或转换/清洗否证 → 负结果入账，归因分离（语料质量 vs 分布）。观察项（不设门）：db 方向轴档位分布 vs B4-lite。
+
+**风险预声明**：①关节序=限位+签名断言+roundtrip 兜底，名字级 URDF 对拍待补（值域签名与 MJ 序同构但非证明）；②30→50Hz 上采样无先例，G2 门否证即停；③odom 跳变/漂移只切段+如实报告不静默清洗；④新子集 schema 再变异→转换器拒收报错不猜测；⑤Isaac 步骤挂起不阻塞 CPU 链路；⑥WBT=真机遥控行为（非 NVIDIA retarget），与 B4-lite 的语义差异本身是语料效应的一部分，入账不消除。
+
 ## 6. 阶段 2：速度覆盖、切换和独立终评
 
 0.4 m/s过门后，固定候选配方，从独立训练种子复训并评测0.2/0.4/0.6 m/s、零偏航命令；每档持续20秒。建议沿用存活、最大横漂≤0.5m、终末航向偏差≤15°、平均upright≥0.90和速度RMSE≤0.10m/s门，前进距离改为命令距离±max(1m,25%命令距离)。每档、每训练种子、每执行模式分别报告成功率，不以整体均值掩盖某一档失败。
