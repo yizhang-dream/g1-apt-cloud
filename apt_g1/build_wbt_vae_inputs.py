@@ -28,6 +28,10 @@ vb 速度标签（speedA-D048n 同口径，XY@50Hz）：
 用法（服务器 .venv_isaac python；numpy-only，不依赖 torch）：
   python build_wbt_vae_inputs.py --segments-json <conv-dir>/walk_segments.json
   python build_wbt_vae_inputs.py --selftest            # 本机 numpy-only 自测
+
+结构说明（D057 重构）：selftest 脚手架来自 wbt_common.CheckLog；main 拆为
+load_windows -> write_outputs -> write_metas 三阶段函数（均在本文件），
+两个 meta dict 字面量键顺序逐字保留。
 """
 from __future__ import annotations
 
@@ -47,6 +51,11 @@ try:                      # v2 builder 窗口枚举单一实现（keep 掩码长
     from build_b4lite_vae_inputs_v2 import window_keep_mask
 except ImportError:
     from apt_g1.build_b4lite_vae_inputs_v2 import window_keep_mask
+
+try:                      # selftest 脚手架（wbt_common，D057 重构）；双兼容同上
+    from wbt_common import CheckLog
+except ImportError:
+    from apt_g1.wbt_common import CheckLog
 
 
 def _import_angle_bins():
@@ -137,37 +146,15 @@ def _ramp_trans(speeds) -> np.ndarray:
     return np.stack([x, z, z], axis=1)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="D057 G4: WBT 行走窗 → VAE v1/v2 输入四件套 + vb 速度标签")
-    ap.add_argument("--segments-json", default="",
-                    help="mine_wbt_walk_segments.py 产物 walk_segments.json")
-    ap.add_argument("--out-dir", default="",
-                    help="输出目录（默认 = segments-json 所在目录/vae_inputs_wbt）")
-    ap.add_argument("--window", type=int, default=10,
-                    help="窗口长（与训练侧 window=10 一致，keep 掩码长度用）")
-    ap.add_argument("--dt", type=float, default=0.02, help="v2 builder 同款默认")
-    ap.add_argument("--smooth", type=int, default=5, help="速度滑动平均帧数")
-    ap.add_argument("--v-thresh", type=float, default=0.05, help="有效方向速度阈值 m/s")
-    ap.add_argument("--theta0-k", type=int, default=10, help="theta0 圆均值取前 K 个有效帧")
-    ap.add_argument("--selftest", action="store_true", help="numpy-only 自测（不读文件）")
-    args = ap.parse_args()
-    if args.selftest:
-        selftest()
-        return
-    if ANGLE_BINS is None:
-        raise SystemExit(f"angle_bins/frame_speed import 失败: {ANGLE_BINS_ERR}")
-    if not args.segments_json:
-        ap.error("--segments-json 必填（或用 --selftest）")
+def load_windows(segs: list[dict],
+                 segments_json: str) -> tuple[list[dict], dict, dict]:
+    """逐窗切源 npz 装载 + 逐 npz md5 留档 + 行数一致性校验（原 main 装载段拆出，
+    数值与校验逻辑零漂移）。
 
-    with open(args.segments_json, encoding="utf-8") as f:
-        segs = json.load(f)
-    assert isinstance(segs, list) and segs, \
-        f"walk_segments.json 应为非空列表: {args.segments_json}"
-    out_dir = args.out_dir or os.path.join(
-        os.path.dirname(os.path.abspath(args.segments_json)), "vae_inputs_wbt")
-    os.makedirs(out_dir, exist_ok=True)
-
+    返回 (wins, cache, md5s)：wins 元素带 {stem, npz_path, i0, i1, v_med,
+    tok_w (n,64) float32, trans_w (n,3) float64}；cache 为 stem -> npz 句柄
+    （同 stem 只读一次盘）；md5s 为 stem -> 源文件 md5（vb_speed_meta.json 用）。
+    """
     cache: dict[str, object] = {}
     md5s: dict[str, str] = {}
     wins: list[dict] = []
@@ -189,21 +176,13 @@ def main() -> None:
         wins.append({"stem": stem, "npz_path": s["npz_path"], "i0": i0, "i1": i1,
                      "v_med": s.get("v_med"), "tok_w": tok_w, "trans_w": trans_w})
     print(f"[load] {len(segs)} windows from {len(cache)} npz "
-          f"({args.segments_json})")
+          f"({segments_json})")
+    return wins, cache, md5s
 
-    res = pack_windows(wins, args.dt, args.smooth, args.v_thresh, args.theta0_k)
-    edges, vb = vb_tercile(res.pop("v_all"))
-    verify_packed(res, vb)
-    n, m = len(res["token"]), len(res["bounds"])
-    keep = window_keep_mask(res["bounds"], np.zeros(m, dtype=np.int64),
-                            args.window, 1.0, 0)
-    assert keep.all() and len(keep) == sum(
-        max(int(b[1] - b[0]) - (args.window - 1), 0) for b in res["bounds"]), \
-        "keep 掩码长度与窗口枚举不符"
-    counts = {int(b): int(c) for b, c in zip(*np.unique(vb, return_counts=True))}
-    print(f"[pack] N={n} M={m} edges={edges.tolist()} vb_counts={counts}")
 
-    seg_src = np.arange(m, dtype=np.int64)  # identity：无过采样，每窗自成源段
+def write_outputs(out_dir: str, res: dict, vb: np.ndarray, keep: np.ndarray,
+                  seg_src: np.ndarray) -> None:
+    """九件 np.save 落盘（原 main 落盘段拆出；文件名与保存顺序逐字未动）。"""
     np.save(os.path.join(out_dir, "token.npy"), res["token"])
     np.save(os.path.join(out_dir, "mode.npy"), res["mode"])
     np.save(os.path.join(out_dir, "mode_id.npy"), res["mode_id"])
@@ -214,6 +193,15 @@ def main() -> None:
     np.save(os.path.join(out_dir, "segment_source.npy"), seg_src)
     np.save(os.path.join(out_dir, "vb_speed.npy"), vb)
 
+
+def write_metas(out_dir: str, args: argparse.Namespace, n: int, m: int,
+                edges: np.ndarray, counts: dict, md5s: dict, keep: np.ndarray,
+                segment_detail: list) -> None:
+    """build_meta.json 与 vb_speed_meta.json 落盘（原 main meta 段拆出）。
+
+    两个 meta dict 字面量键顺序逐字保留（json.dump 产物字节可比）；
+    generated_at 在本函数内取一次、两文件共用（与原实现同语义）。
+    """
     now = datetime.datetime.now().isoformat(timespec="seconds")
     meta = {
         "experiment": "D057",
@@ -226,7 +214,7 @@ def main() -> None:
         "mode_table": [{"embed_idx": MODE_ID, "mode_name": "WALK",
                         "mode_id_hpp": MODE_HPP_ID}],
         "oversample_plan": {"mode": "identity", "copies": []},
-        "segment_detail": res["segment_detail"],
+        "segment_detail": segment_detail,
         "bin_rules": {"dt_s": args.dt, "speed_smooth_frames": args.smooth,
                       "v_thresh_mps": args.v_thresh, "theta0_k": args.theta0_k,
                       "n_dbins": 8, "bin0": "段首 theta0 ±22.5° = 前向（v1/v2 同款）",
@@ -268,22 +256,70 @@ def main() -> None:
     print(f"[write] {out_dir}: 四件套 + bounds/mask/source + vb_speed + 双 meta")
 
 
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="D057 G4: WBT 行走窗 → VAE v1/v2 输入四件套 + vb 速度标签")
+    ap.add_argument("--segments-json", default="",
+                    help="mine_wbt_walk_segments.py 产物 walk_segments.json")
+    ap.add_argument("--out-dir", default="",
+                    help="输出目录（默认 = segments-json 所在目录/vae_inputs_wbt）")
+    ap.add_argument("--window", type=int, default=10,
+                    help="窗口长（与训练侧 window=10 一致，keep 掩码长度用）")
+    ap.add_argument("--dt", type=float, default=0.02, help="v2 builder 同款默认")
+    ap.add_argument("--smooth", type=int, default=5, help="速度滑动平均帧数")
+    ap.add_argument("--v-thresh", type=float, default=0.05, help="有效方向速度阈值 m/s")
+    ap.add_argument("--theta0-k", type=int, default=10, help="theta0 圆均值取前 K 个有效帧")
+    ap.add_argument("--selftest", action="store_true", help="numpy-only 自测（不读文件）")
+    args = ap.parse_args()
+    if args.selftest:
+        selftest()
+        return
+    if ANGLE_BINS is None:
+        raise SystemExit(f"angle_bins/frame_speed import 失败: {ANGLE_BINS_ERR}")
+    if not args.segments_json:
+        ap.error("--segments-json 必填（或用 --selftest）")
+
+    with open(args.segments_json, encoding="utf-8") as f:
+        segs = json.load(f)
+    assert isinstance(segs, list) and segs, \
+        f"walk_segments.json 应为非空列表: {args.segments_json}"
+    out_dir = args.out_dir or os.path.join(
+        os.path.dirname(os.path.abspath(args.segments_json)), "vae_inputs_wbt")
+    os.makedirs(out_dir, exist_ok=True)
+
+    wins, cache, md5s = load_windows(segs, args.segments_json)
+
+    res = pack_windows(wins, args.dt, args.smooth, args.v_thresh, args.theta0_k)
+    edges, vb = vb_tercile(res.pop("v_all"))
+    verify_packed(res, vb)
+    n, m = len(res["token"]), len(res["bounds"])
+    keep = window_keep_mask(res["bounds"], np.zeros(m, dtype=np.int64),
+                            args.window, 1.0, 0)
+    assert keep.all() and len(keep) == sum(
+        max(int(b[1] - b[0]) - (args.window - 1), 0) for b in res["bounds"]), \
+        "keep 掩码长度与窗口枚举不符"
+    counts = {int(b): int(c) for b, c in zip(*np.unique(vb, return_counts=True))}
+    print(f"[pack] N={n} M={m} edges={edges.tolist()} vb_counts={counts}")
+
+    seg_src = np.arange(m, dtype=np.int64)  # identity：无过采样，每窗自成源段
+    write_outputs(out_dir, res, vb, keep, seg_src)
+    write_metas(out_dir, args, n, m, edges, counts, md5s, keep,
+                res["segment_detail"])
+
+
 def selftest() -> None:
     """numpy-only 自测：合成两窗 token/trans 测拼装/bounds/edges 三分位/vb 计数。
 
     两窗各含两段匀速（0.15/0.30 与 0.30/0.45 m/s），拼装后全帧速度恰为
     0.15×134 / 0.30×133 / 0.45×134——三分位边界严格落在层间空隙（0.2/0.4），
     digitize 结果对浮点抖动稳健。angle_bins import 失败时该断言 SKIP。
+
+    selftest 脚手架来自 wbt_common（D057 重构）。
     """
     if ANGLE_BINS is None:
         print(f"[selftest] SKIP angle_bin check: angle_bins import 失败 "
               f"({ANGLE_BINS_ERR})")
-    failures: list[str] = []
-
-    def check(name: str, cond: bool) -> None:
-        print(("[selftest] PASS " if cond else "[selftest] FAIL ") + name)
-        if not cond:
-            failures.append(name)
+    log = CheckLog()
 
     rng = np.random.default_rng(0)
     tok_a = rng.standard_normal((200, 64)).astype(np.float32)
@@ -301,29 +337,29 @@ def selftest() -> None:
     edges, vb = vb_tercile(res["v_all"])
     try:
         verify_packed(res, vb)
-        check("verify_packed assertions", True)
+        log.check("verify_packed assertions", True)
     except AssertionError as exc:
-        check(f"verify_packed assertions ({exc})", False)
+        log.check(f"verify_packed assertions ({exc})", False)
 
-    check("pack N=401", len(res["token"]) == 401)
-    check("pack token concat order",
+    log.check("pack N=401", len(res["token"]) == 401)
+    log.check("pack token concat order",
           np.array_equal(res["token"], np.concatenate([tok_a, tok_b])))
-    check("pack bounds [[0,200],[200,401]]",
+    log.check("pack bounds [[0,200],[200,401]]",
           res["bounds"].tolist() == [[0, 200], [200, 401]])
-    check("mode all-2 int64", res["mode"].dtype == np.int64
+    log.check("mode all-2 int64", res["mode"].dtype == np.int64
           and int(res["mode"].min()) == int(res["mode"].max()) == MODE_ID)
-    check("mode_id identical to mode", np.array_equal(res["mode"], res["mode_id"]))
-    check("ul all-0 int64", res["ul"].dtype == np.int64 and int(res["ul"].max()) == 0)
-    check("edges tercile ~[0.2, 0.4]", np.allclose(edges, [0.2, 0.4], atol=1e-6))
-    check("vb counts [134, 133, 134]",
+    log.check("mode_id identical to mode", np.array_equal(res["mode"], res["mode_id"]))
+    log.check("ul all-0 int64", res["ul"].dtype == np.int64 and int(res["ul"].max()) == 0)
+    log.check("edges tercile ~[0.2, 0.4]", np.allclose(edges, [0.2, 0.4], atol=1e-6))
+    log.check("vb counts [134, 133, 134]",
           np.bincount(vb, minlength=3).tolist() == [134, 133, 134])
     if ANGLE_BINS is not None:
-        check("angle_bin straight-line all 0", int(res["angle_bin"].max()) == 0)
+        log.check("angle_bin straight-line all 0", int(res["angle_bin"].max()) == 0)
     km = window_keep_mask(res["bounds"], np.zeros(2, dtype=np.int64), 10, 1.0, 0)
-    check("keep mask all-1 len 383", len(km) == 383 and bool(km.all()))
+    log.check("keep mask all-1 len 383", len(km) == 383 and bool(km.all()))
 
-    if failures:
-        raise SystemExit(f"selftest FAILED: {failures}")
+    if log.failures:
+        raise SystemExit(f"selftest FAILED: {log.failures}")
     print("[selftest] build_wbt_vae_inputs: ALL PASS")
 
 

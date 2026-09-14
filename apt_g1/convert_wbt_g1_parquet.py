@@ -64,6 +64,13 @@ lattice_rate np.isclose，不符 raise RuntimeError（不静默回退），此�
   python apt_g1/convert_wbt_g1_parquet.py --sample-episodes 12 --roundtrip
   # 本机自测（numpy-only，不碰 mujoco/onnxruntime/pyarrow）：
   python apt_g1/convert_wbt_g1_parquet.py --selftest
+
+文件结构导览（自上而下）：常量与 sys.path -> numpy 纯函数助手 -> --batch-encode
+批推理纯函数 -> parquet 装载 -> limits-check -> encoder chain（encode_segment +
+_omega_and_gravity/_decoder_hist）-> selftest -> argparse -> main 编排
+（load_pipeline/process_run/convert_episode/merge_and_write_manifest/
+print_summary）。LeRobot 双 schema parquet 读取 / 根 XY 速度 / selftest
+脚手架（CheckLog）下沉共享模块 wbt_common（scan/mine/build 零漂移共用）。
 """
 from __future__ import annotations
 
@@ -86,12 +93,8 @@ JUMP_THRESH_M = 0.5     # 帧间 XY 位移模长超过此值判 odom 跳变（te
 MIN_RUN_FRAMES = 60     # < 2s @30Hz 的 run 丢弃
 LIMIT_MARGIN_RAD = 0.15  # --limits-check：观测值域允许越出限位的余量
 
-# 新款 grouped schema 的关节分组列与拼接顺序（= 契约：腿+腰 15 -> L 臂 7 -> R 臂 7）
-GROUPED_JOINT_COLS = (
-    "observation.state.lower_body",
-    "observation.state.left_arm",
-    "observation.state.right_arm",
-)
+# grouped schema 关节分组列常量（契约：腿+腰 15 -> L 臂 7 -> R 臂 7）与
+# parquet 读取实现一并收敛至 wbt_common（D057 重构，单一事实源防漂移）。
 
 # Canonical MuJoCo G1 29-dof joint order（gear_sonic deploy 语义；与
 # convert_bones_g1_csv.py MUJOCO_JOINT_NAMES 同构，--limits-check 按名取限位）。
@@ -132,6 +135,13 @@ from encode_bones_smoke import (  # noqa: E402
 )
 
 assert _FPS_ENC_SMOKE == FPS_ENC, "encoder rate assumption diverged from encode_bones_smoke"
+
+# D057 WBT 线共享底层（LeRobot 双 schema parquet 读取 / 根 XY 速度 / selftest
+# 脚手架 CheckLog），与 scan/mine/build 零漂移共用；双兼容 import 为仓库既有模式。
+try:
+    from wbt_common import CheckLog, read_wbt_parquet, xy_speed_stats  # noqa: E402
+except ImportError:
+    from apt_g1.wbt_common import CheckLog, read_wbt_parquet, xy_speed_stats  # noqa: E402
 
 
 # ------------------------------------------- numpy-only helpers（selftest 可测）
@@ -213,16 +223,6 @@ def assert_joint_signature(jp29, quat):
     return warn
 
 
-def xy_speed_stats(trans_xy):
-    """(v_med, v_p90) m/s：XY 后向差分 × FPS_SRC 口径（源帧率，wbt 块专用，
-    区别于 D044 b4lite 的 @50Hz kinematics_stats）。"""
-    xy = np.asarray(trans_xy, dtype=np.float64)[:, :2]
-    if len(xy) < 2:
-        return 0.0, 0.0
-    v = np.linalg.norm(np.diff(xy, axis=0), axis=1) * FPS_SRC
-    return float(np.median(v)), float(np.percentile(v, 90))
-
-
 def repo_short_name(repo):
     """repo 目录名缩写：去 G1_WBT_ 前缀、转小写。"""
     return re.sub(r"^G1_WBT_", "", repo).lower()
@@ -230,164 +230,6 @@ def repo_short_name(repo):
 
 def make_stem(repo, episode, run_idx):
     return f"wbt_{repo_short_name(repo)}_ep{int(episode):04d}_run{int(run_idx)}"
-
-
-# --------------------------------------------------------------------- selftest
-def run_selftest():
-    """本机 numpy-only 自测：不 import mujoco/onnxruntime/pyarrow（重依赖均
-    在 main()/read_parquet_file 内延迟装载，模块导入不触发）。"""
-    failures = []
-
-    def check(name, cond, detail=""):
-        print(f"[selftest] {'PASS' if cond else 'FAIL'} {name}"
-              + ("" if cond or not detail else f"  ({detail})"))
-        if not cond:
-            failures.append(name)
-
-    # ① odom 跳变切段（含边界：首帧跳变 / 尾段过短丢弃）
-    xy = np.zeros((200, 2))
-    xy[:, 0] = np.arange(200) * 0.03  # ~0.9 m/s 步进，无跳变
-    xy[100:] += 10.0                  # 帧间跳变 10 m
-    segs, kept, n_jumps = split_runs(xy)
-    check("split: 单跳变 -> 两段全保留", segs == [(0, 100), (100, 200)] and kept == [0, 1] and n_jumps == 1)
-    xy2 = np.zeros((90, 2))
-    xy2[:, 0] = np.arange(90) * 0.03
-    xy2[70:] += 10.0
-    segs2, kept2, n_jumps2 = split_runs(xy2)
-    check("split: 尾段 20 帧 <60 丢弃", segs2 == [(0, 70), (70, 90)] and kept2 == [0] and n_jumps2 == 1)
-    xy3 = np.zeros((71, 2))
-    xy3[1:] += 10.0  # 第 0->1 帧即跳变
-    segs3, kept3, n_jumps3 = split_runs(xy3)
-    check("split: 首帧跳变首段(1 帧)丢弃", segs3 == [(0, 1), (1, 71)] and kept3 == [1] and n_jumps3 == 1)
-    check("split: 无跳变整段保留", split_runs(xy[:100]) == ([(0, 100)], [0], 0))
-
-    # ② 关节签名断言 pass/fail
-    base = np.zeros((200, 29))
-    base[:, 3] = 0.6   # 左膝
-    base[:, 9] = 0.66  # 右膝
-    base[:, 16] = 0.1  # L 肩滚
-    base[:, 23] = -0.1  # R 肩滚
-    quat = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (200, 1))
-    check("signature: 正常步态通过无警告", assert_joint_signature(base, quat) == [])
-    flat = base.copy()
-    flat[:, 3] = 0.01  # 站立位膝伸直 -> 09-14 起降级为 warning 不再报错
-    wflat = assert_joint_signature(flat, quat)
-    check("signature: 膝 idx3 median<=0.05 只警告不报错",
-          len(wflat) == 1 and "knee idx3" in wflat[0] and "standing-like" in wflat[0])
-    negk = base.copy()
-    negk[:, 9] = -0.4  # 膝大幅持续负弯 -> 序错/镜像硬特征
-    try:
-        assert_joint_signature(negk, quat)
-        knee_fail = False
-    except ValueError:
-        knee_fail = True
-    check("signature: 膝 idx9 median<-0.25 报错跳过", knee_fail)
-    lroll = base.copy()
-    lroll[:, 16] = -0.5  # L 肩滚越界（若 L/R 腿序错会镜像出此类特征）
-    try:
-        assert_joint_signature(lroll, quat)
-        roll_fail = False
-    except ValueError:
-        roll_fail = True
-    check("signature: L 肩滚 idx16 median<-0.2 报错跳过", roll_fail)
-    wq = assert_joint_signature(base, quat * 1.05)  # 模长 1.05 越界
-    check("signature: 四元数模长越界只警告不报错", len(wq) == 1 and "quat norm" in wq[0])
-
-    # ③ 半球连续化（180° 翻转序列）
-    ang = np.linspace(0.0, np.pi / 2.0, 50)
-    qz = np.stack([np.cos(ang / 2), np.zeros(50), np.zeros(50), np.sin(ang / 2)], axis=1)
-    qflip = qz.copy()
-    qflip[1::2] *= -1.0  # 隔帧符号翻转（同一旋转）
-    qa = hemisphere_align(qflip)
-    dots = np.einsum("ij,ij->i", qa[1:], qa[:-1])
-    same = np.minimum(np.abs(qa - qz).max(axis=1), np.abs(qa + qz).max(axis=1))
-    check("hemisphere: 连续 dot>=0 且旋转不变(±q)", bool(dots.min() >= 0) and float(same.max()) < 1e-12)
-
-    # ④ 30->50 重采样帧数（encode_bones_smoke.resample 源码口径：
-    #    n_out = int(round(n_in * fps_out / fps_in))，round 而非 ceil，如 92->153）
-    anchors = {90: 150, 91: 152, 92: 153, 150: 250, 900: 1500, 1234: 2057}
-    ok_all, detail = True, ""
-    for n, want in anchors.items():
-        got = len(resample(np.zeros((n, 2)), FPS_SRC, FPS_ENC))
-        if got != want:
-            ok_all, detail = False, f"n={n}: got {got}, want {want} (int(round(n*5/3)))"
-    check("resample 30->50 帧数 = int(round(n*5/3))", ok_all, detail)
-    rs = resample(np.full((90, 3), 2.5), FPS_SRC, FPS_ENC)
-    check("resample: 常数列线性插值不变", len(rs) == 150 and bool(np.allclose(rs, 2.5)))
-
-    # ⑤ stem 命名
-    s1 = make_stem("G1_WBT_Brainco_Walk_To_Table_Put_Cups_And_Rack_Plates_In_Dishwasher", 3, 0)
-    check("stem: 去 G1_WBT_ 前缀小写 + ep 四位补零",
-          s1 == "wbt_brainco_walk_to_table_put_cups_and_rack_plates_in_dishwasher_ep0003_run0")
-    s2 = make_stem("G1_WBT_Inspire_Put_Drinks_Into_Fridge", 42, 2)
-    check("stem: 常规命名", s2 == "wbt_inspire_put_drinks_into_fridge_ep0042_run2")
-
-    # ⑥ --batch-encode 批推理路径（mock session 确定性恒等投影，numpy-only，
-    #    不 import onnxruntime——批路径已抽成「obs 数组 + session 对象」纯函数）
-    class _MockEnc:
-        def __init__(self, scale=1.0):
-            self.scale = scale
-
-        def run(self, _, feed):
-            obs = feed[list(feed)[0]]
-            return [obs @ np.eye(obs.shape[-1], dtype=obs.dtype)[:, :64] * self.scale]
-
-    class _MockDec:
-        def run(self, _, feed):
-            obs = feed[list(feed)[0]]
-            return [obs @ np.eye(obs.shape[-1], dtype=obs.dtype)[:, :29]]
-
-    rng = np.random.default_rng(20260914)
-    obs_small = rng.standard_normal((7, 1762)).astype(np.float32)
-    t_batch = encode_tokens_batch(obs_small, _MockEnc(), "obs")
-    t_loop = encode_tokens_loop(obs_small, _MockEnc(), "obs")
-    dec_small = rng.standard_normal((5, 994)).astype(np.float32)
-    a_batch = decode_actions_batch(dec_small, _MockDec(), "i", "o")
-    md = _MockDec()
-    a_loop = np.stack([md.run(None, {"i": dec_small[t][None]})[0][0]
-                       for t in range(len(dec_small))])
-    check("batch-encode: 批/逐帧收集+推理路径逻辑等（encoder (7,1762)->(7,64) "
-          "+ decoder (5,994)->(5,29)，mock session 恒等投影）",
-          t_batch.shape == (7, 64) and t_batch.dtype == np.float32
-          and bool(np.allclose(t_batch, t_loop, atol=1e-6))
-          and a_batch.shape == (5, 29) and bool(np.allclose(a_batch, a_loop, atol=1e-6)))
-
-    # 线程池逐帧 decoder（批维静态=1 的批路径替代，2026-09-14 服务器实测后加）：
-    # 数值与逐帧/批版同构（mock session 下三者一致），仅调度并发不同
-    a_thr = decode_actions_threaded(dec_small, _MockDec(), "i", "o")
-    check("batch-encode: 线程池逐帧 decoder 与逐帧路径同值（(5,29)，np.stack 序）",
-          a_thr.shape == (5, 29) and bool(np.allclose(a_thr, a_loop, atol=1e-6)))
-
-    # 护栏：等值放行；mock 第二个 session（scale 不同 -> 返回不同值）-> RuntimeError
-    try:
-        assert_batch_encode_equivalence(t_batch, t_loop,
-                                        lattice_rate_of(t_batch), lattice_rate_of(t_loop))
-        guard_pass = True
-    except RuntimeError:
-        guard_pass = False
-    t_bad = encode_tokens_batch(obs_small, _MockEnc(scale=1.01), "obs")
-    guard_raised, guard_msg = False, ""
-    try:
-        assert_batch_encode_equivalence(t_bad, t_loop,
-                                        lattice_rate_of(t_bad), lattice_rate_of(t_loop))
-    except RuntimeError as exc:
-        guard_raised, guard_msg = True, str(exc)
-    check("batch-encode: 等价护栏等值通过 / 不等值抛 RuntimeError 且消息含两侧数值",
-          guard_pass and guard_raised and "lattice_rate" in guard_msg)
-
-    # 默认关 = 调用链不变：CLI default False（store_true）+ encode_segment 默认 False
-    import inspect
-    sig = inspect.signature(encode_segment)
-    check("batch-encode: 默认关（CLI parse_args([]).batch_encode is False + "
-          "encode_segment 签名默认 False）",
-          build_arg_parser().parse_args([]).batch_encode is False
-          and sig.parameters["batch_encode"].default is False)
-
-    if failures:
-        print(f"[selftest] FAILED: {len(failures)} checks: {failures}")
-        return 1
-    print("[selftest] ALL PASS")
-    return 0
 
 
 # ------------------------------------ --batch-encode 批推理纯函数（selftest 可测）
@@ -469,7 +311,136 @@ def assert_batch_encode_equivalence(tokens_batch, tokens_loop, lr_batch, lr_loop
             f"lattice_rate batch={lr_batch:.6e} loop={lr_loop:.6e}")
 
 
+# --------------------------------------------------------------- parquet load
+def load_repo_episodes(raw_root, repo):
+    """读一个 repo 的全部 data parquet（共享 wbt_common.read_wbt_parquet，
+    need_joints=True，返回键 {schema, ep, frame, root7, j29}），按
+    episode_index 分 episode（帧序排序 + 帧步检查），返回 episode 记录列表
+    （含 schema 与 repo 级 warnings）。"""
+    repo_dir = os.path.join(raw_root, repo)
+    files = sorted(glob.glob(os.path.join(repo_dir, "data", "**", "*.parquet"), recursive=True))
+    if not files:
+        raise ValueError(f"no data parquet under {repo_dir}/data")
+    recs = [read_wbt_parquet(f, need_joints=True) for f in files]
+
+    repo_warn = []
+    info_p = os.path.join(repo_dir, "meta", "info.json")
+    if os.path.isfile(info_p):
+        with open(info_p, encoding="utf-8") as f:
+            fps_info = json.load(f).get("fps")
+        if fps_info is not None and float(fps_info) != FPS_SRC:
+            repo_warn.append(f"meta/info.json fps={fps_info} != contract FPS_SRC={FPS_SRC}")
+
+    ep_all = np.concatenate([r["ep"] for r in recs])
+    root_all = np.concatenate([r["root7"] for r in recs])
+    j_all = np.concatenate([r["j29"] for r in recs])
+    schema_all = np.concatenate([np.full(len(r["ep"]), r["schema"], dtype=object) for r in recs])
+    if all(r["frame"] is not None for r in recs):
+        frame_all = np.concatenate([r["frame"] for r in recs])
+    else:
+        frame_all = None
+        if any(r["frame"] is not None for r in recs):
+            repo_warn.append("frame-index availability mixed across files; row order assumed")
+
+    episodes = []
+    for e in np.unique(ep_all):
+        m = np.where(ep_all == e)[0]
+        ep_warn = list(repo_warn)
+        if frame_all is not None:
+            m = m[np.argsort(frame_all[m], kind="stable")]
+            fd = np.diff(frame_all[m])
+            if not np.all(fd == 1):
+                ep_warn.append(f"frame step not constant: {np.unique(fd)[:5]}")
+        schemas = sorted(set(schema_all[m]))
+        if len(schemas) != 1:
+            raise ValueError(f"ep{e}: mixed schemas within episode: {schemas}")
+        root7 = root_all[m]
+        v_med, _ = xy_speed_stats(root7[:, :2], FPS_SRC)
+        episodes.append({"repo": repo, "ep": int(e), "schema": schemas[0],
+                         "root7": root7, "j29": j_all[m], "v_med": v_med,
+                         "warnings": ep_warn})
+    return episodes
+
+
+def sample_episodes(episodes, n_sample):
+    """冒烟模式：按 episode 整段 v_med 排序，快/中/慢三档各取 max(1, N//3)
+    个（池 = 全部选中 repo 的 episode；确定性，无随机）。"""
+    eps = sorted(episodes, key=lambda r: (r["v_med"], r["repo"], r["ep"]))
+    k = max(1, n_sample // 3)
+    n = len(eps)
+    mid0 = max(0, n // 2 - k // 2)
+    picks = eps[:k] + eps[mid0:mid0 + k] + eps[max(0, n - k):]
+    seen, out = set(), []
+    for r in picks:
+        key = (r["repo"], r["ep"])
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
+
+
+# ------------------------------------------------------------- limits-check
+def load_deploy_joint_limits():
+    """--limits-check 专用：import mujoco 载入 deploy MJCF（env 默认
+    scene_43dof.xml），按关节名取 29 关节 (lo,hi)（MuJoCo 序）。仅服务器。"""
+    import mujoco  # noqa: PLC0415  服务器专用
+
+    xml = f"{REPO}/gear_sonic/data/robot_model/model_data/g1/scene_43dof.xml"
+    model = mujoco.MjModel.from_xml_path(xml)
+    lims = np.zeros((29, 2))
+    for i, nm in enumerate(MUJOCO_JOINT_NAMES):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, nm)
+        if jid < 0:
+            raise ValueError(f"joint {nm} not found in deploy MJCF")
+        lims[i] = model.jnt_range[jid]
+    return lims
+
+
+def check_joint_limits(jp29, lims, margin=LIMIT_MARGIN_RAD):
+    """断言该 run 的 29 关节观测值域 ⊂ 限位 ± margin rad；违例 raise。"""
+    lo, hi = lims[:, 0] - margin, lims[:, 1] + margin
+    jmin, jmax = jp29.min(axis=0), jp29.max(axis=0)
+    bad = np.where((jmin < lo) | (jmax > hi))[0]
+    if len(bad):
+        det = ", ".join(f"idx{int(i)} obs[{jmin[i]:.3f},{jmax[i]:.3f}] "
+                        f"lim[{lo[i]:.3f},{hi[i]:.3f}]" for i in bad[:5])
+        raise ValueError(f"joint values outside deploy limits +/-{margin} rad: {det}")
+
+
 # ------------------------------------------------------------- encoder chain
+def _omega_and_gravity(quat_rs):
+    """decoder 观测的体角速度与重力方向（roundtrip 批/逐帧两分支逐字重复块的
+    机械提取，数值逐字搬运自 encode_segment 原实现）：体角速度 = 根四元数
+    中心差分转体坐标（smoke verbatim），重力方向 = 单位重力向量逐帧旋到体系。
+    返回 (omega_body, grav)。"""
+    n_rs = len(quat_rs)
+    # body-frame angular velocity from root quat finite diff (smoke verbatim)
+    omega_body = np.zeros((n_rs, 3))
+    for t in range(n_rs):
+        a, b = quat_rs[min(t + 1, n_rs - 1)], quat_rs[max(t - 1, 0)]
+        step = (min(t + 1, n_rs - 1) - max(t - 1, 0)) / FPS_ENC
+        dq = _qmul(a, _qconj(b))
+        if dq[0] < 0:
+            dq = -dq
+        w_world = 2.0 * dq[1:] / max(dq[0], 1e-6) / max(step, 1e-6)
+        omega_body[t] = _quat_rotate_inverse(quat_rs[t], w_world)
+    grav = np.array([_quat_rotate_inverse(qq, np.array([0.0, 0.0, -1.0])) for qq in quat_rs])
+    return omega_body, grav
+
+
+def _decoder_hist(idx, omega_body, grav, jp_mj, jv_isaac, default_mj_b, m2i_b, env):
+    """decoder 五键观测 hist dict（roundtrip 批/逐帧两分支逐字重复块的机械
+    提取，键与数值构造逐字保留）；idx 为该帧的时间窗下标（调用方 np.clip
+    后传入）。"""
+    return {
+        "base_angular_velocity": omega_body[idx].astype(np.float32),
+        "body_joint_positions": ((jp_mj[idx] - default_mj_b)[:, m2i_b]).astype(np.float32),
+        "body_joint_velocities": jv_isaac[idx].astype(np.float32),
+        "last_actions": (((jp_mj[idx] - default_mj_b) / env.sonic_scale_mujoco)[:, m2i_b]).astype(np.float32),
+        "gravity_dir": grav[idx].astype(np.float32),
+    }
+
+
 def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
                    anchor="ref-rel", dec_bundle=None, batch_encode=False):
     """WBT run arrays（rad、wxyz、m；native 30 fps，MuJoCo order）-> tokens +
@@ -538,29 +509,14 @@ def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
         env = dec_bundle["env"]
         dec = env.sonic_decoder
         m2i_b, default_mj_b = dec_bundle["m2i"], dec_bundle["default_mj"]
-        # body-frame angular velocity from root quat finite diff (smoke verbatim)
-        omega_body = np.zeros((n_rs, 3))
-        for t in range(n_rs):
-            a, b = quat_rs[min(t + 1, n_rs - 1)], quat_rs[max(t - 1, 0)]
-            step = (min(t + 1, n_rs - 1) - max(t - 1, 0)) / FPS_ENC
-            dq = _qmul(a, _qconj(b))
-            if dq[0] < 0:
-                dq = -dq
-            w_world = 2.0 * dq[1:] / max(dq[0], 1e-6) / max(step, 1e-6)
-            omega_body[t] = _quat_rotate_inverse(quat_rs[t], w_world)
-        grav = np.array([_quat_rotate_inverse(qq, np.array([0.0, 0.0, -1.0])) for qq in quat_rs])
+        omega_body, grav = _omega_and_gravity(quat_rs)
 
         if batch_encode:
             dec_obs_batch = np.zeros((n_rs, int(dec.input_dim)), dtype=np.float32)
             for t in range(n_rs):
                 idx = np.clip(np.arange(t - 9, t + 1), 0, n_rs - 1)
-                hist = {
-                    "base_angular_velocity": omega_body[idx].astype(np.float32),
-                    "body_joint_positions": ((jp_mj[idx] - default_mj_b)[:, m2i_b]).astype(np.float32),
-                    "body_joint_velocities": jv_isaac[idx].astype(np.float32),
-                    "last_actions": (((jp_mj[idx] - default_mj_b) / env.sonic_scale_mujoco)[:, m2i_b]).astype(np.float32),
-                    "gravity_dir": grav[idx].astype(np.float32),
-                }
+                hist = _decoder_hist(idx, omega_body, grav, jp_mj, jv_isaac,
+                                     default_mj_b, m2i_b, env)
                 dec_obs_batch[t] = dec.build_decoder_obs(tokens[t], hist)[0]
             acts = decode_actions_threaded(dec_obs_batch, dec.session,
                                            dec.input_name, dec.output_name)
@@ -574,13 +530,8 @@ def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
             err, err0 = [], []
             for t in range(n_rs):
                 idx = np.clip(np.arange(t - 9, t + 1), 0, n_rs - 1)
-                hist = {
-                    "base_angular_velocity": omega_body[idx].astype(np.float32),
-                    "body_joint_positions": ((jp_mj[idx] - default_mj_b)[:, m2i_b]).astype(np.float32),
-                    "body_joint_velocities": jv_isaac[idx].astype(np.float32),
-                    "last_actions": (((jp_mj[idx] - default_mj_b) / env.sonic_scale_mujoco)[:, m2i_b]).astype(np.float32),
-                    "gravity_dir": grav[idx].astype(np.float32),
-                }
+                hist = _decoder_hist(idx, omega_body, grav, jp_mj, jv_isaac,
+                                     default_mj_b, m2i_b, env)
                 obs = dec.build_decoder_obs(tokens[t], hist)
                 act_isaac = dec.session.run([dec.output_name], {dec.input_name: obs})[0][0]
                 q_des_isaac = env.sonic_default_isaac + act_isaac.astype(np.float64) * env.sonic_scale_isaac
@@ -591,137 +542,156 @@ def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
     return out
 
 
-# --------------------------------------------------------------- parquet load
-def read_parquet_file(path):
-    """单 parquet 文件 schema 自适应读取（仿 tmp/wbt_probe.py read_file）。
-    返回 {schema, ep, frame, root7, j29}；frame 为帧序（frame_index，退而
-    index，再退 None=按行序）。pyarrow 延迟装载，模块导入/selftest 不触发。"""
-    import pyarrow.parquet as pq  # noqa: PLC0415  服务器专用
+# --------------------------------------------------------------------- selftest
+def run_selftest():
+    """本机 numpy-only 自测：不 import mujoco/onnxruntime/pyarrow（重依赖均在
+    main()/wbt_common.read_wbt_parquet 内延迟装载，模块导入不触发）。"""
+    log = CheckLog()
 
-    t = pq.read_table(path)
-    names = set(t.column_names)
+    # ① odom 跳变切段（含边界：首帧跳变 / 尾段过短丢弃）
+    xy = np.zeros((200, 2))
+    xy[:, 0] = np.arange(200) * 0.03  # ~0.9 m/s 步进，无跳变
+    xy[100:] += 10.0                  # 帧间跳变 10 m
+    segs, kept, n_jumps = split_runs(xy)
+    log.check("split: 单跳变 -> 两段全保留", segs == [(0, 100), (100, 200)] and kept == [0, 1] and n_jumps == 1)
+    xy2 = np.zeros((90, 2))
+    xy2[:, 0] = np.arange(90) * 0.03
+    xy2[70:] += 10.0
+    segs2, kept2, n_jumps2 = split_runs(xy2)
+    log.check("split: 尾段 20 帧 <60 丢弃", segs2 == [(0, 70), (70, 90)] and kept2 == [0] and n_jumps2 == 1)
+    xy3 = np.zeros((71, 2))
+    xy3[1:] += 10.0  # 第 0->1 帧即跳变
+    segs3, kept3, n_jumps3 = split_runs(xy3)
+    log.check("split: 首帧跳变首段(1 帧)丢弃", segs3 == [(0, 1), (1, 71)] and kept3 == [1] and n_jumps3 == 1)
+    log.check("split: 无跳变整段保留", split_runs(xy[:100]) == ([(0, 100)], [0], 0))
 
-    def col(name):
-        return np.asarray(t.column(name).to_pylist(), dtype=np.float64)
+    # ② 关节签名断言 pass/fail
+    base = np.zeros((200, 29))
+    base[:, 3] = 0.6   # 左膝
+    base[:, 9] = 0.66  # 右膝
+    base[:, 16] = 0.1  # L 肩滚
+    base[:, 23] = -0.1  # R 肩滚
+    quat = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (200, 1))
+    log.check("signature: 正常步态通过无警告", assert_joint_signature(base, quat) == [])
+    flat = base.copy()
+    flat[:, 3] = 0.01  # 站立位膝伸直 -> 09-14 起降级为 warning 不再报错
+    wflat = assert_joint_signature(flat, quat)
+    log.check("signature: 膝 idx3 median<=0.05 只警告不报错",
+              len(wflat) == 1 and "knee idx3" in wflat[0] and "standing-like" in wflat[0])
+    negk = base.copy()
+    negk[:, 9] = -0.4  # 膝大幅持续负弯 -> 序错/镜像硬特征
+    try:
+        assert_joint_signature(negk, quat)
+        knee_fail = False
+    except ValueError:
+        knee_fail = True
+    log.check("signature: 膝 idx9 median<-0.25 报错跳过", knee_fail)
+    lroll = base.copy()
+    lroll[:, 16] = -0.5  # L 肩滚越界（若 L/R 腿序错会镜像出此类特征）
+    try:
+        assert_joint_signature(lroll, quat)
+        roll_fail = False
+    except ValueError:
+        roll_fail = True
+    log.check("signature: L 肩滚 idx16 median<-0.2 报错跳过", roll_fail)
+    wq = assert_joint_signature(base, quat * 1.05)  # 模长 1.05 越界
+    log.check("signature: 四元数模长越界只警告不报错", len(wq) == 1 and "quat norm" in wq[0])
 
-    ep = np.asarray(t.column("episode_index").to_pylist(), dtype=np.int64)
-    if "frame_index" in names:
-        frame = np.asarray(t.column("frame_index").to_pylist(), dtype=np.int64)
-    elif "index" in names:
-        frame = np.asarray(t.column("index").to_pylist(), dtype=np.int64)
-    else:
-        frame = None
-    if "observation.state.robot_q_current" in names:
-        schema = "q36"
-        q36 = col("observation.state.robot_q_current")
-        if q36.ndim != 2 or q36.shape[1] != 36:
-            raise ValueError(f"{path}: robot_q_current shape {q36.shape} != (n,36)")
-        root7, j29 = q36[:, :7], q36[:, 7:36]
-    else:
-        schema = "grouped"
-        missing = [g for g in GROUPED_JOINT_COLS if g not in names]
-        if missing or "observation.state.state_base_pose" not in names:
-            raise ValueError(f"{path}: neither q36 nor complete grouped schema "
-                             f"(missing {missing})")
-        root7 = col("observation.state.state_base_pose")
-        # 拼接顺序即契约：lower_body[15] + left_arm[7] + right_arm[7] = 29
-        j29 = np.concatenate([col(g) for g in GROUPED_JOINT_COLS], axis=1)
-    if root7.ndim != 2 or root7.shape[1] != 7 or j29.shape[1] != 29:
-        raise ValueError(f"{path}: root7 {root7.shape} / j29 {j29.shape} not (n,7)/(n,29)")
-    return {"schema": schema, "ep": ep, "frame": frame, "root7": root7, "j29": j29}
+    # ③ 半球连续化（180° 翻转序列）
+    ang = np.linspace(0.0, np.pi / 2.0, 50)
+    qz = np.stack([np.cos(ang / 2), np.zeros(50), np.zeros(50), np.sin(ang / 2)], axis=1)
+    qflip = qz.copy()
+    qflip[1::2] *= -1.0  # 隔帧符号翻转（同一旋转）
+    qa = hemisphere_align(qflip)
+    dots = np.einsum("ij,ij->i", qa[1:], qa[:-1])
+    same = np.minimum(np.abs(qa - qz).max(axis=1), np.abs(qa + qz).max(axis=1))
+    log.check("hemisphere: 连续 dot>=0 且旋转不变(±q)", bool(dots.min() >= 0) and float(same.max()) < 1e-12)
 
+    # ④ 30->50 重采样帧数（encode_bones_smoke.resample 源码口径：
+    #    n_out = int(round(n_in * fps_out / fps_in))，round 而非 ceil，如 92->153）
+    anchors = {90: 150, 91: 152, 92: 153, 150: 250, 900: 1500, 1234: 2057}
+    ok_all, detail = True, ""
+    for n, want in anchors.items():
+        got = len(resample(np.zeros((n, 2)), FPS_SRC, FPS_ENC))
+        if got != want:
+            ok_all, detail = False, f"n={n}: got {got}, want {want} (int(round(n*5/3)))"
+    log.check("resample 30->50 帧数 = int(round(n*5/3))", ok_all, detail)
+    rs = resample(np.full((90, 3), 2.5), FPS_SRC, FPS_ENC)
+    log.check("resample: 常数列线性插值不变", len(rs) == 150 and bool(np.allclose(rs, 2.5)))
 
-def load_repo_episodes(raw_root, repo):
-    """读一个 repo 的全部 data parquet，按 episode_index 分 episode（帧序
-    排序 + 帧步检查），返回 episode 记录列表（含 schema 与 repo 级 warnings）。"""
-    repo_dir = os.path.join(raw_root, repo)
-    files = sorted(glob.glob(os.path.join(repo_dir, "data", "**", "*.parquet"), recursive=True))
-    if not files:
-        raise ValueError(f"no data parquet under {repo_dir}/data")
-    recs = [read_parquet_file(f) for f in files]
+    # ⑤ stem 命名
+    s1 = make_stem("G1_WBT_Brainco_Walk_To_Table_Put_Cups_And_Rack_Plates_In_Dishwasher", 3, 0)
+    log.check("stem: 去 G1_WBT_ 前缀小写 + ep 四位补零",
+              s1 == "wbt_brainco_walk_to_table_put_cups_and_rack_plates_in_dishwasher_ep0003_run0")
+    s2 = make_stem("G1_WBT_Inspire_Put_Drinks_Into_Fridge", 42, 2)
+    log.check("stem: 常规命名", s2 == "wbt_inspire_put_drinks_into_fridge_ep0042_run2")
 
-    repo_warn = []
-    info_p = os.path.join(repo_dir, "meta", "info.json")
-    if os.path.isfile(info_p):
-        with open(info_p, encoding="utf-8") as f:
-            fps_info = json.load(f).get("fps")
-        if fps_info is not None and float(fps_info) != FPS_SRC:
-            repo_warn.append(f"meta/info.json fps={fps_info} != contract FPS_SRC={FPS_SRC}")
+    # ⑥ --batch-encode 批推理路径（mock session 确定性恒等投影，numpy-only，
+    #    不 import onnxruntime——批路径已抽成「obs 数组 + session 对象」纯函数）
+    class _MockEnc:
+        def __init__(self, scale=1.0):
+            self.scale = scale
 
-    ep_all = np.concatenate([r["ep"] for r in recs])
-    root_all = np.concatenate([r["root7"] for r in recs])
-    j_all = np.concatenate([r["j29"] for r in recs])
-    schema_all = np.concatenate([np.full(len(r["ep"]), r["schema"], dtype=object) for r in recs])
-    if all(r["frame"] is not None for r in recs):
-        frame_all = np.concatenate([r["frame"] for r in recs])
-    else:
-        frame_all = None
-        if any(r["frame"] is not None for r in recs):
-            repo_warn.append("frame-index availability mixed across files; row order assumed")
+        def run(self, _, feed):
+            obs = feed[list(feed)[0]]
+            return [obs @ np.eye(obs.shape[-1], dtype=obs.dtype)[:, :64] * self.scale]
 
-    episodes = []
-    for e in np.unique(ep_all):
-        m = np.where(ep_all == e)[0]
-        ep_warn = list(repo_warn)
-        if frame_all is not None:
-            m = m[np.argsort(frame_all[m], kind="stable")]
-            fd = np.diff(frame_all[m])
-            if not np.all(fd == 1):
-                ep_warn.append(f"frame step not constant: {np.unique(fd)[:5]}")
-        schemas = sorted(set(schema_all[m]))
-        if len(schemas) != 1:
-            raise ValueError(f"ep{e}: mixed schemas within episode: {schemas}")
-        root7 = root_all[m]
-        v_med, _ = xy_speed_stats(root7[:, :2])
-        episodes.append({"repo": repo, "ep": int(e), "schema": schemas[0],
-                         "root7": root7, "j29": j_all[m], "v_med": v_med,
-                         "warnings": ep_warn})
-    return episodes
+    class _MockDec:
+        def run(self, _, feed):
+            obs = feed[list(feed)[0]]
+            return [obs @ np.eye(obs.shape[-1], dtype=obs.dtype)[:, :29]]
 
+    rng = np.random.default_rng(20260914)
+    obs_small = rng.standard_normal((7, 1762)).astype(np.float32)
+    t_batch = encode_tokens_batch(obs_small, _MockEnc(), "obs")
+    t_loop = encode_tokens_loop(obs_small, _MockEnc(), "obs")
+    dec_small = rng.standard_normal((5, 994)).astype(np.float32)
+    a_batch = decode_actions_batch(dec_small, _MockDec(), "i", "o")
+    md = _MockDec()
+    a_loop = np.stack([md.run(None, {"i": dec_small[t][None]})[0][0]
+                       for t in range(len(dec_small))])
+    log.check("batch-encode: 批/逐帧收集+推理路径逻辑等（encoder (7,1762)->(7,64) "
+              "+ decoder (5,994)->(5,29)，mock session 恒等投影）",
+              t_batch.shape == (7, 64) and t_batch.dtype == np.float32
+              and bool(np.allclose(t_batch, t_loop, atol=1e-6))
+              and a_batch.shape == (5, 29) and bool(np.allclose(a_batch, a_loop, atol=1e-6)))
 
-def sample_episodes(episodes, n_sample):
-    """冒烟模式：按 episode 整段 v_med 排序，快/中/慢三档各取 max(1, N//3)
-    个（池 = 全部选中 repo 的 episode；确定性，无随机）。"""
-    eps = sorted(episodes, key=lambda r: (r["v_med"], r["repo"], r["ep"]))
-    k = max(1, n_sample // 3)
-    n = len(eps)
-    mid0 = max(0, n // 2 - k // 2)
-    picks = eps[:k] + eps[mid0:mid0 + k] + eps[max(0, n - k):]
-    seen, out = set(), []
-    for r in picks:
-        key = (r["repo"], r["ep"])
-        if key not in seen:
-            seen.add(key)
-            out.append(r)
-    return out
+    # 线程池逐帧 decoder（批维静态=1 的批路径替代，2026-09-14 服务器实测后加）：
+    # 数值与逐帧/批版同构（mock session 下三者一致），仅调度并发不同
+    a_thr = decode_actions_threaded(dec_small, _MockDec(), "i", "o")
+    log.check("batch-encode: 线程池逐帧 decoder 与逐帧路径同值（(5,29)，np.stack 序）",
+              a_thr.shape == (5, 29) and bool(np.allclose(a_thr, a_loop, atol=1e-6)))
 
+    # 护栏：等值放行；mock 第二个 session（scale 不同 -> 返回不同值）-> RuntimeError
+    try:
+        assert_batch_encode_equivalence(t_batch, t_loop,
+                                        lattice_rate_of(t_batch), lattice_rate_of(t_loop))
+        guard_pass = True
+    except RuntimeError:
+        guard_pass = False
+    t_bad = encode_tokens_batch(obs_small, _MockEnc(scale=1.01), "obs")
+    guard_raised, guard_msg = False, ""
+    try:
+        assert_batch_encode_equivalence(t_bad, t_loop,
+                                        lattice_rate_of(t_bad), lattice_rate_of(t_loop))
+    except RuntimeError as exc:
+        guard_raised, guard_msg = True, str(exc)
+    log.check("batch-encode: 等价护栏等值通过 / 不等值抛 RuntimeError 且消息含两侧数值",
+              guard_pass and guard_raised and "lattice_rate" in guard_msg)
 
-# ------------------------------------------------------------- limits-check
-def load_deploy_joint_limits():
-    """--limits-check 专用：import mujoco 载入 deploy MJCF（env 默认
-    scene_43dof.xml），按关节名取 29 关节 (lo,hi)（MuJoCo 序）。仅服务器。"""
-    import mujoco  # noqa: PLC0415  服务器专用
+    # 默认关 = 调用链不变：CLI default False（store_true）+ encode_segment 默认 False
+    import inspect
+    sig = inspect.signature(encode_segment)
+    log.check("batch-encode: 默认关（CLI parse_args([]).batch_encode is False + "
+              "encode_segment 签名默认 False）",
+              build_arg_parser().parse_args([]).batch_encode is False
+              and sig.parameters["batch_encode"].default is False)
 
-    xml = f"{REPO}/gear_sonic/data/robot_model/model_data/g1/scene_43dof.xml"
-    model = mujoco.MjModel.from_xml_path(xml)
-    lims = np.zeros((29, 2))
-    for i, nm in enumerate(MUJOCO_JOINT_NAMES):
-        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, nm)
-        if jid < 0:
-            raise ValueError(f"joint {nm} not found in deploy MJCF")
-        lims[i] = model.jnt_range[jid]
-    return lims
-
-
-def check_joint_limits(jp29, lims, margin=LIMIT_MARGIN_RAD):
-    """断言该 run 的 29 关节观测值域 ⊂ 限位 ± margin rad；违例 raise。"""
-    lo, hi = lims[:, 0] - margin, lims[:, 1] + margin
-    jmin, jmax = jp29.min(axis=0), jp29.max(axis=0)
-    bad = np.where((jmin < lo) | (jmax > hi))[0]
-    if len(bad):
-        det = ", ".join(f"idx{int(i)} obs[{jmin[i]:.3f},{jmax[i]:.3f}] "
-                        f"lim[{lo[i]:.3f},{hi[i]:.3f}]" for i in bad[:5])
-        raise ValueError(f"joint values outside deploy limits +/-{margin} rad: {det}")
+    if log.failures:
+        print(f"[selftest] FAILED: {len(log.failures)} checks: {log.failures}")
+        return 1
+    print("[selftest] ALL PASS")
+    return 0
 
 
 # -------------------------------------------------------------------- main
@@ -757,30 +727,11 @@ def build_arg_parser():
     return ap
 
 
-def main():
-    ap = build_arg_parser()
-    args = ap.parse_args()
-
-    if args.selftest:
-        sys.exit(run_selftest())
-
-    if not os.path.isdir(args.raw_root):
-        ap.error(f"--raw-root not a dir: {args.raw_root}")
-    out_dir = args.out_dir or os.path.join(
-        os.path.dirname(os.path.abspath(args.raw_root)), "g1wbt_conv")
-    if args.repos:
-        repos = [r.strip() for r in args.repos.split(",") if r.strip()]
-        for r in repos:
-            if not os.path.isdir(os.path.join(args.raw_root, r)):
-                ap.error(f"repo dir not found under raw-root: {r}")
-    else:
-        repos = sorted(d for d in os.listdir(args.raw_root)
-                       if os.path.isdir(os.path.join(args.raw_root, d, "data")))
-        if not repos:
-            ap.error(f"no <repo>/data dirs under {args.raw_root}")
-    print(f"[wbt] raw_root={args.raw_root} repos={repos} -> out_dir={out_dir}")
-
-    # ---- 重依赖装载（镜像 convert_bones_g1_csv.py main；py_compile/selftest 不触发）
+def load_pipeline(args, out_dir):
+    """重依赖装载（镜像 convert_bones_g1_csv.py main；py_compile/selftest 不
+    触发）：onnxruntime encoder session、（--limits-check）deploy MJCF 限位、
+    npz 输出目录、（--roundtrip）MujocoG1FlatEnv + NoQuantDecoder bundle。
+    返回 dict：enc/iname/m2i/default_mj/lims/npz_dir/dec_bundle。"""
     import onnxruntime as ort
     from apt_g1.envs.mujoco_g1_flat_env import (
         G1_MUJOCO_TO_ISAACLAB_DOF,
@@ -807,6 +758,174 @@ def main():
             f"{REPO}/gear_sonic_deploy/policy/release/model_decoder.onnx"), REPO,
             use_elastic_band=False, stand_only=True)
         dec_bundle = {"env": env, "m2i": m2i, "default_mj": default_mj}
+    return {"enc": enc, "iname": ins[0].name, "m2i": m2i, "default_mj": default_mj,
+            "lims": lims, "npz_dir": npz_dir, "dec_bundle": dec_bundle}
+
+
+def process_run(args, pipe, ep_rec, run_idx, a, b, stem, npz_path, n_jumps, n_dropped):
+    """转换单个 run（main 逐 run 循环体的函数化）：签名断言 -> --limits-check
+    -> 四元数归一化 -> encode_segment -> npz 写盘。print/flush 行为、manifest
+    条目字段序与 np.savez 键序逐字保留。返回 (entry, seg)：entry 为 manifest
+    条目（成功 = 完整 meta、失败 = error 条目），seg 为成功时的编码输出
+    （run 级聚合量来源）、失败为 None。"""
+    repo, ep = ep_rec["repo"], ep_rec["ep"]
+    jp29, quat, trans = ep_rec["j29"][a:b], ep_rec["root7"][a:b, 3:7], ep_rec["root7"][a:b, :3]
+    v_med, v_p90 = xy_speed_stats(trans[:, :2], FPS_SRC)
+    wbt_block = {
+        "repo": repo, "episode": ep, "run_idx": int(run_idx),
+        "schema": ep_rec["schema"], "fps_src": FPS_SRC,
+        "v_med_src": v_med, "v_p90_src": v_p90,
+        "n_jumps": int(n_jumps), "dropped_runs": int(n_dropped),
+    }
+    try:
+        warn = list(ep_rec["warnings"]) + assert_joint_signature(jp29, quat)
+        if pipe["lims"] is not None:
+            check_joint_limits(jp29, pipe["lims"])
+        # 四元数统一归一化（模长 warning 场景的修复动作）
+        quat = quat / np.linalg.norm(quat, axis=1, keepdims=True)
+        seg = encode_segment(jp29, quat, trans, pipe["enc"], pipe["iname"], pipe["m2i"],
+                             pipe["default_mj"], dec_bundle=pipe["dec_bundle"],
+                             batch_encode=args.batch_encode)
+    except Exception as e:  # noqa: BLE001  单 run 失败记条目跳过，不猜测
+        print(f"[convert] FAIL {stem}: {type(e).__name__}: {e}", flush=True)
+        return {"stem": stem, "class": "walk", "actor": "wbt",
+                "error": f"{type(e).__name__}: {e}", "wbt": wbt_block}, None
+    meta = {
+        "stem": stem, "class": "walk", "actor": "wbt",
+        "n_rows_src": int(b - a), "n_rows_enc": seg["n_rows"],
+        "lattice_rate": seg["lattice_rate"],
+        "roundtrip_mae": seg["roundtrip_mae"],
+        "roundtrip_mae_default_baseline": seg["roundtrip_mae_default_baseline"],
+        "path_len_m": float(np.linalg.norm(
+            np.diff(seg["trans_m"][:, :2], axis=0), axis=1).sum()),
+        "npz_path": os.path.abspath(npz_path),
+        "warnings": warn,
+        # D057 wbt 块：repo/episode/run 溯源 + 切段计数 + 源速度口径
+        "wbt": wbt_block,
+    }
+    np.savez(npz_path,
+             tokens=seg["tokens"], jp_isaac=seg["jp_isaac"], jp_mj=seg["jp_mj"],
+             jv_isaac=seg["jv_isaac"], quat_wxyz=seg["quat_wxyz"],
+             trans_m=seg["trans_m"], meta=np.array(json.dumps(meta)))
+    rt = "" if seg["roundtrip_mae"] is None else f" rt_mae={seg['roundtrip_mae']:.4f}"
+    print(f"[convert] {repo} ep{ep} run{run_idx}: {b - a}@30 -> "
+          f"{seg['n_rows']}@50 v_med={v_med:.2f} lat={seg['lattice_rate']:.1e}{rt}",
+          flush=True)
+    return meta, seg
+
+
+def convert_episode(args, pipe, ep_rec, agg):
+    """转换单个 episode（main 逐 episode 循环体的函数化）：odom 跳变切段 ->
+    逐 kept run 调 process_run，聚合量累积进 agg（manifest/n_entries/skipped/
+    jp_lo/jp_hi/knee_med_agg）。返回 stop：--max-runs 条目数触顶时 True，
+    主循环据此不再处理后续 episode（与原循环 break 语义一致）。"""
+    repo, ep = ep_rec["repo"], ep_rec["ep"]
+    root7, j29 = ep_rec["root7"], ep_rec["j29"]
+    segs, kept_idx, n_jumps = split_runs(root7[:, :2])
+    n_dropped = len(segs) - len(kept_idx)
+    kept_set = set(kept_idx)
+    if not kept_idx:
+        agg["manifest"].append({
+            "stem": make_stem(repo, ep, 0), "class": "walk", "actor": "wbt",
+            "error": f"no run >= {MIN_RUN_FRAMES} frames ({FPS_SRC:.0f}Hz) after jump split",
+            "wbt": {"repo": repo, "episode": ep, "run_idx": 0,
+                    "schema": ep_rec["schema"], "fps_src": FPS_SRC,
+                    "n_jumps": int(n_jumps), "dropped_runs": int(n_dropped)},
+        })
+        agg["n_entries"] += 1
+        return False
+    for run_idx, (a, b) in enumerate(segs):
+        if run_idx not in kept_set:
+            continue
+        if args.max_runs and agg["n_entries"] >= args.max_runs:
+            return True
+        stem = make_stem(repo, ep, run_idx)
+        npz_path = os.path.join(pipe["npz_dir"], stem + ".npz")
+        if os.path.isfile(npz_path) and not args.force:
+            agg["skipped"] += 1
+            continue
+        entry, seg = process_run(args, pipe, ep_rec, run_idx, a, b,
+                                 stem, npz_path, n_jumps, n_dropped)
+        agg["manifest"].append(entry)
+        agg["n_entries"] += 1
+        if seg is not None:
+            agg["jp_lo"] = np.minimum(agg["jp_lo"], seg["jp_mj"].min(axis=0))
+            agg["jp_hi"] = np.maximum(agg["jp_hi"], seg["jp_mj"].max(axis=0))
+            agg["knee_med_agg"].append(float(np.median(seg["jp_mj"][:, 3])))
+    return False
+
+
+def merge_and_write_manifest(out_dir, manifest, fresh):
+    """manifest 落盘：默认与旧 manifest 按 stem 合并（本 run 条目覆盖同名，
+    其余保留）——skipped-existing 的分批转换不再整体覆盖丢失先前段（D044 坑①
+    语义照抄）；fresh=True（--fresh-manifest）整体重写。含 merge 打印，
+    返回最终 manifest（含合并结果，供 SUMMARY 统计）。"""
+    mpath = os.path.join(out_dir, "manifest.json")
+    if os.path.exists(mpath) and not fresh:
+        try:
+            with open(mpath) as f:
+                old = json.load(f)
+            new_stems = {m.get("stem") for m in manifest}
+            old_keep = [e for e in old
+                        if isinstance(e, dict) and e.get("stem") not in new_stems]
+            manifest = old_keep + manifest
+            print(f"[manifest] merged with previous run: kept {len(old_keep)}, "
+                  f"total {len(manifest)}")
+        except (OSError, ValueError) as exc:
+            print(f"[manifest] WARN: merge failed ({exc}); overwriting")
+    with open(mpath, "w") as f:
+        json.dump(manifest, f, indent=1)
+    print(f"[manifest] {len(manifest)} entries -> {mpath}")
+    return manifest
+
+
+def print_summary(manifest, skipped, jp_lo, jp_hi, knee_med_agg):
+    """stdout 汇总（原 main 尾部逐字）：SUMMARY 行 + 全集聚合签名证据三条
+    [signature] 行（09-14 起 per-run 膝 median 降级 warning 后的序证据载体；
+    证据进运行日志，随时可从各 npz 的 jp_mj 重算，不另落文件）。"""
+    ok = [m for m in manifest if "error" not in m]
+    rts = [m["roundtrip_mae"] for m in ok if m.get("roundtrip_mae") is not None]
+    print(f"SUMMARY: converted {len(ok)}/{len(manifest)} (skipped existing {skipped})"
+          + (f" | roundtrip MAE mean {np.mean(rts):.4f} rad, max {np.max(rts):.4f}" if rts else ""))
+    if np.isfinite(jp_lo).all():
+        knees = [(i, MUJOCO_JOINT_NAMES[i], round(float(jp_lo[i]), 2), round(float(jp_hi[i]), 2))
+                 for i in (3, 9)]
+        rolls = [(i, MUJOCO_JOINT_NAMES[i], round(float(jp_lo[i]), 2), round(float(jp_hi[i]), 2))
+                 for i in (16, 23)]
+        print(f"[signature] n_runs={len(knee_med_agg)} knee_med_over_runs "
+              f"min/mean/max = {min(knee_med_agg):.3f}/{np.mean(knee_med_agg):.3f}/"
+              f"{max(knee_med_agg):.3f}")
+        print(f"[signature] knee ranges {knees}")
+        print(f"[signature] shoulder-roll ranges {rolls}")
+
+
+def main():
+    """编排：argparse -> selftest 分发 -> repo 解析 -> load_pipeline 重依赖
+    装载 -> 逐 repo 读 episode（[load] FAIL 记录不阻塞）-> 逐 episode/run
+    转换 -> manifest 合并落盘 -> stdout 汇总。"""
+    ap = build_arg_parser()
+    args = ap.parse_args()
+
+    if args.selftest:
+        sys.exit(run_selftest())
+
+    if not os.path.isdir(args.raw_root):
+        ap.error(f"--raw-root not a dir: {args.raw_root}")
+    out_dir = args.out_dir or os.path.join(
+        os.path.dirname(os.path.abspath(args.raw_root)), "g1wbt_conv")
+    if args.repos:
+        repos = [r.strip() for r in args.repos.split(",") if r.strip()]
+        for r in repos:
+            if not os.path.isdir(os.path.join(args.raw_root, r)):
+                ap.error(f"repo dir not found under raw-root: {r}")
+    else:
+        repos = sorted(d for d in os.listdir(args.raw_root)
+                       if os.path.isdir(os.path.join(args.raw_root, d, "data")))
+        if not repos:
+            ap.error(f"no <repo>/data dirs under {args.raw_root}")
+    print(f"[wbt] raw_root={args.raw_root} repos={repos} -> out_dir={out_dir}")
+
+    pipe = load_pipeline(args, out_dir)
 
     # ---- 读数据（每文件 schema 自适应），按 episode 分组
     episodes = []
@@ -823,123 +942,16 @@ def main():
               f"episodes (v_med {episodes[0]['v_med']:.2f}..{episodes[-1]['v_med']:.2f} m/s)")
 
     # ---- 逐 episode：跳变切段 -> 逐 run：签名断言 -> 编码 -> npz + manifest
-    manifest, skipped, n_entries, stop = [], 0, 0, False
-    jp_lo = np.full(29, np.inf)   # 全集聚合关节值域（MuJoCo 序 name-assert 证据）
-    jp_hi = np.full(29, -np.inf)
-    knee_med_agg = []
+    agg = {"manifest": [], "n_entries": 0, "skipped": 0,
+           "jp_lo": np.full(29, np.inf),   # 全集聚合关节值域（MuJoCo 序 name-assert 证据）
+           "jp_hi": np.full(29, -np.inf), "knee_med_agg": []}
     for ep_rec in episodes:
-        if stop:
-            break
-        repo, ep = ep_rec["repo"], ep_rec["ep"]
-        root7, j29 = ep_rec["root7"], ep_rec["j29"]
-        segs, kept_idx, n_jumps = split_runs(root7[:, :2])
-        n_dropped = len(segs) - len(kept_idx)
-        kept_set = set(kept_idx)
-        if not kept_idx:
-            manifest.append({
-                "stem": make_stem(repo, ep, 0), "class": "walk", "actor": "wbt",
-                "error": f"no run >= {MIN_RUN_FRAMES} frames ({FPS_SRC:.0f}Hz) after jump split",
-                "wbt": {"repo": repo, "episode": ep, "run_idx": 0,
-                        "schema": ep_rec["schema"], "fps_src": FPS_SRC,
-                        "n_jumps": int(n_jumps), "dropped_runs": int(n_dropped)},
-            })
-            n_entries += 1
-            continue
-        for run_idx, (a, b) in enumerate(segs):
-            if run_idx not in kept_set:
-                continue
-            if args.max_runs and n_entries >= args.max_runs:
-                stop = True
-                break
-            stem = make_stem(repo, ep, run_idx)
-            npz_path = os.path.join(npz_dir, stem + ".npz")
-            if os.path.isfile(npz_path) and not args.force:
-                skipped += 1
-                continue
-            jp29, quat, trans = j29[a:b], root7[a:b, 3:7], root7[a:b, :3]
-            v_med, v_p90 = xy_speed_stats(trans[:, :2])
-            wbt_block = {
-                "repo": repo, "episode": ep, "run_idx": int(run_idx),
-                "schema": ep_rec["schema"], "fps_src": FPS_SRC,
-                "v_med_src": v_med, "v_p90_src": v_p90,
-                "n_jumps": int(n_jumps), "dropped_runs": int(n_dropped),
-            }
-            try:
-                warn = list(ep_rec["warnings"]) + assert_joint_signature(jp29, quat)
-                if lims is not None:
-                    check_joint_limits(jp29, lims)
-                # 四元数统一归一化（模长 warning 场景的修复动作）
-                quat = quat / np.linalg.norm(quat, axis=1, keepdims=True)
-                seg = encode_segment(jp29, quat, trans, enc, ins[0].name, m2i,
-                                     default_mj, dec_bundle=dec_bundle,
-                                     batch_encode=args.batch_encode)
-            except Exception as e:  # noqa: BLE001  单 run 失败记条目跳过，不猜测
-                print(f"[convert] FAIL {stem}: {type(e).__name__}: {e}", flush=True)
-                manifest.append({"stem": stem, "class": "walk", "actor": "wbt",
-                                 "error": f"{type(e).__name__}: {e}", "wbt": wbt_block})
-                n_entries += 1
-                continue
-            meta = {
-                "stem": stem, "class": "walk", "actor": "wbt",
-                "n_rows_src": int(b - a), "n_rows_enc": seg["n_rows"],
-                "lattice_rate": seg["lattice_rate"],
-                "roundtrip_mae": seg["roundtrip_mae"],
-                "roundtrip_mae_default_baseline": seg["roundtrip_mae_default_baseline"],
-                "path_len_m": float(np.linalg.norm(
-                    np.diff(seg["trans_m"][:, :2], axis=0), axis=1).sum()),
-                "npz_path": os.path.abspath(npz_path),
-                "warnings": warn,
-                # D057 wbt 块：repo/episode/run 溯源 + 切段计数 + 源速度口径
-                "wbt": wbt_block,
-            }
-            np.savez(npz_path,
-                     tokens=seg["tokens"], jp_isaac=seg["jp_isaac"], jp_mj=seg["jp_mj"],
-                     jv_isaac=seg["jv_isaac"], quat_wxyz=seg["quat_wxyz"],
-                     trans_m=seg["trans_m"], meta=np.array(json.dumps(meta)))
-            manifest.append(meta)
-            n_entries += 1
-            jp_lo = np.minimum(jp_lo, seg["jp_mj"].min(axis=0))
-            jp_hi = np.maximum(jp_hi, seg["jp_mj"].max(axis=0))
-            knee_med_agg.append(float(np.median(seg["jp_mj"][:, 3])))
-            rt = "" if seg["roundtrip_mae"] is None else f" rt_mae={seg['roundtrip_mae']:.4f}"
-            print(f"[convert] {repo} ep{ep} run{run_idx}: {b - a}@30 -> "
-                  f"{seg['n_rows']}@50 v_med={v_med:.2f} lat={seg['lattice_rate']:.1e}{rt}",
-                  flush=True)
+        if convert_episode(args, pipe, ep_rec, agg):
+            break  # --max-runs 触顶：后续 episode 不再处理
 
-    mpath = os.path.join(out_dir, "manifest.json")
-    # 默认与旧 manifest 按 stem 合并（本 run 条目覆盖同名，其余保留）；
-    # skipped-existing 的分批转换不再整体覆盖丢失先前段（D044 坑① 语义照抄）
-    if os.path.exists(mpath) and not args.fresh_manifest:
-        try:
-            with open(mpath) as f:
-                old = json.load(f)
-            new_stems = {m.get("stem") for m in manifest}
-            old_keep = [e for e in old
-                        if isinstance(e, dict) and e.get("stem") not in new_stems]
-            manifest = old_keep + manifest
-            print(f"[manifest] merged with previous run: kept {len(old_keep)}, "
-                  f"total {len(manifest)}")
-        except (OSError, ValueError) as exc:
-            print(f"[manifest] WARN: merge failed ({exc}); overwriting")
-    with open(mpath, "w") as f:
-        json.dump(manifest, f, indent=1)
-    print(f"[manifest] {len(manifest)} entries -> {mpath}")
-    ok = [m for m in manifest if "error" not in m]
-    rts = [m["roundtrip_mae"] for m in ok if m.get("roundtrip_mae") is not None]
-    print(f"SUMMARY: converted {len(ok)}/{len(manifest)} (skipped existing {skipped})"
-          + (f" | roundtrip MAE mean {np.mean(rts):.4f} rad, max {np.max(rts):.4f}" if rts else ""))
-    # 全集聚合签名证据（09-14 起 per-run 膝 median 降级 warning 后的序证据载体）：
-    # 只打印到 stdout（证据进运行日志；随时可从各 npz 的 jp_mj 重算，不另落文件）
-    if np.isfinite(jp_lo).all():
-        knees = [(i, MUJOCO_JOINT_NAMES[i], round(float(jp_lo[i]), 2), round(float(jp_hi[i]), 2))
-                 for i in (3, 9)]
-        rolls = [(i, MUJOCO_JOINT_NAMES[i], round(float(jp_lo[i]), 2), round(float(jp_hi[i]), 2))
-                 for i in (16, 23)]
-        print(f"[signature] n_runs={len(knee_med_agg)} knee_med_over_runs "
-              f"min/mean/max = {min(knee_med_agg):.3f}/{np.mean(knee_med_agg):.3f}/"
-              f"{max(knee_med_agg):.3f}")
-        print(f"[signature] knee ranges {knees}")
-        print(f"[signature] shoulder-roll ranges {rolls}")
+    manifest = merge_and_write_manifest(out_dir, agg["manifest"], args.fresh_manifest)
+    print_summary(manifest, agg["skipped"], agg["jp_lo"], agg["jp_hi"],
+                  agg["knee_med_agg"])
 
 
 if __name__ == "__main__":

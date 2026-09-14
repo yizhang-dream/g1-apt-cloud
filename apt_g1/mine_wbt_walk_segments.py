@@ -19,6 +19,8 @@ jp_mj / quat_wxyz / trans_m (n,3 米) / jv_isaac / meta。
 用法（服务器 .venv_isaac python；numpy-only，不依赖 torch）：
   python mine_wbt_walk_segments.py --conv-dir <conv-dir>
   python mine_wbt_walk_segments.py --selftest            # 本机 numpy-only 自测
+
+selftest 脚手架来自 wbt_common（D057 重构）。
 """
 from __future__ import annotations
 
@@ -33,6 +35,11 @@ try:                      # 服务器执行根平铺 import / 仓库根包 impor
     from build_d048n_vb_speed_labels import frame_speed_bwd
 except ImportError:
     from apt_g1.build_d048n_vb_speed_labels import frame_speed_bwd
+
+try:                      # selftest 脚手架（wbt_common，D057 重构）；双兼容同上
+    from wbt_common import CheckLog
+except ImportError:
+    from apt_g1.wbt_common import CheckLog
 
 FPS = 50.0                      # 上游契约：转换 npz 统一 50Hz（口径勿改）
 EP_RE = re.compile(r"_ep\d+_")  # episode = stem 中该段相同者同类
@@ -169,40 +176,38 @@ def main() -> None:
 
 
 def selftest() -> None:
-    """numpy-only 自测：①窗切分边界 ②v_med 阈值 ③per-episode 截断 ④步长语义。"""
-    failures: list[str] = []
+    """numpy-only 自测：①窗切分边界 ②v_med 阈值 ③per-episode 截断 ④步长语义。
 
-    def check(name: str, cond: bool) -> None:
-        print(("[selftest] PASS " if cond else "[selftest] FAIL ") + name)
-        if not cond:
-            failures.append(name)
+    selftest 脚手架来自 wbt_common（D057 重构）。
+    """
+    log = CheckLog()
 
     # (1) 窗切分边界：满窗才收、右端点恰为 i0+win_len、尾部不满丢弃
-    check("win-bounds 500/200/100",
+    log.check("win-bounds 500/200/100",
           slide_windows(500, 200, 100) == [(0, 200), (100, 300), (200, 400), (300, 500)])
-    check("win-bounds exact fit 200", slide_windows(200, 200, 100) == [(0, 200)])
-    check("win-bounds too short 199", slide_windows(199, 200, 100) == [])
+    log.check("win-bounds exact fit 200", slide_windows(200, 200, 100) == [(0, 200)])
+    log.check("win-bounds too short 199", slide_windows(199, 200, 100) == [])
 
     # (4) 步长语义：起点间距 == stride 帧；stride==win 时无缝不重叠平铺
     starts = [i0 for i0, _ in slide_windows(1000, 200, 100)]
-    check("stride spacing 100", all(b - a == 100 for a, b in zip(starts, starts[1:])))
-    check("stride non-overlap tiling",
+    log.check("stride spacing 100", all(b - a == 100 for a, b in zip(starts, starts[1:])))
+    log.check("stride non-overlap tiling",
           slide_windows(600, 200, 200) == [(0, 200), (200, 400), (400, 600)])
-    check("stride drops partial tail",
+    log.check("stride drops partial tail",
           slide_windows(650, 200, 200) == [(0, 200), (200, 400), (400, 600)])
 
     # (2) v_med 阈值：匀速 0.20 m/s 全过、0.05 m/s 全拒（frame_speed_bwd 零漂移路径）
     v_hi = frame_speed_bwd(_const_trans(500, 0.20), FPS, "xy")
     v_lo = frame_speed_bwd(_const_trans(500, 0.05), FPS, "xy")
-    check("v_med threshold hi pass", len(mine_file(v_hi, 200, 100, 0.10)) == 4)
-    check("v_med threshold lo reject", mine_file(v_lo, 200, 100, 0.10) == [])
+    log.check("v_med threshold hi pass", len(mine_file(v_hi, 200, 100, 0.10)) == 4)
+    log.check("v_med threshold lo reject", mine_file(v_lo, 200, 100, 0.10) == [])
     w0 = mine_file(v_hi, 200, 100, 0.0)[0]
-    check("v_med value ~0.20", abs(w0["v_med"] - 0.20) < 1e-6)
-    check("dur_s == win_s", abs(w0["dur_s"] - 4.0) < 1e-6)
+    log.check("v_med value ~0.20", abs(w0["v_med"] - 0.20) < 1e-6)
+    log.check("dur_s == win_s", abs(w0["dur_s"] - 4.0) < 1e-6)
 
     # (3) per-episode 截断：`_ep\d+_` 段同类（跨 stem），top-3 by v_med，保文件序
-    check("episode_key regex", episode_key("repoA_ep03_run2_x") == "_ep03_")
-    check("episode_key fallback", episode_key("no_ep_here") == "no_ep_here")
+    log.check("episode_key regex", episode_key("repoA_ep03_run2_x") == "_ep03_")
+    log.check("episode_key fallback", episode_key("no_ep_here") == "no_ep_here")
     cands = [
         {"stem": "repoA_ep01_s1", "v_med": 0.30, "i0": 0},
         {"stem": "repoA_ep01_s1", "v_med": 0.25, "i0": 100},
@@ -213,13 +218,13 @@ def selftest() -> None:
         {"stem": "repoC_ep02_s3", "v_med": 0.14, "i0": 100},
     ]
     got = [(c["stem"], c["v_med"]) for c in cap_per_episode(cands, 3)]
-    check("per-ep cap top3 keeps file order",
+    log.check("per-ep cap top3 keeps file order",
           got == [("repoA_ep01_s1", 0.30), ("repoA_ep01_s1", 0.25),
                   ("repoB_ep01_s2", 0.40), ("repoC_ep02_s3", 0.15),
                   ("repoC_ep02_s3", 0.14)])
 
-    if failures:
-        raise SystemExit(f"selftest FAILED: {failures}")
+    if log.failures:
+        raise SystemExit(f"selftest FAILED: {log.failures}")
     print("[selftest] mine_wbt_walk_segments: ALL PASS")
 
 

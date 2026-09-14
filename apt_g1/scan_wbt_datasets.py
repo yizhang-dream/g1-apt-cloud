@@ -5,13 +5,15 @@
 （LeRobot 格式，meta/info.json 带 total_episodes/total_frames/fps，标称 30fps）。
 下载由部署脚本完成，本脚本只分析本地已下数据、不做任何网络访问。
 
-双 schema 自适应（同 tmp/wbt_probe.py read_file 口径）：
+双 schema 自适应（同 tmp/wbt_probe.py read_file 口径；读取实现已收敛至
+wbt_common.read_wbt_parquet 共享模块，D057 重构）：
   - 老款 q36：observation.state.robot_q_current[36] = 根 7（xyz + wxyz）+ 29 关节；
   - 新款 grouped：observation.state.state_base_pose[7] 显式根位姿 + 分组关节
     lower_body[15] / left_arm[7] / right_arm[7]。
 两款根 XY 均取根 7 维的前 2 维（本扫描只要根位置，关节列不读，省 IO）。
 
-每 episode：根 XY 后向差分 ×fps 得逐帧速度 v（v[t]=‖p[t]−p[t−1]‖×fps）→
+每 episode：根 XY 后向差分 ×fps 得逐帧速度 v（v[t]=‖p[t]−p[t−1]‖×fps，
+速度实现已收敛至 wbt_common.xy_speed_series 共享模块，D057 重构）→
 v_med / v_p90 / v_max；行走窗 = 非重叠 window_s（默认 4s）整窗内 v 中位数
 ≥walk-thresh（默认 0.10 m/s），每个行走窗计 window_s 入行走时长，尾部不足
 一个整窗的余帧不计。数据文件只取 data/**/*.parquet（glob 根限定在 data/
@@ -37,20 +39,14 @@ import sys
 
 import numpy as np
 
+try:                      # 服务器执行根平铺 import / 仓库根包 import 双兼容
+    from wbt_common import CheckLog, read_wbt_parquet, xy_speed_series
+except ImportError:
+    from apt_g1.wbt_common import CheckLog, read_wbt_parquet, xy_speed_series
+
 
 def r2(x):
     return round(float(x), 3)
-
-
-def frame_speed_xy(pos_xy, fps):
-    """根 XY 后向差分速度（单一实现）：v[t]=‖p[t]−p[t−1]‖×fps，长度 N−1。
-
-    N<2（无法差分）返回空数组。episode_walk_stats 与全帧池化分位共用本函数。
-    """
-    pos_xy = np.asarray(pos_xy, dtype=np.float64)
-    if len(pos_xy) < 2:
-        return np.empty(0)
-    return np.linalg.norm(np.diff(pos_xy, axis=0), axis=1) * float(fps)
 
 
 def episode_walk_stats(pos_xy, fps, window_s, thresh):
@@ -66,7 +62,7 @@ def episode_walk_stats(pos_xy, fps, window_s, thresh):
     walk_frames / walk_min（分钟）。
     """
     pos_xy = np.asarray(pos_xy, dtype=np.float64)
-    v = frame_speed_xy(pos_xy, fps)
+    v = xy_speed_series(pos_xy, fps)
     w = max(1, int(round(float(window_s) * float(fps))))
     n_win = len(v) // w
     n_walk = 0
@@ -83,33 +79,6 @@ def episode_walk_stats(pos_xy, fps, window_s, thresh):
         "walk_frames": int(walk_frames),
         "walk_min": walk_frames / float(fps) / 60.0,
     }
-
-
-def read_file(f):
-    """读单个 LeRobot parquet → {schema, ep, root_xy}（pyarrow 惰性 import）。
-
-    schema 自适应同 tmp/wbt_probe.py read_file：老款 observation.state.
-    robot_q_current[36]（根 7=xyz+wxyz 在前）或新款 observation.state.
-    state_base_pose[7]，两款均取根前 2 维作 XY。两者皆缺 → KeyError。
-    """
-    import pyarrow.parquet as pq  # 惰性 import：--selftest 分支不得触发
-
-    t = pq.read_table(f)
-    names = set(t.column_names)
-
-    def col(name):
-        return np.asarray(t.column(name).to_pylist(), dtype=np.float64)
-
-    ep = np.asarray(t.column("episode_index").to_pylist())
-    if "observation.state.robot_q_current" in names:
-        q = col("observation.state.robot_q_current")
-        return {"schema": "q36", "ep": ep, "root_xy": q[:, :2]}
-    if "observation.state.state_base_pose" in names:
-        b = col("observation.state.state_base_pose")
-        return {"schema": "grouped", "ep": ep, "root_xy": b[:, :2]}
-    raise KeyError(
-        f"{f}: 未知 schema（既无 observation.state.robot_q_current 也无 "
-        f"observation.state.state_base_pose），列样例={sorted(names)[:8]}")
 
 
 def load_info(repo_dir):
@@ -149,7 +118,7 @@ def scan_dataset(repo, repo_dir, args):
     recs, n_err = [], 0
     for f in files:
         try:
-            recs.append(read_file(f))
+            recs.append(read_wbt_parquet(f, need_joints=False))
         except Exception as e:  # noqa: BLE001 — 单文件损坏不拖垮整个扫描
             n_err += 1
             print(f"WARN read fail {f}: {e!r}", file=sys.stderr)
@@ -160,14 +129,14 @@ def scan_dataset(repo, repo_dir, args):
         entry["error"] = "all data parquet read failed"
         return entry
     ep = np.concatenate([r["ep"] for r in recs])
-    root_xy = np.concatenate([r["root_xy"] for r in recs])
+    root_xy = np.concatenate([r["root7"][:, :2] for r in recs])
     ep_stats, v_parts = [], []
     for e in np.unique(ep):
         m = ep == e
         p2 = root_xy[m]
         ep_stats.append(episode_walk_stats(p2, fps, args.window_s,
                                            args.walk_thresh))
-        v_parts.append(frame_speed_xy(p2, fps))  # 全帧池化（同一速度实现）
+        v_parts.append(xy_speed_series(p2, fps))  # 全帧池化（同一速度实现）
     v = np.concatenate(v_parts) if v_parts else np.empty(0)
     walk_min = sum(s["walk_min"] for s in ep_stats)
     entry.update({
@@ -202,47 +171,42 @@ def run_selftest():
     """--selftest：合成数组测 episode_walk_stats 四个预注册行为（numpy-only）。"""
     fps, window_s, thresh = 30.0, 4.0, 0.10
     w_frames = int(round(window_s * fps))  # 120 帧/窗
-    fails = []
-
-    def check(name, cond, detail=""):
-        print(("PASS " if cond else "FAIL ") + name
-              + ("" if cond else f"  [{detail}]"))
-        if not cond:
-            fails.append(name)
+    log = CheckLog()
 
     # T1 纯站立（v=0）→ walk_min=0
     s = episode_walk_stats(np.zeros((20 * int(fps), 2)), fps, window_s, thresh)
-    check("T1 纯站立 walk_min=0",
-          s["walk_min"] == 0.0 and s["n_walk_windows"] == 0, f"{s}")
+    log.check("T1 纯站立 walk_min=0",
+              s["walk_min"] == 0.0 and s["n_walk_windows"] == 0, f"{s}")
 
     # T2 匀速 0.3 m/s 整 60s（1800 个间隔=15 个整窗）→ walk_min=1.0 分钟
     t = np.arange(int(60 * fps) + 1) / fps
     s = episode_walk_stats(np.stack([0.3 * t, np.zeros_like(t)], axis=1),
                            fps, window_s, thresh)
-    check("T2 匀速0.3m/s×60s → walk_min≈1min",
-          s["n_walk_windows"] == 15 and abs(s["walk_min"] - 1.0) < 1e-6, f"{s}")
+    log.check("T2 匀速0.3m/s×60s → walk_min≈1min",
+              s["n_walk_windows"] == 15 and abs(s["walk_min"] - 1.0) < 1e-6, f"{s}")
 
     # T3 匀速 50s：12 整窗=48s，尾部 2s（60 帧）不足 4s 不计
     t = np.arange(int(50 * fps) + 1) / fps
     s = episode_walk_stats(np.stack([0.3 * t, np.zeros_like(t)], axis=1),
                            fps, window_s, thresh)
-    check("T3 尾部不足4s不计（12窗/0.8min）",
-          s["n_walk_windows"] == 12 and abs(s["walk_min"] - 0.8) < 1e-6, f"{s}")
+    log.check("T3 尾部不足4s不计（12窗/0.8min）",
+              s["n_walk_windows"] == 12 and abs(s["walk_min"] - 0.8) < 1e-6, f"{s}")
 
     # T4 站立序列中单帧 0.5 m 跳变（v=15 m/s 尖峰）不误判行走
     pos = np.zeros((20 * int(fps), 2))
     pos[100:, 0] = 0.5
     s = episode_walk_stats(pos, fps, window_s, thresh)
-    check("T4 单帧尖峰不误判行走",
-          s["v_max"] > thresh and s["n_walk_windows"] == 0
-          and s["walk_min"] == 0.0, f"{s}")
+    log.check("T4 单帧尖峰不误判行走",
+              s["v_max"] > thresh and s["n_walk_windows"] == 0
+              and s["walk_min"] == 0.0, f"{s}")
 
     # 附：窗帧数换算 sanity（30fps × 4s = 120 帧）
-    check("T0 窗帧数=120 sanity",
-          episode_walk_stats(np.zeros((w_frames + 1, 2)), fps, window_s,
-                             thresh)["frames"] == w_frames + 1)
-    print("SELFTEST " + ("ALL PASS" if not fails else f"FAILED: {fails}"))
-    return 0 if not fails else 1
+    log.check("T0 窗帧数=120 sanity",
+              episode_walk_stats(np.zeros((w_frames + 1, 2)), fps, window_s,
+                                 thresh)["frames"] == w_frames + 1)
+    print("SELFTEST "
+          + ("ALL PASS" if not log.failures else f"FAILED: {log.failures}"))
+    return 0 if not log.failures else 1
 
 
 def main(argv=None):
