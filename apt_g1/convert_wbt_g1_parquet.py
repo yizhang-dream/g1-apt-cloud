@@ -38,6 +38,17 @@ import encode_bones_smoke（D036/D038 验证过的 v2 ref-rel 路径），仅五
 可选 --limits-check（默认关，服务器专用）：import mujoco 载入 deploy MJCF，
 按关节名取 29 关节限位，断言观测值域 ⊂ 限位 ± 0.15 rad。
 
+【2026-09-14 性能旗标 --batch-encode（D039 性能旗标先例：opt-in + 等价验证；
+D057 G3 全量转换提速用）】默认关 = 逐帧原始行为逐位不变（与 D044 镜像一致）。
+服务器实测逐帧 ONNX 推理 ~30-40 帧/s，5.6M 帧全量需数十小时，瓶颈是 session
+逐帧调用开销而非 obs 构建（build_obs/build_decoder_obs 仍逐帧调用、调用方式
+一字不改）；旗标开时逐帧收集 obs 后并成一次批 session.run（encoder
+(n,1762)->(n,64)，decoder (n,994)->(n,29)），roundtrip err/err0 向量化同式
+计算（q_des = sonic_default_isaac + acts*sonic_scale_isaac，与逐帧公式同式）。
+批/逐帧数值等价由首个成功 run 的运行时护栏保证：max|Δtokens| <= 1e-4 且
+lattice_rate np.isclose，不符 raise RuntimeError（不静默回退），此后各 run
+只走批路径。
+
 输出（服务器）：<out-dir>/npz/<stem>.npz（np.savez：tokens (n,64) f32 @50Hz
 | jp_isaac/jp_mj (n,29) | quat_wxyz (n,4) | trans_m (n,3) | jv_isaac (n,29)
 | meta json 字符串，与 D044 完全同键）+ <out-dir>/manifest.json（按 stem
@@ -47,6 +58,8 @@ import encode_bones_smoke（D036/D038 验证过的 v2 ref-rel 路径），仅五
 /tmp/run_apt_isaac.sh 包装）：
   # 全量转换 + 回环：
   python apt_g1/convert_wbt_g1_parquet.py --roundtrip
+  # 全量转换提速（批 ONNX 推理，默认关 = 逐帧原始行为）：
+  python apt_g1/convert_wbt_g1_parquet.py --roundtrip --batch-encode
   # 冒烟：按 episode v_med 分快/中/慢各取 N/3 个：
   python apt_g1/convert_wbt_g1_parquet.py --sample-episodes 12 --roundtrip
   # 本机自测（numpy-only，不碰 mujoco/onnxruntime/pyarrow）：
@@ -309,6 +322,61 @@ def run_selftest():
     s2 = make_stem("G1_WBT_Inspire_Put_Drinks_Into_Fridge", 42, 2)
     check("stem: 常规命名", s2 == "wbt_inspire_put_drinks_into_fridge_ep0042_run2")
 
+    # ⑥ --batch-encode 批推理路径（mock session 确定性恒等投影，numpy-only，
+    #    不 import onnxruntime——批路径已抽成「obs 数组 + session 对象」纯函数）
+    class _MockEnc:
+        def __init__(self, scale=1.0):
+            self.scale = scale
+
+        def run(self, _, feed):
+            obs = feed[list(feed)[0]]
+            return [obs @ np.eye(obs.shape[-1], dtype=obs.dtype)[:, :64] * self.scale]
+
+    class _MockDec:
+        def run(self, _, feed):
+            obs = feed[list(feed)[0]]
+            return [obs @ np.eye(obs.shape[-1], dtype=obs.dtype)[:, :29]]
+
+    rng = np.random.default_rng(20260914)
+    obs_small = rng.standard_normal((7, 1762)).astype(np.float32)
+    t_batch = encode_tokens_batch(obs_small, _MockEnc(), "obs")
+    t_loop = encode_tokens_loop(obs_small, _MockEnc(), "obs")
+    dec_small = rng.standard_normal((5, 994)).astype(np.float32)
+    a_batch = decode_actions_batch(dec_small, _MockDec(), "i", "o")
+    md = _MockDec()
+    a_loop = np.stack([md.run(None, {"i": dec_small[t][None]})[0][0]
+                       for t in range(len(dec_small))])
+    check("batch-encode: 批/逐帧收集+推理路径逻辑等（encoder (7,1762)->(7,64) "
+          "+ decoder (5,994)->(5,29)，mock session 恒等投影）",
+          t_batch.shape == (7, 64) and t_batch.dtype == np.float32
+          and bool(np.allclose(t_batch, t_loop, atol=1e-6))
+          and a_batch.shape == (5, 29) and bool(np.allclose(a_batch, a_loop, atol=1e-6)))
+
+    # 护栏：等值放行；mock 第二个 session（scale 不同 -> 返回不同值）-> RuntimeError
+    try:
+        assert_batch_encode_equivalence(t_batch, t_loop,
+                                        lattice_rate_of(t_batch), lattice_rate_of(t_loop))
+        guard_pass = True
+    except RuntimeError:
+        guard_pass = False
+    t_bad = encode_tokens_batch(obs_small, _MockEnc(scale=1.01), "obs")
+    guard_raised, guard_msg = False, ""
+    try:
+        assert_batch_encode_equivalence(t_bad, t_loop,
+                                        lattice_rate_of(t_bad), lattice_rate_of(t_loop))
+    except RuntimeError as exc:
+        guard_raised, guard_msg = True, str(exc)
+    check("batch-encode: 等价护栏等值通过 / 不等值抛 RuntimeError 且消息含两侧数值",
+          guard_pass and guard_raised and "lattice_rate" in guard_msg)
+
+    # 默认关 = 调用链不变：CLI default False（store_true）+ encode_segment 默认 False
+    import inspect
+    sig = inspect.signature(encode_segment)
+    check("batch-encode: 默认关（CLI parse_args([]).batch_encode is False + "
+          "encode_segment 签名默认 False）",
+          build_arg_parser().parse_args([]).batch_encode is False
+          and sig.parameters["batch_encode"].default is False)
+
     if failures:
         print(f"[selftest] FAILED: {len(failures)} checks: {failures}")
         return 1
@@ -316,14 +384,77 @@ def run_selftest():
     return 0
 
 
+# ------------------------------------ --batch-encode 批推理纯函数（selftest 可测）
+# 模块级护栏状态：首个成功编码 run 完成批/逐帧等价验证后置 True，之后的 run
+# 只走批路径（验证只做一次，避免此后每 run 双跑浪费；验证失败则保持 False，
+# 各 run 继续触发护栏即继续响亮失败，绝不静默回退逐帧路径）。
+_BATCH_ENCODE_VERIFIED = False
+
+
+def collect_obs_batch(n_rs, jp_isaac, jv_isaac, bq, apply_delta, anchor="ref-rel"):
+    """--batch-encode 用：逐帧 build_obs（调用方式与默认逐帧循环一字不差）
+    收集为 (n_rs,1762) f32。obs 构建本非瓶颈（瓶颈是 ONNX session 逐帧调用
+    开销），故只批推理、不批构建。"""
+    obs_batch = np.zeros((n_rs, 1762), dtype=np.float32)
+    for t in range(n_rs):
+        obs_batch[t] = build_obs(t, jp_isaac, jv_isaac, bq, apply_delta, anchor=anchor)
+    return obs_batch
+
+
+def encode_tokens_loop(obs_batch, session, iname):
+    """逐帧编码路径（原行为的函数化镜像：逐行送 session、[0][0] 取帧），供
+    --batch-encode 首段护栏与 selftest 对照；encode_segment 默认分支仍走其
+    内联原循环。"""
+    tokens = np.zeros((len(obs_batch), 64), dtype=np.float32)
+    for t in range(len(obs_batch)):
+        tokens[t] = session.run(None, {iname: obs_batch[t][None]})[0][0].astype(np.float32)
+    return tokens
+
+
+def encode_tokens_batch(obs_batch, session, iname):
+    """批编码路径：obs (n,1762) 一次 session.run 取回整块 (n,64) tokens
+    （enc.run 返回结构为 [输出数组]，批模式取 [0]，区别于逐帧的 [0][0]）。"""
+    out = session.run(None, {iname: np.asarray(obs_batch)})
+    return np.asarray(out[0], dtype=np.float32)
+
+
+def decode_actions_batch(dec_obs_batch, session, iname, oname):
+    """roundtrip 批解码：build_decoder_obs 逐帧收集的 (n,994) 一次
+    session.run 取回 (n,29) actions（原逐帧 [0][0] 的批对应物是 [0]）。"""
+    out = session.run([oname], {iname: np.asarray(dec_obs_batch)})
+    return out[0]
+
+
+def lattice_rate_of(tokens):
+    """lattice 命中率（与 encode_segment 主路径内联公式同式，护栏对照用）。"""
+    lat = np.asarray(tokens, dtype=np.float64) * 16.0
+    return float((np.abs(lat - np.round(lat)) > LATTICE_TOL).mean())
+
+
+def assert_batch_encode_equivalence(tokens_batch, tokens_loop, lr_batch, lr_loop):
+    """--batch-encode 首段等价护栏：max|tokens_batch - tokens_loop| <= 1e-4 且
+    lattice_rate np.isclose；不符 raise RuntimeError（消息含两侧数值），
+    不许静默回退。"""
+    diff = float(np.max(np.abs(np.asarray(tokens_batch, dtype=np.float64)
+                               - np.asarray(tokens_loop, dtype=np.float64))))
+    if diff > 1e-4 or not bool(np.isclose(lr_batch, lr_loop)):
+        raise RuntimeError(
+            f"--batch-encode equivalence guard FAILED (no silent fallback): "
+            f"max|tokens_batch-tokens_loop|={diff:.3e} (tol 1e-4); "
+            f"lattice_rate batch={lr_batch:.6e} loop={lr_loop:.6e}")
+
+
 # ------------------------------------------------------------- encoder chain
 def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
-                   anchor="ref-rel", dec_bundle=None):
+                   anchor="ref-rel", dec_bundle=None, batch_encode=False):
     """WBT run arrays（rad、wxyz、m；native 30 fps，MuJoCo order）-> tokens +
     reference arrays + optional decoder roundtrip。逐字镜像
     convert_bones_g1_csv.py encode_segment（D044 / encode_bones_smoke 主流程），
     仅根四元数来源不同：数据自带 wxyz，先 hemisphere_align 半球连续化再
-    resample_quat（无 euler_to_quat/calibrate）；FPS_SRC 为模块级 30。"""
+    resample_quat（无 euler_to_quat/calibrate）；FPS_SRC 为模块级 30。
+    batch_encode=False（默认）走原逐帧路径；True 走批推理路径（首个成功 run
+    经 assert_batch_encode_equivalence 护栏验证等价，见模块 docstring）。"""
+    global _BATCH_ENCODE_VERIFIED
     dof_mj = np.asarray(dof_mj, dtype=np.float64)
     quat = hemisphere_align(np.asarray(quat, dtype=np.float64))
     dof_mj_rs = resample(dof_mj, FPS_SRC, FPS_ENC)
@@ -340,9 +471,27 @@ def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
     apply_delta = _qn(_qmul(_heading(np.array([1.0, 0, 0, 0])), _heading_inv(bq[0, 0])))
 
     tokens = np.zeros((n_rs, 64), dtype=np.float32)
-    for t in range(n_rs):
-        obs = build_obs(t, jp_isaac, jv_isaac, bq, apply_delta, anchor=anchor)
-        tokens[t] = enc.run(None, {iname: obs[None]})[0][0].astype(np.float32)
+    if not batch_encode:
+        for t in range(n_rs):
+            obs = build_obs(t, jp_isaac, jv_isaac, bq, apply_delta, anchor=anchor)
+            tokens[t] = enc.run(None, {iname: obs[None]})[0][0].astype(np.float32)
+    else:
+        obs_batch = collect_obs_batch(n_rs, jp_isaac, jv_isaac, bq, apply_delta,
+                                      anchor=anchor)
+        tokens = encode_tokens_batch(obs_batch, enc, iname)
+        if not _BATCH_ENCODE_VERIFIED:
+            # 首个成功编码 run 的运行时护栏：同时用原逐帧路径算一份 tokens_loop，
+            # 数值等价（tol 1e-4 + lattice_rate 一致）才置已验证并放行后续批路径。
+            # 失败 = SystemExit 直接中止进程（reviewer note：逐 run 记 error 继续
+            # 跑会空烧双份推理且 converted 0/N，宁可响亮退出不回退）。
+            tokens_loop = encode_tokens_loop(obs_batch, enc, iname)
+            try:
+                assert_batch_encode_equivalence(tokens, tokens_loop,
+                                                lattice_rate_of(tokens),
+                                                lattice_rate_of(tokens_loop))
+            except RuntimeError as exc:
+                raise SystemExit(f"[batch-encode] guard failed, aborting: {exc}")
+            _BATCH_ENCODE_VERIFIED = True
 
     # ref-rel sanity at t=0: f=0 anchor is exactly identity
     obs0 = build_obs(0, jp_isaac, jv_isaac, bq, apply_delta, anchor=anchor)
@@ -376,21 +525,42 @@ def encode_segment(dof_mj, quat, trans_m, enc, iname, m2i, default_mj,
             omega_body[t] = _quat_rotate_inverse(quat_rs[t], w_world)
         grav = np.array([_quat_rotate_inverse(qq, np.array([0.0, 0.0, -1.0])) for qq in quat_rs])
 
-        err, err0 = [], []
-        for t in range(n_rs):
-            idx = np.clip(np.arange(t - 9, t + 1), 0, n_rs - 1)
-            hist = {
-                "base_angular_velocity": omega_body[idx].astype(np.float32),
-                "body_joint_positions": ((jp_mj[idx] - default_mj_b)[:, m2i_b]).astype(np.float32),
-                "body_joint_velocities": jv_isaac[idx].astype(np.float32),
-                "last_actions": (((jp_mj[idx] - default_mj_b) / env.sonic_scale_mujoco)[:, m2i_b]).astype(np.float32),
-                "gravity_dir": grav[idx].astype(np.float32),
-            }
-            obs = dec.build_decoder_obs(tokens[t], hist)
-            act_isaac = dec.session.run([dec.output_name], {dec.input_name: obs})[0][0]
-            q_des_isaac = env.sonic_default_isaac + act_isaac.astype(np.float64) * env.sonic_scale_isaac
-            err.append(np.abs(q_des_isaac - jp_isaac[t]))
-            err0.append(np.abs(default_mj_b[m2i_b] - jp_isaac[t]))
+        if batch_encode:
+            dec_obs_batch = np.zeros((n_rs, int(dec.input_dim)), dtype=np.float32)
+            for t in range(n_rs):
+                idx = np.clip(np.arange(t - 9, t + 1), 0, n_rs - 1)
+                hist = {
+                    "base_angular_velocity": omega_body[idx].astype(np.float32),
+                    "body_joint_positions": ((jp_mj[idx] - default_mj_b)[:, m2i_b]).astype(np.float32),
+                    "body_joint_velocities": jv_isaac[idx].astype(np.float32),
+                    "last_actions": (((jp_mj[idx] - default_mj_b) / env.sonic_scale_mujoco)[:, m2i_b]).astype(np.float32),
+                    "gravity_dir": grav[idx].astype(np.float32),
+                }
+                dec_obs_batch[t] = dec.build_decoder_obs(tokens[t], hist)[0]
+            acts = decode_actions_batch(dec_obs_batch, dec.session,
+                                        dec.input_name, dec.output_name)
+            # 与逐帧公式完全同式（向量化）：q_des = sonic_default_isaac +
+            # acts*sonic_scale_isaac，与 jp_isaac 逐帧绝对差；err0（default
+            # baseline）不受批影响照旧。
+            q_des_isaac = env.sonic_default_isaac + acts.astype(np.float64) * env.sonic_scale_isaac
+            err = np.abs(q_des_isaac - jp_isaac)
+            err0 = np.abs(default_mj_b[m2i_b][None, :] - jp_isaac)
+        else:
+            err, err0 = [], []
+            for t in range(n_rs):
+                idx = np.clip(np.arange(t - 9, t + 1), 0, n_rs - 1)
+                hist = {
+                    "base_angular_velocity": omega_body[idx].astype(np.float32),
+                    "body_joint_positions": ((jp_mj[idx] - default_mj_b)[:, m2i_b]).astype(np.float32),
+                    "body_joint_velocities": jv_isaac[idx].astype(np.float32),
+                    "last_actions": (((jp_mj[idx] - default_mj_b) / env.sonic_scale_mujoco)[:, m2i_b]).astype(np.float32),
+                    "gravity_dir": grav[idx].astype(np.float32),
+                }
+                obs = dec.build_decoder_obs(tokens[t], hist)
+                act_isaac = dec.session.run([dec.output_name], {dec.input_name: obs})[0][0]
+                q_des_isaac = env.sonic_default_isaac + act_isaac.astype(np.float64) * env.sonic_scale_isaac
+                err.append(np.abs(q_des_isaac - jp_isaac[t]))
+                err0.append(np.abs(default_mj_b[m2i_b] - jp_isaac[t]))
         out["roundtrip_mae"] = float(np.mean(err))
         out["roundtrip_mae_default_baseline"] = float(np.mean(err0))
     return out
@@ -530,7 +700,9 @@ def check_joint_limits(jp29, lims, margin=LIMIT_MARGIN_RAD):
 
 
 # -------------------------------------------------------------------- main
-def main():
+def build_arg_parser():
+    """CLI 构造独立成函数：selftest ⑥ 用 parse_args([]) 验证 --batch-encode
+    默认 False（默认关 = 逐帧原始行为）。"""
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--raw-root", default=DEFAULT_RAW_ROOT,
                     help="UnifoLM-WBT 原始数据根（<RepoName>/{meta,data}）")
@@ -549,8 +721,19 @@ def main():
     ap.add_argument("--fresh-manifest", action="store_true",
                     help="不合并旧 manifest，整体重写（默认按 stem 合并，防分批转换"
                          "覆盖丢失先前段，语义照抄 D044）")
+    ap.add_argument("--batch-encode", action="store_true",
+                    help="性能旗标（默认关 = 逐帧原始行为，逐位不变）：obs 逐帧收集后"
+                         "并成一次批 ONNX 推理（encoder/decoder 各一次/run；服务器实测"
+                         "逐帧 ~30-40 帧/s、全量需数十小时，瓶颈是 session 逐帧调用开销）。"
+                         "首个成功 run 由护栏验证批/逐帧数值等价（max|Δtokens|<=1e-4 且 "
+                         "lattice_rate 一致），不符报错退出、不静默回退（D039 旗标先例）")
     ap.add_argument("--selftest", action="store_true",
                     help="本机 numpy-only 自测，不碰重依赖与数据")
+    return ap
+
+
+def main():
+    ap = build_arg_parser()
     args = ap.parse_args()
 
     if args.selftest:
@@ -663,7 +846,8 @@ def main():
                 # 四元数统一归一化（模长 warning 场景的修复动作）
                 quat = quat / np.linalg.norm(quat, axis=1, keepdims=True)
                 seg = encode_segment(jp29, quat, trans, enc, ins[0].name, m2i,
-                                     default_mj, dec_bundle=dec_bundle)
+                                     default_mj, dec_bundle=dec_bundle,
+                                     batch_encode=args.batch_encode)
             except Exception as e:  # noqa: BLE001  单 run 失败记条目跳过，不猜测
                 print(f"[convert] FAIL {stem}: {type(e).__name__}: {e}", flush=True)
                 manifest.append({"stem": stem, "class": "walk", "actor": "wbt",
