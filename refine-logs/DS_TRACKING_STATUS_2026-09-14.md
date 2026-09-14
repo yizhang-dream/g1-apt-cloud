@@ -62,6 +62,14 @@ init 档位图（Isaac 电池走 CVGL）。判读框架预注册在 §5q（甲=�
 - **~2h 检查点实测（watcher）**：全局 ~4 run/min、已转 410；mp1（Laundry 长杆）争用下
   16.4 帧/s，**完成窗口=今夜 00:00-06:00**（小组退出释放 CPU 后提速；rt_mae 全程
   mean 0.141/max 0.193 n=381，低于冒烟水平——质量面持续健康）。
+- **~3h 检查点（重构落地）**：四脚本 + 新共享模块 `wbt_common.py` 结构重构入仓
+  81a9048（SCRIPT_MAP 已登记；零漂移三重证据=四脚本 --selftest 检查名与 --help
+  逐字节一致 + AST 级数值路径对照 + 服务器 17 项产物 md5 对拍全过〔smoke 挖掘/
+  构建 + Fridge 子集转换默认路含 roundtrip，覆写重跑逐位一致〕）；§4 命令不受
+  影响（脚本名/旗标全不变）。两笔勘误/再证：①下文「发射时点已 181 npz」的
+  manifest.json 实际不存在——manifest 只在各进程收尾落盘，中途仅 npz/ 有内容；
+  ②--batch-encode 基线复测 6/6 INVALID_ARGUMENT（encoder 批维同为静态）=§2
+  勘误再证。
 - 完成判据：9 进程全退 + 各日志出现 `SUMMARY: converted` 与 `[signature]` 聚合行。
 - 进程查法必须用方括号防自匹配：`pgrep -f "convert_wbt_g1_parque[t]"`（**pkill 自杀坑已踩一次**：
   ssh 命令行含匹配串会把远端 shell 一起杀）。
