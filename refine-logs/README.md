@@ -1,290 +1,142 @@
-# refine-logs 实验记录扇出树（根地图）
+# refine-logs 实验记录索引
 
-> 【层位：扇出树根地图｜树深度 = 根（此"层"是挂树深度，**不是** HANDOFF/README.md §0
-> 的内容粒度层位 L0–L4，两套编号不互换）】↓ 全部子域见下方扇出树。
-> 本页仿照 mini Biosphere 项目的文档扇出树纪律建立（2026-08-29）：项目里每一篇
-> 实验记录文档都必须挂在这棵树上，由 `refine-logs/tools/tree_check.py` 强制检查。
-> 想知道实验记录全貌，从本页出发沿树走；改了任何一篇，先回来更新本页。
+本页 `README.md` 是 refine-logs 的索引：每篇文档必须在这里登记；
+`python refine-logs/tools/tree_check.py` 检查登记 / 实存 / 链接三项，全绿才算完成。
+**新文档先登记、再写内容。**
 
-## 扇出规则（写文档前必读）
+写文档的规矩（就这四条，其余照 `../AGENTS.md`）：
 
-1. **挂树先行**：`refine-logs/` 下每一篇 `.md` 必须出现在本页扇出树里；**新文档先挂树、再写内容**。`python refine-logs/tools/tree_check.py` 强制检查（挂树 / 实存 / 链接三项，全绿才算完成）。
-2. **层级与域**：根地图（本页）→ 域（索引 / 台账 / 阶段 / 专题 / 域外路由）→ 正史与叶子。域是扇出单位，新增一级域须在本页挂树并在 `HANDOFF/` 留痕。
-3. **单域一正史**：台账域每系列 `tracker/<系列>.md` 是该系列 Run 数据的**唯一权威**（数据唯一事实源）；跨域结论口径的权威是 `HANDOFF/README.md` §3。数据冲突以 tracker 为准，口径冲突以 HANDOFF §3 为准。
-4. **回链**：父文档必须列全其子文档（树完整性，脚本强制）；子文档头部【层位】导航条须回链父域（仓库既有惯例）。**存量历史文档豁免回链**，不为其回填改动；2026-08-29 起新建文档必须遵守。
-5. **命名**：Run 行只追加进 `tracker/<系列>.md`，不新开文件；阶段叶子 `stages/stageNN_<主题>.md`；专题日志 `<主题>_LOG.md`；收束报告 `<主题>_REPORT.md`；调研 `<主题>_SURVEY.md`；论文/规格对照 `*_SPEC.md`；时点快照加 `_YYYY-MM-DD` 后缀。
-6. **状态**：长寿命新文档头部必须标 `活跃 / 冻结 / 归档` 三态横幅；存量历史文档不回填文件头，状态以本页树内标注为准（未标注者默认冻结存档）。
-7. **数据纪律不受影响**：实验（含负结果）必入 tracker 系列文件、同步 `EXPERIMENT_TRACKER.md` 行数等流程照 `AGENTS.md` 执行；本树只管**文档挂载与完整性**，不改变数据事实源流程。
-8. **语言**：中文，术语首现白话解释（仓库既有规则）。
+1. Run 行只追加进 `tracker/<系列>.md`，不新开文件。
+2. 长寿命文档头部标 `活跃 / 冻结 / 归档`；存量历史文档不回填。
+3. 新文档头部回链父域；`refine-logs/` 下每一篇都要出现在本页。
+4. 只写结论与判断，不写过程叙事。索引里一行说清一篇，详细内容留在文档内部。
 
-## 扇出树
+## 按问题找权威
 
-```text
-refine-logs/README.md……………………………………………………… 根地图（本页）
-├── EXPERIMENT_TRACKER.md…………………………………… 索引域：总索引（五系列行数统计与还原
-│   …………………………………………………………………… 区间；不存 Run 行）。活跃
-├── tracker/……………………………………………………………… 台账域：Run 台账（数据唯一事实源，
-│   …………………………………………………………………… append-only；每系列一正史）
-│   ├── tracker/R.md……………………………………… R 系列：R001–R020 MuJoCo RL 线
-│   │   ……………………………………………………………（token/VAE/skill/aux 变体全劣于 aux=0）。活跃
-│   ├── tracker/D.md……………………………………… D 系列：蒸馏线（Distillation Exp /
-│   │   …………………………………………………………… Phase2/3 + Stress Test）。活跃
-│   ├── tracker/E.md……………………………………… E 系列：Isaac APT 主线 E01–E48
-│   │   ……………………………………………………………（含 FB/I21/T1-T2 辅助行与混合节）。活跃
-│   ├── tracker/MQ.md…………………………………… MQ 系列：官方规划器复刻 MQ07–MQ12
-│   │   …………………………………………………………… + Gate0 论文形状地形评测行。活跃
-│   └── tracker/TO.md…………………………………… TO 系列：TO 数据管线 + TO18–TO35
-│       ……………………………………………………………（力矩/WBC 线）。活跃
-├── stages/……………………………………………………………… 阶段域：阶段史叶子（1 阶段 = 1 文件，
-│   …………………………………………………………………… 写完即冻结；索引在 HANDOFF/02）
-│   ├── stages/stage01_mujoco_rd.md………… 阶段 1：MuJoCo R/D 两线（基础设施不足判定）
-│   ├── stages/stage02_isaac_e01_e14.md…… 阶段 2：Isaac 机制矩阵 E01–E14（平坦地）
-│   ├── stages/stage03_terrain_perception_e15_e21.md… 阶段 3：地形/感知 E15–E21
-│   ├── stages/stage04_priority_chain.md…… 阶段 4：优先级链收尾
-│   ├── stages/stage05_directions_abc.md…… 阶段 5：方向 A/B/C（力矩级/连续潜空间/千级并行）
-│   ├── stages/stage06_e27_missing.md………… 阶段 6：E27 缺失实验（相位条件化 token VAE）
-│   ├── stages/stage07_latent_e28_e47.md…… 阶段 7：latent 线 E28–E47
-│   ├── stages/stage08_planner_mq07_mq12.md 阶段 8：planner 复刻 MQ07–MQ12
-│   ├── stages/stage09_decoder_finetune_e44.md… 阶段 9：解码器微调 E44
-│   ├── stages/stage10_from0_e45_e47.md…… 阶段 10：从零 + 冻结解码器 E45–E47
-│   ├── stages/stage11_e48_residual.md……… 阶段 11：E48/E48c 全关节残差（实证关闭）
-│   ├── stages/stage12_to_torque.md………… 阶段 12：TO 力矩线
-│   └── stages/gate0_rough_terrain.md……… Gate0：论文形状 rough 地形（地形结论修订）
-├── 专题日志域（顶层散件；均为历史冻结存档，按性质分组）
-│   ├── MUJOCO_APT_LOG.md…………………………… 运行日志：MuJoCo 两线全程留档
-│   ├── ISAAC_APT_LOG.md………………………………… 运行日志：Isaac 阶段运行记录
-│   ├── DISTILL_EXPERIMENT.md…………………… 机制专题：蒸馏可行性（相位路由器可、朴素 BC 不可）
-│   ├── DATA_GENERALIZATION_LOG.md………… 数据专题：数据/网络泛化实验留档
-│   ├── ROOT_CAUSE.md…………………………………… 根因专题：token/VAE/skill RL 不稳的证据链
-│   ├── FINAL_REPORT.md………………………………… 收束：最终定稿（两个核心问题的最终回答）
-│   ├── TO_TORQUE_LINE_REPORT.md…………… 收束：TO01–TO22 力矩线（前半程）
-│   ├── WBC_BRINGUP_REPORT.md…………………… 收束：TO23–TO28 QP-WBC（含 §6 翻案 TO31–32）
-│   ├── STAGE_SUMMARY_2026-08-13.md……… 收束：08-13 时点阶段总结
-│   ├── APT_PROJECT_SUMMARY.md………………… 收束：08-13 时点总结（最终口径以 FINAL_REPORT 为准）
-│   ├── HUMAN_READABLE_COMPLETE_REPORT.md 收束：08-12 人话版全时间线复盘
-│   ├── LITERATURE_SURVEY_FROZEN_DECODER.md 调研：冻结解码器 + 位置 RL 地形泛化综述
-│   ├── LITERATURE_SURVEY_DS_MANIFOLD.md… 调研：DS 步态流形计划近邻地图与创新点
-│   │   ……………………………………………………………评估（同题/同方法/同模式三层 + 借鉴清单，
-│   │   ……………………………………………………………09-04）
-│   ├── RESEARCHCLAWBENCH_SURVEY.md……… 调研：RCBench agent 选型（08-20）
-│   ├── PAPER_TERRAIN_SPEC.md…………………… 对照：论文地形定义（结论已被 gate0 修订）
-│   ├── LEG_LEVEL_TO_PLAN.md…………………… 计划：TO36+ 腿级 TO（Drake dircol）
-│   │   ……………………………………………………………设计定稿（08-29 grill-me 访谈五项决策）。收束
-│   ├── LEG_LEVEL_TO_REPORT.md……………… 收束：TO36 腿级 TO 线（A 门膝可行达成/
-│   │   ……………………………………………………………B 门双验证/C 门负结果+归因，08-30）
-│   ├── TO_TORQUE_MAINLINE.md………… 主线宣言：TO 力矩路线 × APT 论文实现度
-│   │   ……………………………………………………………对照 + 重新判定 + 阶梯路线图（08-31 主路线化）
-│   ├── TO38_PLAN.md………………………………… 设计定稿：TO38 RL 稳定器叠加 TO 参考
-│   │   ……………………………………………………………（08-31 rubric 审后定稿：b+c 注入方案/
-│   │   ……………………………………………………………配对 A/B 决策表/评测协议；双臂开跑）
-│   ├── TO40C_PLAN.md………………………………… 设计定稿：TO40-C 力矩前馈通道门控
-│   │   ……………………………………………………………（Rung 0：τ_ff+PD+RL 三臂配对 + 2×2
-│   │   ……………………………………………………………交叉注入诊断 + 门控三分支）。活跃
-│   ├── TO41_RUNG1_IMPL.md………………………… 实施章程：Rung 1 运行时实现 + D1/D2/D3
-│   │   ……………………………………………………………integrity test（三十三轮 owner freeze：
-│   │   ……………………………………………………………G↓ 结案 + D 授权 + identity 解释纪律；
-│   │   ……………………………………………………………三十四轮 9.8/10：implementation 授权
-│   │   ……………………………………………………………（仅 Mode A）；compute BLOCKED）。活跃
-│   ├── TO41_G_DOWN_SPEC.md……………………… sub-campaign：低速 downward-continuation
-│   │   ……………………………………………………………材料生成（收束：4/4 k=0 首过 + 7/7
-│   │   ……………………………………………………………availability map + determinism 全 PASS，
-│   │   ……………………………………………………………owner 裁定 CLOSED/PASS，09-02）。收束
-│   ├── TO41_D_DRYRUN_PROTOCOL.md…………… 执行协议：D1/D2/D3 28-cell conformance
-│   │   ……………………………………………………………dry-run（状态板 + D1 七字段清单 +
-│   │   ……………………………………………………………D2 same-τ fingerprint + D3 两等式 +
-│   │   ……………………………………………………………audit schema + 材料纪律 + 保险丝）。
-│   │   ……………………………………………………………活跃
-│   ├── TO41_D_IMPL.md…………………………………… 实现日志：Mode A runtime + independent
-│   │   ……………………………………………………………checker（模块地图 + 协议→机制对照 +
-│   │   ……………………………………………………………selftest negative A–E + lab-ts 指引）。
-│   │   ……………………………………………………………活跃
-│   ├── TO41_LAUNCH_SANITY.md………………… 执行协议：L1–L4 真实 env 接线验证
-│   │   ……………………………………………………………（三十七轮 owner 裁定：D decode-only
-│   │   ……………………………………………………………PASS≠完整训练环境 plumbing——τ 注入
-│   │   ……………………………………………………………消费/override persistence/两臂隔离/
-│   │   ……………………………………………………………28-cell 真实路径 receipt；freeze 前
-│   │   ……………………………………………………………最后一道门，只测接线不测性能）。
-│   │   ……………………………………………………………活跃
-│   ├── TO41_C_DIAGNOSIS.md………………………… 诊断：四十轮三连后 owner 裁定 (c)——
-│   │   ……………………………………………………………56-cell 现有产物 variance / natural-vs-
-│   │   ……………………………………………………………interventional / C1-C2 comparability
-│   │   ……………………………………………………………三块分解（eval 噪声=强镇定非未生效；
-│   │   ……………………………………………………………Δ_cond estimand 双段拼接；C1/C2 全 v
-│   │   ……………………………………………………………不可比→建议分支 b；四十二轮 owner
-│   │   ……………………………………………………………终裁 = (b) ACCEPT，09-03）。收束
-│   ├── TO41_RUNG1_CLOSURE.md………………… 收束：Rung 1 科学关线（四十二轮
-│   │   ……………………………………………………………owner 终裁：分支 (b) ACCEPT——主报告
-│   │   ……………………………………………………………= regime-specific Δ_ff（7v×2C×2seed
-│   │   ……………………………………………………………全曲线 + 方差/分离/realized speed/
-│   │   ……………………………………………………………lineage 五附件）；Δ_cond 降
-│   │   ……………………………………………………………descriptive 不得称 interaction；
-│   │   ……………………………………………………………established / not identified /
-│   │   ……………………………………………………………open 三段 + 论文结果段骨架，09-03）。
-│   │   ……………………………………………………………收束
-│   ├── TO42_PLAN.md…………………………………… 设计定稿：TO42 学习型 regime 选择
-│   │   ……………………………………………………………（learned regime selection；09-03
-│   │   ……………………………………………………………owner 授权跳出 A/B 固定臂后文献
-│   │   ……………………………………………………………调研改向：论文 gait logit 配方
-│   │   ……………………………………………………………逐字移植到 {vb0,vb1}、selection-only
-│   │   ……………………………………………………………τ 恒 OFF、2×2 同 seed 配对；A/B
-│   │   ……………………………………………………………固定臂降 Rung 2 post-selection。
-│   │   ……………………………………………………………协议冻结候选，未开跑）。活跃
-│   ├── DS_CONTINUOUS_EXECUTION_PLAN.md… 平地命令跟踪持续执行提示词：D048e 复核、契约验证、受控短跑、独立种子终评。执行中（阶段0=D048f 闭合，阶段1 D048g–D048k 完成、09-10 阶段1 负结果收官+owner 深夜三勘误〔航向 rad 误读实败/两非三训练种子/命令上界归因撤回〕；§5f D048l 档位映射诊断当日闭环=速度全由档位中介+映射与名义反向+联合门 0/36、映射修补线关闭转表示层对照；D048m 三角证据闭环（vb 语义错码=表示层本征：token 探针 b1/b2 退化+b0 第三吸引子+init 本征图同形）；§5g D048n G0-G2 闭合=速度标签使 init 档位图严格单调〔因果链闭合〕但量程 1.31>0.8、按退出条件 G3 不发射，D048p 反标定/G3 点火/收束待 owner；§5h D048p/D048q 预注册 09-10 深夜 owner 授权「逐渐补齐 APT 论文差距+吃透 decoder」后立项=edges 命令带均值目标校准重走 G1'/G2' 梯子+decoder 条件轴闭环画像〔软插值/db 方向轴〕，全零训练；§5i D048r decoder 上限包络三角测量 09-11 owner 批评「未测上限」后立项=R1 oracle 高速段回测本体上限+R2 VAE 重建回放接口被动层+R3 CEM z 优化接口主动层+R4 RL 层登记不发射；§5j D049 预注册=vb 选择权归策略两臂〔a 自然档对照/b 连续软权重主臂 3 logits softmax→vb_soft 通路，证据链 Q1 线性插值+R3 包络+D048l 映射错码〕）
-│   ├── DS_TRACKING_STATUS_2026-09-12.md… 交接快照：平地命令跟踪×decoder
-│   │   ………………………………………… 接口层的问题〔三瓶颈：方向轴不可控/
-│   │   ………………………………………… 速度命令响应学习侧断链/量程-标签分布
-│   │   ………………………………………… 约束〕+八类尝试类型学+下一步 P1-P5
-│   │   ………………………………………… 〔09-12 D051 BC 热启动闭环=w 首次
-│   │   ………………………………………… 命令响应、瓶颈移交方向轴=P2 当前位〕+资产
-│   │   ………………………………………… 索引；09-12 owner 切对话建快照）
-│   ├── DS_TRACKING_STATUS_2026-09-14.md… 交接快照：D057 WBT 语料接入×语料
-│   │   ………………………………………… 效应第三点进行中（G0 选料 12/22 子集
-│   │   ………………………………………… ~429min 行走/G2 冒烟门重锚后过/G3→G4→
-│   │   ………………………………………… 训练全链路验证毕；**G3 全量转换 9 进程
-│   │   ………………………………………… 并行在跑隔夜收**；§4=接手指令命令序列，
-│   │   ………………………………………… §5=坑位清单〔批推理三连败教训/膝签名
-│   │   ………………………………………… 拒绝/驱动错配走 CVGL〕；09-14 owner 切
-│   │   ………………………………………… 对话建快照）
-│   ├── APT_GAP_ANALYSIS.md………………… 路线图：APT 论文结构差距台账（8 项：
-│   │   ………………………………………… gait 选择权归策略=最重可补/命令空间/
-│   │   ………………………………………… 连续可调性待测；KL 2.5e-6 与 2Hz 门控
-│   │   ………………………………………… 已对齐；τ_ff 混控与双解码器=结构性
-│   │   ………………………………………… 不可比登记）+ decoder 性能画像卡（8 维，
-│   │   ………………………………………… 量程/连续性/db 方向轴三空白由 D048p/q
-│   │   ………………………………………… 补）+ D049 草案（vb 选档权归策略，
-│   │   ………………………………………… 论文同构 2Hz+0.5s 锁；09-10 建卡）。活跃
-│   ├── DS_TERRAIN_ADAPTER_CHARTER.md… **纲领**：冻结 SONIC 底座 × 共享
-│   │   ………………………………………… 地形适配 × 未见动作迁移（主假设 +
-│   │   ………………………………………… 四阶段 + 解冻裁决规则 + 最小
-│   │   ………………………………………… 判别实验；09-05 owner 两轮
-│   │   ………………………………………… 定稿，统辖 DS 线计划，冲突
-│   │   ………………………………………… 条款以它为准）。活跃（主线纲领）
-│   ├── DS_OFFICIAL_DATA_PLAN.md…………… 执行计划：官方数据独走（纲领
-│   │   ………………………………………… 阶段一正式协议；09-05b owner
-│   │   ………………………………………… 指令自采退役）——退役影响面 +
-│   │   ………………………………………… 六轴方案空间 + B2-s→B4 流水线
-│   │   …………………………………………（SMPL 镜像 131,455 段）。
-│   │   ………………………………………… 活跃（D040 mode-2 直编负结果→
-│   │   ………………………………………… D041 M2 重定向试点链路 PASS：
-│   │   ………………………………………… Isaac 2/2 零摔/回环 0.233，
-│   │   ………………………………………… dof MAE ≤0.15 达标后进 B3'）
-│   ├── DS_B4LITE_ACTION_SPLIT_PLAN.md… **执行计划**：面向论文的动作清单
-│   │   …………………………………… 与划分协议（B4-lite 首版；
-│   │   …………………………………… 09-06 owner 五点定稿——五维
-│   │   …………………………………… 语义标签/三层清洗（执行失败=
-│   │   …………………………………… 能力边界记录）/T-seg·T-fam·
-│   │   …………………………………… T-pair 三测试划分/可学习表示
-│   │   …………………………………… 参与声明/100–200 条独立原始
-│   │   …………………………………… 序列首版 + 四问 manifest）。
-│   │   …………………………………… 活跃（D044 B3' PASS 后的数据
-│   │   …………………………………… 侧正式协议）
-│   ├── DS_D045_B4LITE_BUILD_LOG.md…… 执行日志：D045 B4-lite 首版构建
-│   │   …………………………………… 开户（09-07：owner 三点
-│   │   …………………………………… 默认裁定记录（10 族/
-│   │   …………………………………… 6-2-2+演员哈希/边界集
-│   │   …………………………………… 双轨）+ 9h 四路并行执行
-│   │   …………………………………… 计划 + 风险预案五条 +
-│   │   …………………………………… S1–S6 进度区）。活跃
-│   ├── E49_STATUS_2026-09-05.md…………… **时点快照**：E49-A 执行状态交接
-│   │   ………………………………………… （A 问已答 = 直出 token 能走路且
-│   │   ………………………………………… it_50 即 29m/0.47 超 E45–E47；
-│   │   ………………………………………… 新问题 = 继续训练必崩：PPO kl
-│   │   ………………………………………… 4–10× latent、rew 单调降；VAE 隐藏
-│   │   ………………………………………… 第四角色 = KL 冲击缓冲器；修复
-│   │   ………………………………………… 菜单四条 + 首选 PPO 降温发射命令
-│   │   ………………………………………… 与判据，含 --ppo-epochs 待补一步。
-│   │   ………………………………………… 新会话接手入口 = 该文 §0）。
-│   ├── E49_KL_GUARD_PLAN.md…………… **执行计划**：E49 退化调研结论
-│   │   ………………………………………… （09-06 冻结：KL 失控叙事被四 run
-│   │   ………………………………………… 日志否决/clip 恒 0.833=5/6=裁剪
-│   │   ………………………………………… 失效实锤/act_std 单调涨/expl≠
-│   │   ………………………………………… 解释方差）+ E49-C KL 信任域守卫
-│   │   ………………………………………… 预注册协议与执行手册（探针定阈
-│   │   ………………………………………… →单 seed；实现规格+判读分支；
-│   │   ………………………………………… 执行入口 = 该文 §0）。活跃
-│   ├── DS_RECOLLECT_PLAN.md…………………… 设计定稿：DS 重采线——SONIC 全动作
-│   │   ………………………………………… 组（27 mode，仅采过 5）+ 速度轴
-│   │   ………………………………………… （RUN 1.5–3.0 键盘可达，从未扫）
-│   │   ………………………………………… 数据重采集（09-04 owner 方向
-│   │   ………………………………………… 转向：停 TO 线主攻本线；D029
-│   │   ………………………………………… 冒烟 RUN 零摔倒；TO42 v7 余额
-│   │   ………………………………………… 杀封存记录在内）。
-│   │   ………………………………………… 冻结（09-05b 自采退役：
-│   │   ………………………………………… 设计归档不删档）
-│   ├── DS_GAIT_MANIFOLD_PLAN.md…………… 执行计划：DS 步态流形双源架构
-│   │   ……………………………………………………………（A 线官方回路 Phase 0–5 ×
-│   │   ……………………………………………………………B 线 BONES-SEED×官方
-│   │   ……………………………………………………………encoder 离线编码 B1–B4，
-│   │   ……………………………………………………………§0.5 分工三铁律；4 族
-│   │   ……………………………………………………………{SLOW,HAPPY,RUN,JUMP}
-│   │   ……………………………………………………………流形+TO42 配方切换；
-│   │   ……………………………………………………………Phase 0 校准 PASS
-│   │   ……………………………………………………………（D034，1.61）；B4 合并
-│   │   ……………………………………………………………策略=唯一剩余 owner
-│   │   ……………………………………………………………裁定点；D029–D035
-│   │   ……………………………………………………………证据支撑）。执行中（09-05 起
-│   │   …………………………………………受纲领收编：09-05b A 线退役/
-│   │   …………………………………………Phase 5 升级，见其修订记录）
-│   ├── DS_SONIC_OFFICIAL_DATA.md………… 执行选项（09-04 owner 提权）：SONIC
-│   │   ……………………………………………………………官方数据资产定位（HF encoder ONNX/
-│   │   ……………………………………………………………BONES-SEED G1 格式 142k 条）+ 离线
-│   │   ……………………………………………………………编码 token 选项 Phase B1–B4
-│   │   ……………………………………………………………设计；数据放大器/备胎不替代
-│   │   ……………………………………………………………Phase 1 主案。活跃（待下载冒烟）
-│   ├── DS_S2R_EVIDENCE.md………………………… 调研：Isaac→真机执行 gap 外部证据
-│   │   ……………………………………………………………综合（D034 不对称触发：真机=
-│   │   ……………………………………………………………deploy LowCmd 关节级命令非
-│   │   ……………………………………………………………WBC 大层；SONIC 官方即
-│   │   ……………………………………………………………Isaac Lab 训；ASAP 量化 G1
-│   │   ……………………………………………………………gap；打滑核验=当前最关键
-│   │   ……………………………………………………………项，计划维持先训 Isaac）。
-│   │   ……………………………………………………………活跃
-│   ├── DS_HIL_SURVEY.md………………………………… 调研：HIL 混合模仿学习评估
-│   │   ……………………………………………………………（arXiv 2505.12619 / TOG 2026，
-│   │   ……………………………………………………………NVIDIA tracking+style 混合；
-│   │   ……………………………………………………………纯仿真 SMPL 无 sim2real。
-│   │   ……………………………………………………………定位 = B4/T1 设计储备，
-│   │   ……………………………………………………………三机制转最小判别实验
-│   │   ……………………………………………………………候选，09-05c owner
-│   │   ……………………………………………………………认可）。活跃
-│   ├── TRAIN_SPEEDUP_LOG.md…………………… 专题：训练栈提速（LoongForge
-│   │   …………………………………………………………… 调研触发；VAE 全显存/compile/
-│   │   …………………………………………………………… fused + Isaac 热循环去同步，
-│   │   …………………………………………………………… 语义不变验收制 + D039 等价性
-│   │   …………………………………………………………… 验证 + 二波候选清单）。活跃
-│   └── EXPERIMENT_PLAN.md………………………… 计划：早期英文实验计划（被阶段史收束）。归档
-└── 域外路由（上游/下游权威，不属本树强制范围，仅作导航）
-    ├── ../HANDOFF/README.md……………………… 层位总图（§0）+ 结论口径（§3，跨域权威）
-    ├── ../HANDOFF/00_FINAL_SUMMARY.md…… L0 结论卡（5 分钟版）
-    ├── ../HANDOFF/02_EXPERIMENT_HISTORY.md L2 阶段史索引（stages/ 的父文档）
-    ├── ../HANDOFF/03_OUTPUTS_INDEX.md…… L4 产物索引（→ 服务器 outputs/）
-    └── ../apt_g1/SCRIPT_MAP.md………………… 代码轴（1 脚本 = 1 行）
-```
-
-⏳ = 规划中节点（允许暂不存在于磁盘，tree_check 跳过存在性检查；挂上真实文件后去掉标记）。
-
-## 正史路由（按问题找权威）
-
-| 你要找什么 | 权威文档 | 状态 |
+| 要找什么 | 去哪 | 状态 |
 |---|---|---|
-| 某 Run 的数据行 | [tracker/](tracker/E.md) 五系列文件 | 活跃（append-only） |
-| 全局行数统计 / 原表还原区间 | [EXPERIMENT_TRACKER.md](EXPERIMENT_TRACKER.md) | 活跃 |
-| 某阶段的来龙去脉 | [HANDOFF/02_EXPERIMENT_HISTORY.md](../HANDOFF/02_EXPERIMENT_HISTORY.md) → [stages/](stages/stage01_mujoco_rd.md) | 冻结 |
-| 项目最终结论 / 口径 | [HANDOFF/00_FINAL_SUMMARY.md](../HANDOFF/00_FINAL_SUMMARY.md)、HANDOFF/README.md §3 | 冻结（口径） |
-| 某专题全程（蒸馏/泛化/根因/力矩/WBC） | 专题日志域（见树） | 冻结 |
-| 产物文件在哪 | [HANDOFF/03_OUTPUTS_INDEX.md](../HANDOFF/03_OUTPUTS_INDEX.md) | 活跃 |
-| 某脚本干什么 | [apt_g1/SCRIPT_MAP.md](../apt_g1/SCRIPT_MAP.md) | 活跃 |
+| 某 Run 的数据行 | `tracker/` 五系列（下表） | 活跃，append-only |
+| 全局行数统计 / 原表还原区间 | `EXPERIMENT_TRACKER.md` | 活跃 |
+| 项目最终结论与口径 | `../HANDOFF/00_FINAL_SUMMARY.md`、`../HANDOFF/README.md` §3 | 冻结（口径） |
+| 某阶段来龙去脉 | `stages/`（索引在 `../HANDOFF/02_EXPERIMENT_HISTORY.md`） | 冻结 |
+| 当前在做什么 | `ds/`、`to/` 里标"活跃"的几篇 | — |
+| 产物文件在哪 | `../HANDOFF/03_OUTPUTS_INDEX.md` | 活跃 |
+| 某脚本干什么 | `../apt_g1/SCRIPT_MAP.md` | 活跃 |
 
-## 域速览
+## 台账（数据唯一事实源）
 
-- **索引域**：`EXPERIMENT_TRACKER.md` 只做索引与统计；Run 行一律在台账域。
-- **台账域 [tracker/](tracker/E.md)**：五个系列文件共同构成数据唯一事实源（R/D/E/MQ/TO）。
-- **阶段域 [stages/](stages/stage01_mujoco_rd.md)**：13 篇阶段史叶子；阶段索引在 `HANDOFF/02_EXPERIMENT_HISTORY.md`。
-- **专题日志域**：顶层 39 篇专题——16 篇历史冻结/归档存档（运行日志 / 机制与
-  数据专题 / 收束报告 / 调研 / 计划）+ TO_TORQUE_MAINLINE 与 TO38–TO42 力矩主线
-  近期文档（TO41 系列七篇收束、TO42 活跃）+ **DS 线九篇（纲领
-  DS_TERRAIN_ADAPTER_CHARTER = 主线活跃** + 官方数据独走执行计划 + B4-lite
-  动作清单与划分协议（09-06，D044 解锁后的数据侧正式协议）+ B4-lite 构建
-  执行日志（09-07，D045 开户 RUNNING）+ 重采
-  （09-05b 退役冻结）/流形/官方数据规范/S2R 证据/HIL 评估调研）+ TRAIN_SPEEDUP_LOG。
-- **域外路由**：HANDOFF 交接包与 SCRIPT_MAP 代码轴，实验记录的上游（口径）与下游（产物/代码）。
+| 文件 | 范围 |
+|---|---|
+| `tracker/R.md` | R001–R020，MuJoCo RL 线 |
+| `tracker/D.md` | 蒸馏线（Distillation Exp / Phase2-3 / Stress Test） |
+| `tracker/E.md` | Isaac APT 主线 E01–E48 |
+| `tracker/MQ.md` | 官方规划器复刻 MQ07–MQ12 + Gate0 地形评测 |
+| `tracker/TO.md` | TO 数据管线与 TO18–TO35 力矩/WBC 线 |
+
+## 阶段史（`stages/`）
+
+写完即冻结；阶段索引在 `../HANDOFF/02_EXPERIMENT_HISTORY.md`。
+
+| 文件 | 阶段 |
+|---|---|
+| `stages/stage01_mujoco_rd.md` | 1：MuJoCo R/D 两线 |
+| `stages/stage02_isaac_e01_e14.md` | 2：Isaac 机制矩阵 E01–E14 |
+| `stages/stage03_terrain_perception_e15_e21.md` | 3：地形/感知 E15–E21 |
+| `stages/stage04_priority_chain.md` | 4：优先级链收尾 |
+| `stages/stage05_directions_abc.md` | 5：方向 A/B/C |
+| `stages/stage06_e27_missing.md` | 6：E27 缺失实验 |
+| `stages/stage07_latent_e28_e47.md` | 7：latent 线 E28–E47 |
+| `stages/stage08_planner_mq07_mq12.md` | 8：planner 复刻 MQ07–MQ12 |
+| `stages/stage09_decoder_finetune_e44.md` | 9：解码器微调 E44 |
+| `stages/stage10_from0_e45_e47.md` | 10：从零 + 冻结解码器 E45–E47 |
+| `stages/stage11_e48_residual.md` | 11：E48 全关节残差（实证关闭） |
+| `stages/stage12_to_torque.md` | 12：TO 力矩线 |
+| `stages/gate0_rough_terrain.md` | Gate0：论文形状 rough 地形 |
+
+## DS 线（`ds/`）—— 当前主线
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `ds/DS_TERRAIN_ADAPTER_CHARTER.md` | 纲领：冻结底座 × 地形适配 × 未见动作迁移；冲突以它为准 | 活跃 |
+| `ds/DS_TERRAIN_AUTHOR_PLAN.md` | 地形作者计划：数据发动机 + token 层作者（G0=D059 生死判别，D060-D062 承接） | 活跃 |
+| `ds/DS_TRACKING_STATUS_2026-09-15.md` | 交接快照：D057 G3 核验→G4 构建→训练完成；只剩 G5 init 档位图；接手入口 | 活跃 |
+| `ds/DS_TRACKING_STATUS_2026-09-14.md` | 交接快照：D057 WBT 语料接入（§4 接手指令已执行完前四步） | 冻结 |
+| `ds/DS_TRACKING_STATUS_2026-09-12.md` | 交接快照：平地跟踪三瓶颈 | 冻结 |
+| `ds/DS_CONTINUOUS_EXECUTION_PLAN.md` | 平地命令跟踪持续执行计划（D048 系） | 执行中 |
+| `ds/DS_OFFICIAL_DATA_PLAN.md` | 官方数据独走执行计划 | 活跃 |
+| `ds/DS_B4LITE_ACTION_SPLIT_PLAN.md` | B4-lite 动作清单与划分协议 | 活跃 |
+| `ds/DS_D045_B4LITE_BUILD_LOG.md` | B4-lite 首版构建日志 | 活跃 |
+| `ds/DS_GAIT_MANIFOLD_PLAN.md` | 步态流形双源架构 | 执行中 |
+| `ds/DS_SONIC_OFFICIAL_DATA.md` | SONIC 官方数据资产定位与离线编码选项 | 活跃 |
+| `ds/DS_RECOLLECT_PLAN.md` | 重采线（09-05b 自采退役，设计归档不删档） | 冻结 |
+| `ds/DS_S2R_EVIDENCE.md` | Isaac→真机 gap 外部证据 | 活跃 |
+| `ds/DS_HIL_SURVEY.md` | HIL 混合模仿学习评估调研 | 活跃 |
+
+## TO 线（`to/`）
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `to/TO_TORQUE_MAINLINE.md` | 主线宣言：TO 力矩路线 × APT 论文实现度对照 | 活跃 |
+| `to/TO42_PLAN.md` | TO42 学习型 regime 选择，协议冻结候选 | 活跃 |
+| `to/TO40C_PLAN.md` | TO40-C 力矩前馈通道门控（Rung 0） | 活跃 |
+| `to/TO41_RUNG1_IMPL.md` | Rung 1 实施章程 + D1/D2/D3 integrity test | 活跃 |
+| `to/TO41_D_DRYRUN_PROTOCOL.md` | D1/D2/D3 28-cell conformance dry-run 协议 | 活跃 |
+| `to/TO41_D_IMPL.md` | Mode A runtime + independent checker 实现日志 | 活跃 |
+| `to/TO41_LAUNCH_SANITY.md` | L1–L4 真实 env 接线验证（freeze 前最后一道门） | 活跃 |
+| `to/TO41_C_DIAGNOSIS.md` | 56-cell 现有产物诊断；终裁 (b) ACCEPT | 收束 |
+| `to/TO41_G_DOWN_SPEC.md` | 低速 downward-continuation 材料生成 | 收束 |
+| `to/TO41_RUNG1_CLOSURE.md` | Rung 1 科学关线收束 | 收束 |
+| `to/TO38_PLAN.md` | TO38 RL 稳定器叠加 TO 参考 | 冻结 |
+| `to/TO_TORQUE_LINE_REPORT.md` | TO01–TO22 力矩线收束（前半程） | 冻结 |
+| `to/LEG_LEVEL_TO_PLAN.md` | 腿级 TO（Drake dircol）设计定稿 | 收束 |
+| `to/LEG_LEVEL_TO_REPORT.md` | 腿级 TO 线收束 | 冻结 |
+
+## E 线（`e/`）
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `e/E49_KL_GUARD_PLAN.md` | E49 退化调研结论 + KL 信任域守卫预注册 | 活跃 |
+| `e/E49_STATUS_2026-09-05.md` | E49-A 执行状态交接 | 冻结 |
+
+## 调研（`surveys/`）
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `surveys/EMBODIED_AI_FIELD_SURVEY.md` | 具身智能全领域谱系地图（领域背景，不承载本仓口径） | 活跃 |
+| `surveys/LITERATURE_SURVEY_FROZEN_DECODER.md` | 冻结解码器 + 位置 RL 地形泛化综述 | 冻结 |
+| `surveys/LITERATURE_SURVEY_DS_MANIFOLD.md` | DS 步态流形近邻地图与创新点评估 | 冻结 |
+| `surveys/RESEARCHCLAWBENCH_SURVEY.md` | RCBench agent 选型 | 冻结 |
+
+## 运行日志与机制专题（`logs/`）
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `logs/TRAIN_SPEEDUP_LOG.md` | 训练栈提速 | 活跃 |
+| `logs/MUJOCO_APT_LOG.md` | MuJoCo 两线全程留档 | 冻结 |
+| `logs/ISAAC_APT_LOG.md` | Isaac 阶段运行记录 | 冻结 |
+| `logs/DISTILL_EXPERIMENT.md` | 蒸馏可行性：相位路由器可、朴素 BC 不可 | 冻结 |
+| `logs/DATA_GENERALIZATION_LOG.md` | 数据/网络泛化实验留档 | 冻结 |
+| `logs/ROOT_CAUSE.md` | token/VAE/skill RL 不稳的证据链 | 冻结 |
+
+## 收束报告（`reports/`）
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `reports/FINAL_REPORT.md` | 最终定稿（两个核心问题的最终回答） | 定稿 |
+| `reports/HUMAN_READABLE_COMPLETE_REPORT.md` | 08-12 人话版全时间线复盘 | 冻结 |
+| `reports/APT_PROJECT_SUMMARY.md` | 08-13 时点总结（口径以 FINAL_REPORT 为准） | 冻结 |
+| `reports/STAGE_SUMMARY_2026-08-13.md` | 08-13 时点阶段总结 | 冻结 |
+| `reports/WBC_BRINGUP_REPORT.md` | TO23–TO28 QP-WBC（含 §6 翻案 TO31–32） | 冻结 |
+
+## 早期计划与规格（`plans/`）
+
+| 文件 | 是什么 | 状态 |
+|---|---|---|
+| `plans/APT_GAP_ANALYSIS.md` | APT 论文差距台账 + decoder 性能画像卡 | 活跃 |
+| `plans/PAPER_TERRAIN_SPEC.md` | 论文地形定义（结论已被 Gate0 修订） | 冻结 |
+| `plans/EXPERIMENT_PLAN.md` | 早期英文实验计划（被阶段史收束） | 归档 |
+
+## 域外（不属于本树强制范围，仅作导航）
+
+`../HANDOFF/README.md`（层位总图 §0 + 结论口径 §3）、`../HANDOFF/00_FINAL_SUMMARY.md`、
+`../HANDOFF/02_EXPERIMENT_HISTORY.md`、`../HANDOFF/03_OUTPUTS_INDEX.md`、`../apt_g1/SCRIPT_MAP.md`

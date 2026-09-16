@@ -372,6 +372,19 @@
 
 **风险预声明**：①z 切换步态冲击（G1/G2 直接测；冲击大→纯交叉淡入/降级静态臂）；②收割语料=可达集自采样，方向轴缺陷继承（G5 db 分布入账）；③Isaac@CVGL 3090 启动卡死前科（D039）——G1 即验证，卡死报 owner 换池；④净前向 vs 机体速度口径沿 D048r（初始航向系投影），跨臂对数前核口径。
 
+## §5s D059：地形线生死判别——tokenizer 通路核查 + ds_bones 爬障段 oracle 回放上限卡（09-16 立项，owner「可以写计划,我们也训一个在能力范围内大一点的模型」；纲领=[DS_TERRAIN_ADAPTER_CHARTER](DS_TERRAIN_ADAPTER_CHARTER.md)，执行计划=[DS_TERRAIN_AUTHOR_PLAN](DS_TERRAIN_AUTHOR_PLAN.md)；零 RL 预算）
+
+**动机**：地形行动泛化主线的根问题——冻结 SONIC decoder 是否具备地形剧本执行能力，从未测过（D048r R1 上限卡只测平地语料）。ds_bones 132G（BONES-SEED，NVIDIA retarget G1，爬障箱 3.6k 段）在 lab-ts，但**不带 token**：官方语料 token 随数据自带，新语料须过 tokenizer，此通路可用性未知，是全线第一个技术前提。
+
+**设计（三步）**：
+- ① tokenizer 通路核查（半天级，lab-ts/CVGL）：GEAR-SONIC 发布资产（gear_sonic/gear_sonic_deploy）是否含 motion→64FSQ 编码器；对 1 段 ds_bones npz 实跑，产出 token 流并与官方 token 统计（均值/方差/直方图）对账。**不通 → 落边界事实，③ 降级为官方语料地形内容盘点，全线停线报 owner**。
+- ② 转换适配冒烟（照 D057 G1/G2 惯例）：BONES-SEED schema→D044 同构 npz 转换器，6 episode（含爬障段）三速采样，膝签名门 + roundtrip；**爬障系签名基线须先重建**（D057 门是平地行走系阈值，爬障膝角分布不同——预注册：对全量爬障段打签名分布取四分位带为门，不照抄平地阈值）。
+- ③ oracle 回放上限卡（R1 方法直接搬，CVGL Isaac）：爬障段分层选段（障碍类型×段速，K≥12）× 3 seeds × 20s；场景 = 平地对照 + mjlab 地形（D030 驱动复用）；指标沿 R1：存活率/h_min/realized_ratio/路径直度。
+
+**判读**：**甲**=存活 ≥2/3 ∧ realized_ratio 不显著低于平地 R1 带 → 地形剧本可演，全线开（进 DS_TERRAIN_AUTHOR_PLAN G1）；**乙**=可演但跟踪显著劣化 → 余量问题登记，作者设计须含纠偏预算；**丙**=大面积摔 → 冻结 decoder 地形线根死，**纲领级收线**报 owner。
+
+**预算与停止**：①+② ≤1 天；③ 12 段×3 seed×2 场景 ≤72 run（~3h CVGL）。①失败即全线停，不硬凑。
+
 ## 6. 阶段 2：速度覆盖、切换和独立终评
 
 0.4 m/s过门后，固定候选配方，从独立训练种子复训并评测0.2/0.4/0.6 m/s、零偏航命令；每档持续20秒。建议沿用存活、最大横漂≤0.5m、终末航向偏差≤15°、平均upright≥0.90和速度RMSE≤0.10m/s门，前进距离改为命令距离±max(1m,25%命令距离)。每档、每训练种子、每执行模式分别报告成功率，不以整体均值掩盖某一档失败。
