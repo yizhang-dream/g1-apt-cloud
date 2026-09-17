@@ -59,7 +59,8 @@
 |---|---|---|
 | `ds/DS_TERRAIN_ADAPTER_CHARTER.md` | 纲领：冻结底座 × 地形适配 × 未见动作迁移；冲突以它为准 | 活跃 |
 | `ds/DS_TERRAIN_AUTHOR_PLAN.md` | 地形作者计划 v2：端到端命令+地形双口 token 作者（G0=D059 生死判别，D060-D063 承接，09-17 v2 重设计） | 活跃 |
-| `ds/DS_TRACKING_STATUS_2026-09-16.md` | 交接快照：D058 PAUSED/D059 地形线立项+G0-① 甲（tokenizer 四代先例）+G0-② 选料键锁定；**当前接手入口** | 活跃 |
+| `ds/DS_TRACKING_STATUS_2026-09-17.md` | 交接快照：**D059 G0 生死判别全线收束=②PASS/③判甲**（envelope 门重锚/oracle 回放两门全过+4/12 快爬段地形早摔登记）；下一步 D060 数据发动机预注册；**当前接手入口** | 活跃 |
+| `ds/DS_TRACKING_STATUS_2026-09-16.md` | 交接快照：D058 PAUSED/D059 地形线立项+G0-① 甲（tokenizer 四代先例）+G0-② 选料键锁定 | 冻结 |
 | `ds/DS_TRACKING_STATUS_2026-09-15.md` | 交接快照：D057 G3 核验→G4 构建→训练完成；只剩 G5 init 档位图（命令在 §4 仍有效） | 冻结 |
 | `ds/DS_TRACKING_STATUS_2026-09-14.md` | 交接快照：D057 WBT 语料接入（§4 接手指令已执行完前四步） | 冻结 |
 | `ds/DS_TRACKING_STATUS_2026-09-12.md` | 交接快照：平地跟踪三瓶颈 | 冻结 |
