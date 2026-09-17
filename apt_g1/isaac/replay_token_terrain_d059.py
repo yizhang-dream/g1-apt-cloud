@@ -1,10 +1,10 @@
 """D059 G0-③：爬障段 oracle 回放上限卡（地形场景）——fork 自 D048r R1。
 
 fork 来源：`apt_g1/isaac/replay_token_speed_d048r.py`（D048r R1 现役，518 行）。
-本文件与其**同源分叉**，语义除下面五处增量外逐字一致（FORK 纪律：分叉后不回并，
+本文件与其**同源分叉**，语义除下面七处增量外逐字一致（FORK 纪律：分叉后不回并，
 父本后续改动不自动继承；父本 docstring 原文完整保留于本 docstring 下半段）。
 
-五处增量（全量清单，无第六处）：
+七处增量（全量清单，无第八处）：
   ① 地形参数 `--terrain {plane,rough_paper,rough_sym}`（缺省 plane = 平地对照，
      行为与父本完全一致）：`cfg.terrain` 走 `isaac.terrain_cfg.
      make_terrain_importer_cfg` —— 接线范式抄 `apt_g1/isaac/eval_apt_isaac.py`
@@ -26,6 +26,40 @@ fork 来源：`apt_g1/isaac/replay_token_speed_d048r.py`（D048r R1 现役，518
      前缀 `d059_terrain_<tag>`（父本 `d048r_<tag>`）、缺省 segments-json 指向
      D059 爬障选样产物、缺省输出根 outputs/d059_terrain——防 D059 产物混入
      D048r 命名空间。
+  ⑥ 地形噪声 `--terrain-noise FLOAT`（缺省 0.04 = 现行为零漂移）：噪声幅度不再
+     吃 make_terrain_importer_cfg 的缺省——直传 `noise=cli.terrain_noise`
+     （terrain_cfg.py:16-20 本就有该可选参数 → **共享文件零改动**，未走"加参数
+     / 自建 cfg"两条退路）。plane 分支不消费 noise（平地对照逐字节不变）；
+     rough/rough_paper/rough_sym 生效；值与 terrain 类型同经 args 块（vars(cli)
+     自动携带）入输出 JSON，并逐 run 落 ⑦ 的 npz meta。
+  ⑦ 逐 50Hz 步状态记录 `--record-state OUT_DIR`（缺省 "" = 关，零行为漂移；
+     循环内零磁盘 IO）：每 run 一个纯 numpy 缓冲（StateRecorder），run 结束
+     一次性落 `<OUT_DIR>/<stem>__seed<k>.npz`，键 =
+       q_des (n,29)      当步下发的 29 体关节位置目标（env._q_des，即
+                         _apply_action 直喂 set_joint_position_target 的量，
+                         非 full 46 维；含手/腰的补零不属本记录口径）
+       root_pos (n,3)    step 后 root 世界位置
+       root_quat (n,4)   step 后 root 世界四元数（Isaac w-first）
+       tokens_exec (n,64) 当步喂冻结 decoder 的 token 行（vae_recon 时为重建
+                         token）；索引取 env 解码路径真实执行的 `_last_token_i`
+                         （不在循环里重推 min(t, n-1)），值取 numpy 侧 tokens
+       root_pos_pre (n,3) / root_quat_pre (n,4)  step **前**（= 执行 tokens_exec[t]
+                         之前）的 root 位姿，即第 t 步的（状态, 动作）因果对；t=0
+                         行 = jitter 站姿起步位姿（与指标 xy0 同源）
+       fall_step         标量，未摔 = -1
+       meta              JSON 串（stem/seed/terrain/terrain_noise/v_med/
+                         token_source/steps/steps_budget/dur_s/completed/survived）
+     体位姿为什么给两套：`root_pos/root_quat` = **step 后**，沿本文件指标路径与
+     playback_window "step 后状态 ↔ 参考行 t" 口径（post[t] 与 tokens_exec[t] 同
+     行即"该 token 执行完的结果"）；`*_pre` = **step 前**，对齐 D060 源 1 生成器
+     （build/gen_planner_scripts_d060.py docstring："PRE-step state at token index
+     t"）的 (state_t → token_t) 语料口径。两者同源（pre[t] ≡ post[t-1]，仅 t=0
+     行需起步位姿），同时落盘使 D060 四源拼接不必重跑本卡、也不必猜口径。
+     n = 未 done 的步数：done 步**不可记**（DirectRLEnv 在该步内 auto-reset，
+     step 后 root_pos/_q_des 已是复位值 = 污染，与指标"done 步不计"同一理由；
+     该步步前值可由 pre 对补出，本记录不含）。缓冲 = 列表累积 + 结束 np.stack，
+     循环内只做小张量→numpy 拷贝；落盘失败只告警不中断（长 run 里指标 JSON
+     优先）。本机自测见 record_state_selftest / `--selftest`（纯 numpy，无 IsaacLab）。
 
 D059 G0-③ 用途（`refine-logs/ds/DS_CONTINUOUS_EXECUTION_PLAN.md` §5s 预注册，
 09-16 立项）："冻结 SONIC decoder 是否具备地形剧本执行能力"从未测过（D048r R1
@@ -49,6 +83,10 @@ Run on lab-ts (Isaac wrapper, cwd=GR00T-WholeBodyControl):
   # R1 主臂不读 --vae-inputs-dir（增量④）：D059 爬障段无需 D048r label 切片链，
   # 输出 JSON 的 labels 落 null；只有 R2（--token-source vae_recon）才要求该目录存在。
   # R2 路径同父本：--token-source vae_recon --latent-vae-path <vae.pt> --tag r2_<vaeTag>
+  # 地形噪声（增量⑥，缺省 0.04 = rough_paper 论文形状参数）：--terrain-noise 0.06
+  # 闭环收割（增量⑦，D060 源 4）：--record-state <OUT_DIR>（逐 run 落
+  # <stem>__seed<k>.npz；不回写指标路径）
+  # 本机无 IsaacLab 自测（纯 numpy）：PYTHONPATH=apt_g1 python <本文件> --selftest
 
 ---------- 以下为父本 D048r docstring 原文（未改动，仅去掉原首行三引号） ----------
 
@@ -92,6 +130,7 @@ import datetime
 import json
 import math
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -167,10 +206,18 @@ def build_args():
                     default="plane",
                     help="D059：场景地形（plane=平地对照 = 父本行为；"
                          "rough_paper=论文形状对称 rough；rough_sym=0.1m 对称对照）；"
-                         "noise/seed 用 make_terrain_importer_cfg 缺省 0.04/0")
+                         "noise 见 --terrain-noise（缺省 0.04），seed 用 "
+                         "make_terrain_importer_cfg 缺省 0")
+    ap.add_argument("--terrain-noise", type=float, default=0.04, dest="terrain_noise",
+                    help="D059 增量⑥：地形噪声幅度（直传 make_terrain_importer_cfg"
+                         " 的 noise；缺省 0.04 = 现行为零漂移；plane 分支不消费）")
     ap.add_argument("--out", default=DEFAULT_OUT_BASE, help="输出根目录")
     ap.add_argument("--tag", default="",
                     help="输出子目录 = d059_terrain_<tag>（缺省 tag 沿父本 r1_orig/r2_vae；G0-③ 惯例 tag=flat/rough_paper）")
+    ap.add_argument("--record-state", default="", dest="record_state",
+                    help="D059 增量⑦：逐 50Hz 步状态记录输出目录（缺省空 = 关，"
+                         "零行为漂移）→ <OUT_DIR>/<stem>__seed<k>.npz；键见 docstring"
+                         " 增量⑦（q_des/root_pos/root_quat/tokens_exec/fall_step/meta）")
     return ap
 
 
@@ -325,6 +372,203 @@ def path_straightness(xy_a, path_len_m=None) -> float:
     return float(np.linalg.norm(xy_a[-1] - xy_a[0])) / path_len_m
 
 
+# ------------------- D059 增量⑦：逐 50Hz 步状态记录（纯 numpy，可独立自测）
+
+
+RECORD_KEYS = ("q_des", "root_pos", "root_quat", "tokens_exec",
+               "root_pos_pre", "root_quat_pre")
+RECORD_DIMS = {"q_des": 29, "root_pos": 3, "root_quat": 4, "tokens_exec": 64,
+               "root_pos_pre": 3, "root_quat_pre": 4}
+
+
+class StateRecorder:
+    """逐 50Hz 控制步状态缓冲：列表累积，run 结束 np.stack 一次性落盘。
+
+    口径见 docstring 增量⑦。调用约定：调用方只在"未 done 的 step"（step 后
+    状态未被 auto-reset 污染）调 add_step，且只传当步各量的 numpy 视图
+    （`enabled=False` 时 add_step 空转，调用方应另行判 .enabled 以免白做
+    张量→numpy 拷贝）。finalize 严格校验：逐键行数一致 + 宽度 == RECORD_DIMS，
+    不符即 ValueError（生产路径 save_state_record 捕获后只告警，不让记录问题
+    毁掉已跑完的 run）。
+    """
+
+    def __init__(self, enabled: bool = False):
+        self.enabled = bool(enabled)
+        self._buf: dict[str, list[np.ndarray]] = {k: [] for k in RECORD_KEYS}
+
+    def add_step(self, q_des, root_pos, root_quat, tokens_exec,
+                 root_pos_pre, root_quat_pre):
+        if not self.enabled:
+            return
+        for k, v in zip(RECORD_KEYS, (q_des, root_pos, root_quat, tokens_exec,
+                                      root_pos_pre, root_quat_pre)):
+            self._buf[k].append(np.asarray(v, dtype=np.float32).reshape(-1).copy())
+
+    def __len__(self) -> int:
+        return len(self._buf["q_des"])
+
+    def finalize(self) -> dict[str, np.ndarray]:
+        n = len(self)
+        arrays = {}
+        for k in RECORD_KEYS:
+            rows = self._buf[k]
+            if len(rows) != n:
+                raise ValueError(f"[record] {k} 行数 {len(rows)} != {n}")
+            if n == 0:
+                arrays[k] = np.zeros((0, RECORD_DIMS[k]), dtype=np.float32)
+                continue
+            a = np.stack(rows, axis=0)
+            if a.shape[1] != RECORD_DIMS[k]:
+                raise ValueError(f"[record] {k} 宽度 {a.shape[1]} != "
+                                 f"RECORD_DIMS {RECORD_DIMS[k]}")
+            arrays[k] = a
+        return arrays
+
+
+def save_state_record(out_root: str, stem: str, seed: int, recorder: StateRecorder,
+                      meta: dict, fall_step) -> str | None:
+    """recorder → `<out_root>/<stem>__seed<seed>.npz`（+ fall_step 标量 + meta 串）。
+
+    fall_step=None（未摔）落 -1（0 是合法步号，不能当哨兵）。落盘失败只告警
+    返回 None：指标 JSON 优先，记录问题不得中断长 run。n 与 steps-(有摔?1:0)
+    不符时告警（提示缓冲与指标口径错位，如误记了 done 步）——D059 配置下
+    episode_length_s = 预算 + 30s，trunc 不触发，故"未 done 步数"就是这个式子。
+    """
+    path = os.path.join(out_root, f"{stem}__seed{seed}.npz")
+    n_expect = int(meta["steps"]) - (1 if fall_step is not None else 0)
+    try:
+        os.makedirs(out_root, exist_ok=True)
+        arrays = recorder.finalize()
+        arrays["fall_step"] = np.int64(-1 if fall_step is None else fall_step)
+        arrays["meta"] = np.array(json.dumps(meta, ensure_ascii=False))
+        np.savez(path, **arrays)
+    except Exception as e:      # 记录失败不致命：指标 JSON 必须能落盘
+        print(f"[record] FAIL {path}: {type(e).__name__}: {e}"
+              f"（指标 JSON 不受影响）", flush=True)
+        return None
+    note = "" if len(recorder) == n_expect else (
+        f" [!] 记录 {len(recorder)} 步 != 预期未 done 步 {n_expect}")
+    print(f"[record] saved {path} n={len(recorder)} "
+          f"fall_step={int(arrays['fall_step'])}{note}", flush=True)
+    return path
+
+
+def record_state_selftest() -> int:
+    """增量⑦ 记录缓冲自测（纯 numpy，5 步合成数据→落盘→读回逐键断言）。
+
+    用法（本机，无 IsaacLab）：PYTHONPATH=apt_g1 python <本文件> --selftest
+    """
+    import inspect
+    import tempfile
+
+    fails: list[str] = []
+    n, rng = 5, np.random.default_rng(0)
+    meta = {"stem": "seg_demo", "seed": 3, "terrain": "rough_paper",
+            "terrain_noise": 0.06, "v_med": 0.42, "token_source": "orig",
+            "steps": 6, "steps_budget": 1000, "dur_s": 20.0,
+            "completed": False, "survived": False}
+
+    def check(name, cond, extra=""):
+        print(f"  [{'ok  ' if cond else 'FAIL'}] {name}{extra}", flush=True)
+        if not cond:
+            fails.append(name)
+
+    print("=== D059 增量⑦ StateRecorder selftest（纯 numpy，无 IsaacLab）===",
+          flush=True)
+    data = {k: rng.standard_normal((n, RECORD_DIMS[k])).astype(np.float32)
+            for k in RECORD_KEYS}
+    check("RECORD_KEYS 顺序 == add_step 形参顺序（位置 zip 依赖此不变量）",
+          list(RECORD_KEYS) == list(
+              inspect.signature(StateRecorder.add_step).parameters)[1:])
+    buf = StateRecorder(enabled=True)
+    for t in range(n):
+        buf.add_step(*[data[k][t] for k in RECORD_KEYS])
+    check("len == 5", len(buf) == n, f" (got {len(buf)})")
+    arrays = buf.finalize()
+    for k in RECORD_KEYS:
+        check(f"finalize[{k}] shape == {(n, RECORD_DIMS[k])}",
+              arrays[k].shape == (n, RECORD_DIMS[k]), f" (got {arrays[k].shape})")
+        check(f"finalize[{k}] 与输入逐位相同", np.array_equal(arrays[k], data[k]))
+    check("finalize 为 copy（不共享输入内存）",
+          not np.shares_memory(arrays["q_des"], data["q_des"]))
+
+    off = StateRecorder(enabled=False)
+    off.add_step(*[data[k][0] for k in RECORD_KEYS])
+    check("enabled=False 不累积", len(off) == 0)
+    check("enabled=False finalize → (0,dim) 空表",
+          all(off.finalize()[k].shape == (0, RECORD_DIMS[k]) for k in RECORD_KEYS))
+
+    bad = StateRecorder(enabled=True)
+    bad.add_step(np.zeros(29, np.float32), np.zeros(3, np.float32),
+                 np.zeros(4, np.float32), np.zeros(63, np.float32),
+                 np.zeros(3, np.float32), np.zeros(4, np.float32))
+    try:
+        bad.finalize()
+        check("宽度不符 → ValueError", False)
+    except ValueError as e:
+        check("宽度不符 → ValueError", "宽度" in str(e), f" ({e})")
+
+    ragged = StateRecorder(enabled=True)
+    ragged.add_step(*[data[k][0] for k in RECORD_KEYS])
+    ragged._buf["root_pos"].clear()      # 伪造逐键行数错位
+    try:
+        ragged.finalize()
+        check("行数不一致 → ValueError", False)
+    except ValueError as e:
+        check("行数不一致 → ValueError", "行数" in str(e), f" ({e})")
+
+    with tempfile.TemporaryDirectory() as td:
+        p = save_state_record(td, "seg_demo", 3, buf, meta, fall_step=5)
+        check("落盘名 = <stem>__seed<k>.npz",
+              p is not None and os.path.basename(p) == "seg_demo__seed3.npz",
+              f" ({p})")
+        check("文件存在", bool(p) and os.path.isfile(p))
+        with np.load(p) as z:      # 上下文管理：Windows 上不及时关句柄会卡住
+            files = set(z.files)   # TemporaryDirectory 清理
+            got = {k: z[k].copy() for k in RECORD_KEYS}
+            got_fall, got_ndim = int(z["fall_step"]), z["fall_step"].ndim
+            got_meta = json.loads(str(z["meta"]))
+        check("npz 键齐（6 量 + fall_step + meta）",
+              set(RECORD_KEYS) | {"fall_step", "meta"} <= files, f" ({sorted(files)})")
+        for k in RECORD_KEYS:
+            check(f"读回 {k} 与输入逐位相同", np.array_equal(got[k], data[k]))
+        check("读回 fall_step == 5", got_fall == 5, f" (got {got_fall})")
+        check("fall_step 为 0-d 标量", got_ndim == 0)
+        check("读回 meta 整字典相等", got_meta == meta, f" ({got_meta})")
+        check("meta 含增量⑥⑦必备键 stem/seed/terrain/terrain_noise/v_med",
+              all(kk in got_meta for kk in ("stem", "seed", "terrain",
+                                            "terrain_noise", "v_med")))
+
+    with tempfile.TemporaryDirectory() as td:
+        meta_nofall = {**meta, "seed": 0, "steps": n}   # 未摔：n == steps（自洽）
+        p = save_state_record(td, "seg_demo", 0, buf, meta_nofall, fall_step=None)
+        with np.load(p) as z:
+            got_fall = int(z["fall_step"])
+        check("未摔 fall_step == -1", got_fall == -1)
+
+    empty = StateRecorder(enabled=True)
+    with tempfile.TemporaryDirectory() as td:
+        # 真路径边界：第 0 步就摔（无未 done 步）→ n=0 仍须可落可读
+        p = save_state_record(td, "seg_fall0", 7, empty,
+                              {**meta, "stem": "seg_fall0", "steps": 1},
+                              fall_step=0)
+        with np.load(p) as z:
+            got = {k: z[k].shape for k in RECORD_KEYS}
+            got_fall = int(z["fall_step"])
+        check("n=0（首步即摔）npz 键形状 (0,dim)",
+              got == {k: (0, RECORD_DIMS[k]) for k in RECORD_KEYS}, f" ({got})")
+        check("n=0 时 fall_step == 0（0 不当哨兵）", got_fall == 0)
+
+    with tempfile.TemporaryDirectory() as td:
+        p = save_state_record(td, "seg_demo", 1, buf, {**meta, "steps": 3},
+                              fall_step=None)
+        check("n 与 steps 不符只告警、仍返回路径", p is not None)
+
+    print(f"=== selftest {'PASS' if not fails else 'FAIL: ' + '; '.join(fails)}"
+          f"（{len(fails)} 项失败）===", flush=True)
+    return 0 if not fails else 1
+
+
 # ----------------------------------------------------------------- 回放环境
 
 
@@ -378,9 +622,11 @@ def main():
 
         _oracle_tokens: torch.Tensor | None = None
         _oracle_idx: int = 0
+        _last_token_i: int = 0   # D059 增量⑦：当步真实执行的 token 行索引
 
         def _compute_q_des(self, phase, aux, res=None):
             i = min(self._oracle_idx, self._oracle_tokens.shape[0] - 1)
+            self._last_token_i = i
             tokens = self._oracle_tokens[i].unsqueeze(0).expand(self.num_envs, -1)
             self._oracle_idx += 1
             # _decoder_obs_parts 期望 numpy token；此处已是 device tensor ->
@@ -403,7 +649,10 @@ def main():
     cfg.scene.num_envs = 1
     # D059 增量①：地形接线（plane 与父本 cfg.terrain 缺省等值 = 平地对照零变化）；
     # 范式 = eval_apt_isaac.py:798 import + L855-857 make_terrain_importer_cfg
-    cfg.terrain = make_terrain_importer_cfg(cli.terrain)
+    # D059 增量⑥：noise 显式直传（terrain_cfg.py 本就有 noise 可选参数，共享文件
+    # 零改动）；缺省 0.04 == 函数缺省 → 与父本/增量①现行为逐字节等价（plane 分支
+    # 不消费 noise）。
+    cfg.terrain = make_terrain_importer_cfg(cli.terrain, noise=cli.terrain_noise)
     cfg.episode_length_s = steps_budget / 50.0 + 30.0   # 预算内不触发 trunc
     cfg.router_model_dir = cli.router_model_dir
     env = SpeedReplayEnv(cfg)
@@ -444,6 +693,8 @@ def main():
         for seed in seeds:
             jitter_and_reset(env, seed)
             env._oracle_idx = 0
+            # D059 增量⑦：每 run 独立缓冲（关时 add_step 空转，不走下面的拷贝）
+            recorder = StateRecorder(enabled=bool(cli.record_state))
             xy0 = env.robot.data.root_pos_w[0, :2].detach().cpu().numpy().copy()
             yaw0 = _yaw_of(env.robot.data.root_quat_w[0].detach())
             f0 = np.array([math.cos(yaw0), math.sin(yaw0)])  # 初始航向系前向
@@ -451,6 +702,9 @@ def main():
             h_min, h_end, fall_step, steps_done = float("inf"), None, None, 0
             traj = [xy0]             # 全程 live 轨迹（done 步不计，b3p 口径）
             for t in range(steps_budget):
+                if recorder.enabled:   # D059 增量⑦：步前位姿（t=0 = 起步位姿）
+                    pre_pos = env.robot.data.root_pos_w[0].detach().cpu().numpy()
+                    pre_quat = env.robot.data.root_quat_w[0].detach().cpu().numpy()
                 action = torch.zeros(
                     env.num_envs, env.cfg.action_space,
                     dtype=torch.float32, device=env.device)
@@ -466,6 +720,15 @@ def main():
                     traj.append(xy_now)
                     if t < seg["frames"]:
                         traj_pb.append(xy_now)
+                    if recorder.enabled:   # D059 增量⑦：未 done 步记录（step 后状态；
+                        # done 步不可记：auto-reset 后 root_pos/_q_des 已是复位值）
+                        recorder.add_step(
+                            env._q_des[0].detach().cpu().numpy(),          # (29,)
+                            env.robot.data.root_pos_w[0].detach().cpu().numpy(),
+                            env.robot.data.root_quat_w[0].detach().cpu().numpy(),
+                            tokens[env._last_token_i],                     # (64,)
+                            pre_pos, pre_quat,     # 步前位姿（D060 源1 口径）
+                        )
                 if bool(term[0]):
                     fall_step = t
                     break
@@ -529,6 +792,21 @@ def main():
                   f"vx_fwd={r['mean_vx_fwd']} v_path={r['mean_speed_path']} "
                   f"ratio={r['realized_ratio']} pb_ratio={r['playback_path_ratio']}",
                   flush=True)
+            if recorder.enabled:   # D059 增量⑦：run 末一次性落盘（循环内零 IO）
+                save_state_record(
+                    cli.record_state, seg["stem"], seed, recorder,
+                    meta={
+                        "stem": seg["stem"], "seed": seed,
+                        "terrain": cli.terrain,
+                        "terrain_noise": cli.terrain_noise,
+                        "v_med": round(seg["v_med"], 6),
+                        "token_source": cli.token_source,
+                        "steps": steps_done, "steps_budget": steps_budget,
+                        "dur_s": cli.dur_s,
+                        "completed": r["completed"], "survived": survived,
+                    },
+                    fall_step=fall_step,
+                )
 
         def _med(field):
             vals = [runs[s][field] for s in seeds if runs[s][field] is not None]
@@ -624,4 +902,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--selftest" in sys.argv[1:]:      # 增量⑦自测：纯 numpy，Isaac 前短路
+        sys.exit(record_state_selftest())
     main()
