@@ -385,6 +385,26 @@
 
 **预算与停止**：①+② ≤1 天；③ 12 段×3 seed×2 场景 ≤72 run（~3h CVGL）。①失败即全线停，不硬凑。
 
+## §5t D060：数据发动机——四源统一 (command, state, terrain, intent, token) 窗语料（09-17 立项，owner「继续」；计划=DS_TERRAIN_AUTHOR_PLAN §6 v2；G0 判甲〔2336e4c〕后首个生产阶段；纯数据工程+小规模 CVGL 回放，零 RL）
+
+**动机**：作者 v0（D061 ≤80M，BC 先行）需要统一窗格式语料。四源各补一块：命令标注（源 1 出生即对齐，避开 D048n/p 语料重标定塌缩坑）、地形内容（源 2 爬障）、动作底座（源 3 存量 npz 免重编码）、闭环状态与扰动（源 4，含 G0-③ 登记的快爬段地形早摔素材=纠偏预算实证来源）。
+
+**统一窗格式（冻结）**：4s 窗 @50Hz（D057 builder 惯例）；每窗字段 = `command`（target_vel 标量 + movement_direction + mode + height，官方 planner 同构；无命令源用 speedA 标签法=实测根速中位〔D048n 先例：锚定标签严格单调、校准式必塌缩——只用三分位锚定不用均值校准〕；-1 哨兵约定〔D033〕）/ `state`（本体感觉历史窗）/ `terrain_desc`（类型+参数，特权描述：plane / rough_paper{noise} / climbing_box{height≈0.5m}）/ `intent_tokens`（语料段 token 流或 planner 剧本）/ `token_stream`（输出目标 64FSQ）；manifest 逐窗对账（D045 惯例）。
+
+**四源生产设计**：
+- **源 1 · planner 命令标注生成**（平地命令轴主源）：`sim/planner_sonic.py`（D033 已跑通）按 target_vel 网格 {0, 0.2, …, 1.2} × mode {SLOW_WALK, RUN} × direction {前,左,右} 产 command→token 剧本对；**网格上界 1.2 m/s 提案**（我方语料实测速度域内；>1.5 域=decoder 能力域而非语料域，等扩料另批不硬造）；抽查门=每命令点 ≥10 剧本 + token 统计（均值/方差/直方图）与语料段分布对照，越带记 OOD 警告不静默（计划 §9.4）；D033 衰减差（planner 裸出 2.12 vs deploy 回路 1.0）在案，command 存 planner 名义值、meta 并记该点实测净速。
+- **源 2 · ds_bones 爬障全量**：`build/select_climb_d059.py` 扩全量（非镜像 1,701 段、排除 held-out 演员，`--per-tier` 全量模式）→ `convert_bones_g1_csv.py --list` 批量 --roundtrip（**envelope 门照 G0-② 重锚口径**，失败段记 error 不猜）；terrain_desc=climbing_box、command=speedA；**encoder/decoder ONNX 批维静态 [1,·]，D057 先例=多进程并行非批推理**。
+- **源 3 · 官方平地库存量**：g1_b4lite 487 + g1_b3p 62 + g1_b4lite_v2conv 66 段 npz tokens **直接窗口化不重编码**；command=speedA、terrain_desc=plane。
+- **源 4 · 闭环收割首批**：`isaac/replay_token_terrain_d059.py` 扩 `--record-state`（逐步 obs/token/q_des 落盘）+ `--terrain-noise`（现固定 0.04 无旗标）+ jitter_and_reset 起步扰动 + 外力推扰；首批对象=12 段爬障 × rough_paper 两档（noise 0.04/0.08）× 3 seed + **4 个 G0-③ 登记早摔段加推扰档**（地形条件失败数据优先入库）；作者上线后自采闭环迭代不占本预注册（另立）。
+
+**防泄漏划分（演员级，一次性冻结）**：522 演员分层抽 **~15%（≈78 名）为 held-out**，其全部段只进 G5 评测不进任何训练窗；其余 train；镜像 `_M` 全排除出训练；划分 seed=0 落盘可复现；源 2/源 3 统一适用。
+
+**内部 gate（顺序）**：G1 格式冒烟（四源各 ≥100 窗 + 统一 loader + 消费者测试=stub causal transformer forward+一步 SGD〔D058 消费者测试先例〕+字段契约断言）→ G2 源 2 全量转换（lab-ts `.venv_mjlab`，12 段分钟级推算 1,701 段隔夜级，envelope 门汇总表）→ G3 源 1 planner 生产（先 1 命令点冒烟对拍 D033，再全网格）→ G4 窗口化+划分+manifest 对账（帧数/窗数/命令分布/地形分布四报表）→ G5 产量门判定。
+
+**产量门（判读）**：① 帧数：四源合计 ≥**150 万帧**（≈8.3h @50Hz；v0 管线验证规模——源 2 ~0.5M + 源 3 ~0.5M + 源 1 planner 弹性 + 源 4 ~0.1M 可及；v1 300M 升档另评）；② 命令覆盖：speedA 三分位三档非空 ∧ 源 1 网格各点非空 ∧ mode×方向非空；③ 地形覆盖：≥3 族非空（plane/rough_paper 两档/climbing_box）；**过门 → D061 发射；不过 → 缺口如实落账**（补料或按模型阶梯纪律降档），不硬凑。
+
+**预算与停止**：G1 半天；G2 lab-ts CPU 隔夜；G3 冒烟半天+全网格 ≤1 天；G4 ≤半天；源 4 首批 ≤2h CVGL 4090（≤100 run，EULA 已验证）。窗格式字段变更=判据变更报 owner；源 1 KL 越带 >50% 命令点 → 源 1 停线报 owner。
+
 ## 6. 阶段 2：速度覆盖、切换和独立终评
 
 0.4 m/s过门后，固定候选配方，从独立训练种子复训并评测0.2/0.4/0.6 m/s、零偏航命令；每档持续20秒。建议沿用存活、最大横漂≤0.5m、终末航向偏差≤15°、平均upright≥0.90和速度RMSE≤0.10m/s门，前进距离改为命令距离±max(1m,25%命令距离)。每档、每训练种子、每执行模式分别报告成功率，不以整体均值掩盖某一档失败。
