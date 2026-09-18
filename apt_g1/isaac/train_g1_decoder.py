@@ -11,6 +11,10 @@ g1_velocity_decoder_env.py 提供 env cfg 家族与 SONIC decoder action term）
     python apt_g1/isaac/train_g1_decoder.py --smoke
     # num_envs 强制 8、iterations 强制 2；结束输出单行
     # "SMOKE PASS: ..." 或 "SMOKE FAIL: ..."（供盯守代理 grep）
+    # (c) 段逐地形 height_scan 检查以独立子进程跑（隐藏子命令
+    # --smoke-terrain-check <terrain>，每地形超时 480s；父进程内重建第二个
+    # ManagerBasedRLEnv 在 Isaac Lab 已知会静默挂起——cvgl 冒烟 r3 根因）。
+    # 子进程机器可读行（flush）："TERRAIN_CHECK <terrain> PASS|FAIL <msg>"
 
 设计决定（与派发约定二选一处）：
 - gym 任务集中在本脚本注册（try/except 防重复）。训练路径不走 gym.make，
@@ -38,10 +42,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
+import sys
 import time
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
+from types import SimpleNamespace
 
 # 仓根（本文件位于 <repo>/apt_g1/isaac/）
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +58,8 @@ TERRAINS = ("plane", "rough", "stairs", "stones", "discrete")
 SMOKE_TERRAINS = ("plane", "rough", "stairs", "stones", "discrete")
 SMOKE_NUM_ENVS = 8
 SMOKE_ITERS = 2
+# (c) 段每地形子进程超时（秒）：起 env + reset + 3 步 + 判定的上限（r3）
+TERRAIN_CHECK_TIMEOUT_S = 480
 # decoder 臂 raw action = 64 维 token；direct 臂 = 29 关节目标
 DECODER_RAW_ACTION_DIM = 64
 DIRECT_ACTION_DIM = 29
@@ -162,6 +171,13 @@ def build_args() -> argparse.ArgumentParser:
         choices=("none", "tanh"),
         default=None,
         help="token 仿射限幅（decoder 臂；缺省跟 make_env_cfg 工厂默认 tanh）",
+    )
+    ap.add_argument(
+        "--smoke-terrain-check",
+        choices=SMOKE_TERRAINS,
+        default=None,
+        metavar="TERRAIN",
+        help=argparse.SUPPRESS,  # 隐藏子命令：仅供 --smoke (c) 段的子进程内部使用
     )
     return ap
 
@@ -350,7 +366,12 @@ def _register_tasks(gym, make_env_cfg, cli) -> None:
 
 
 def _find_decoder_term(env, sonic_action_term_cls):
-    """按 isinstance 找 SONIC decoder action term（不依赖 sibling 的 cfg 字段命名）。"""
+    """按 isinstance 找 SONIC decoder action term；类名兜底防模块身份分裂静默失败。
+
+    服务器 PYTHONPATH 同时含仓根与仓根/apt_g1，同一文件可能被加载成
+    isaac.* 与 apt_g1.isaac.* 两个模块身份（cvgl 冒烟第二轮根因）；若
+    isinstance 恒 False，按 type(term).__name__ 认定并打 [WARN]。
+    """
     am = env.action_manager
     for name in list(am.active_terms):
         try:
@@ -358,6 +379,14 @@ def _find_decoder_term(env, sonic_action_term_cls):
         except Exception:
             continue
         if isinstance(term, sonic_action_term_cls):
+            return name, term
+        if type(term).__name__ == sonic_action_term_cls.__name__:
+            print(
+                f"[WARN] module-identity fallback: term {name!r} 类名命中 "
+                f"{sonic_action_term_cls.__name__} 但 isinstance 失败"
+                "（isaac.* vs apt_g1.isaac.* 身份分裂；功能不受影响，按类名认定）",
+                flush=True,
+            )
             return name, term
     return None, None
 
@@ -395,31 +424,36 @@ def _group_total_dim(raw) -> int:
 def _height_scan_obs(env, policy_obs):
     """取 height_scan 观测：(tensor|None, 取法说明)。
 
-    优先走 ObservationManager 的逐 term 缓存；否则用 group_obs_term_dim 的
-    维度按“height_scan 是 policy 组最后一个 term”切片（velocity_env_cfg.py
-    中 height_scan 确为 policy 组末位，:134-139；sibling 若改顺序则该回退失真，
-    打印取法说明供判读）。都取不到返回 None。
+    isaaclab 2.1.0 事实（cvgl 冒烟 r6 根因修正）：ObservationManager 无
+    `_group_obs_term_obses` 属性；`active_terms[group]`（2.1.0 名，新版叫 group_obs_term_names）是按 term
+    顺序的 list[str]，`group_obs_term_dim[group]` 是同序的
+    list[tuple[int, ...]]（逐 term 维度 tuple，不是 term 名 -> 维度的 dict）。
+    切片法：按名定位 height_scan 的 index i，前 i 个 term 的维度乘积累加得
+    起点 start，第 i 个的乘积得宽度 w，从 (N, D) 的 policy obs 切
+    [:, start:start+w]——不假设其在组内位置（velocity_env_cfg.py:134-139
+    基准 cfg 在末位仅是特例）。组内无 "height_scan"（如 plane 移除该
+    term）-> "term-absent"（plane 由 _terrain_verdict 既有分支判 ≈0）。
+    任何异常必须带类型名进返回 msg，禁止裸 "unavailable"（r4-r6 连续被
+    异常吞没掩蔽的教训）。
     """
     import torch
 
     om = env.observation_manager
-    cache = getattr(om, "_group_obs_term_obses", None)
-    if isinstance(cache, dict):
-        grp = cache.get("policy")
-        if isinstance(grp, dict) and "height_scan" in grp:
-            try:
-                return grp["height_scan"], "per-term-cache"
-            except Exception:
-                pass
     try:
-        term_dims = om.group_obs_term_dim["policy"]
-        hs_dim_raw = term_dims.get("height_scan")
-        if hs_dim_raw is None:
+        names = om.active_terms["policy"]  # 2.1.0 属性名（group_obs_term_names 是新版名，r7 实证不存在）
+        dims = om.group_obs_term_dim["policy"]
+        if "height_scan" not in names:
             return None, "term-absent"
-        hs_dim = int(hs_dim_raw) if isinstance(hs_dim_raw, int) else int(torch.tensor(list(hs_dim_raw)).prod())
-        return policy_obs[:, -hs_dim:], "last-slice"
-    except Exception:
-        return None, "unavailable"
+        idx = names.index("height_scan")
+        if idx >= len(dims):
+            return None, f"IndexError: names/dims 错位 names={len(names)} dims={len(dims)}"
+        start = 0
+        for term_dims in dims[:idx]:
+            start += int(torch.tensor(list(term_dims)).prod())
+        width = int(torch.tensor(list(dims[idx])).prod())
+        return policy_obs[:, start:start + width], f"slice@{idx}[{start}:{start + width}]"
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def _terrain_verdict(terrain: str, hs, how: str) -> tuple[bool, str]:
@@ -464,16 +498,18 @@ def _write_run_json(out_dir: Path, cli, git_commit: str, onnx_path: str | None, 
     print(f"[d064] run.json -> {path}", flush=True)
 
 
-def _run(cli, out_dir: Path, launcher_args) -> None:
-    """App 起来之后的全部逻辑（smoke 与正式训练共用）。"""
+def _import_heavy() -> SimpleNamespace:
+    """App 启动后的全部 isaaclab / rsl_rl / sibling imports（app 起来之前禁止）。
+
+    父进程（_run）与 terrain-check 子进程（_terrain_check_main）共用此唯一
+    入口——双兼容 import 只写一份，保证两进程解析到同一模块身份。
+    返回 SimpleNamespace：torch/np/gym/ManagerBasedRLEnv/RslRl*Cfg/EnvWrapper/
+    wrapper_name/OnPolicyRunner/mdp/file_md5/make_env_cfg/SonicDecoderActionTerm/
+    SonicDecoderActionTermCfg。
+    """
+    import gymnasium as gym
     import numpy as np
     import torch
-
-    torch.manual_seed(cli.seed)
-    np.random.seed(cli.seed)
-
-    # ---- isaaclab / rsl_rl / sibling imports（依据清单见模块 docstring 与汇报）----
-    import gymnasium as gym
     from isaaclab.envs import ManagerBasedRLEnv
     from isaaclab_rl.rsl_rl import RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg, RslRlOnPolicyRunnerCfg
     try:
@@ -492,22 +528,75 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
         ) from exc
     import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 
-    import sys
-
     if str(REPO_ROOT) not in sys.path:
         # 以 `python apt_g1/isaac/train_g1_decoder.py` 直跑时 sys.path[0] 是脚本
         # 目录而非仓根，补上保证 apt_g1.* 可导入（服务器 PYTHONPATH 亦含仓根）
         sys.path.insert(0, str(REPO_ROOT))
+    # sibling 双兼容 import：与 g1_velocity_decoder_env.py:146-150 完全同构
+    # （主支 isaac.* / except ImportError / 回退 apt_g1.isaac.*）。服务器
+    # PYTHONPATH 同时含仓根与仓根/apt_g1，同一文件会被加载成两个模块身份；
+    # 主支必须走 isaac.*，保证 sonic_action_term 与 env 侧（其内部同为
+    # isaac.sonic_action_term）解析到同一身份，否则 isinstance 恒 False
+    # （cvgl 冒烟第二轮根因）。
     try:
-        from apt_g1.isaac.ckpt_identity import file_md5
-        from apt_g1.isaac.g1_velocity_decoder_env import make_env_cfg
-        from apt_g1.isaac.sonic_action_term import SonicDecoderActionTerm, SonicDecoderActionTermCfg
-    except ImportError as exc:
-        raise RuntimeError(
-            "sibling 模块缺失（apt_g1/isaac/sonic_action_term.py / "
-            "g1_velocity_decoder_env.py 应由 D064 同批产出）；"
-            f"原始错误: {exc}"
-        ) from exc
+        from isaac.ckpt_identity import file_md5
+        from isaac.g1_velocity_decoder_env import make_env_cfg
+        from isaac.sonic_action_term import SonicDecoderActionTerm, SonicDecoderActionTermCfg
+    except ImportError:  # pragma: no cover（本机走此支，需 apt_g1 可导入）
+        try:
+            from apt_g1.isaac.ckpt_identity import file_md5
+            from apt_g1.isaac.g1_velocity_decoder_env import make_env_cfg
+            from apt_g1.isaac.sonic_action_term import (
+                SonicDecoderActionTerm,
+                SonicDecoderActionTermCfg,
+            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "sibling 模块缺失（isaac.sonic_action_term 与 apt_g1.isaac.sonic_action_term "
+                "及 g1_velocity_decoder_env 均不可导入；应由 D064 同批产出）；"
+                f"原始错误: {exc}"
+            ) from exc
+
+    return SimpleNamespace(
+        torch=torch,
+        np=np,
+        gym=gym,
+        ManagerBasedRLEnv=ManagerBasedRLEnv,
+        RslRlPpoActorCriticCfg=RslRlPpoActorCriticCfg,
+        RslRlPpoAlgorithmCfg=RslRlPpoAlgorithmCfg,
+        RslRlOnPolicyRunnerCfg=RslRlOnPolicyRunnerCfg,
+        EnvWrapper=EnvWrapper,
+        wrapper_name=wrapper_name,
+        OnPolicyRunner=OnPolicyRunner,
+        mdp=mdp,
+        file_md5=file_md5,
+        make_env_cfg=make_env_cfg,
+        SonicDecoderActionTerm=SonicDecoderActionTerm,
+        SonicDecoderActionTermCfg=SonicDecoderActionTermCfg,
+    )
+
+
+def _run(cli, out_dir: Path, launcher_args) -> None:
+    """App 起来之后的全部逻辑（smoke 与正式训练共用）。"""
+    hv = _import_heavy()
+    # 解包为局部名：_run 既有引用零改动
+    torch, np = hv.torch, hv.np
+    gym = hv.gym
+    ManagerBasedRLEnv = hv.ManagerBasedRLEnv
+    RslRlPpoActorCriticCfg = hv.RslRlPpoActorCriticCfg
+    RslRlPpoAlgorithmCfg = hv.RslRlPpoAlgorithmCfg
+    RslRlOnPolicyRunnerCfg = hv.RslRlOnPolicyRunnerCfg
+    EnvWrapper = hv.EnvWrapper
+    wrapper_name = hv.wrapper_name
+    OnPolicyRunner = hv.OnPolicyRunner
+    mdp = hv.mdp
+    file_md5 = hv.file_md5
+    make_env_cfg = hv.make_env_cfg
+    SonicDecoderActionTerm = hv.SonicDecoderActionTerm
+    SonicDecoderActionTermCfg = hv.SonicDecoderActionTermCfg
+
+    torch.manual_seed(cli.seed)
+    np.random.seed(cli.seed)
 
     device = getattr(launcher_args, "device", "cuda:0")
     print(
@@ -643,10 +732,6 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
             runner_cfg=runner_cfg,
             EnvWrapper=EnvWrapper,
             OnPolicyRunner=OnPolicyRunner,
-            ManagerBasedRLEnv=ManagerBasedRLEnv,
-            make_env_cfg=make_env_cfg,
-            mdp=mdp,
-            sonic_action_term_cfg_cls=SonicDecoderActionTermCfg,
             torch=torch,
         )
         return
@@ -683,10 +768,6 @@ def _smoke(
     runner_cfg,
     EnvWrapper,
     OnPolicyRunner,
-    ManagerBasedRLEnv,
-    make_env_cfg,
-    mdp,
-    sonic_action_term_cfg_cls,
     torch,
 ) -> None:
     """D064-G0 冒烟（--smoke 时 num_envs=8 / iters=2 已在 main 强制）。"""
@@ -766,37 +847,154 @@ def _smoke(
     print(f"[d064] smoke d) learn x{SMOKE_ITERS} PASS, ckpt -> {ckpt_path}", flush=True)
     env.close()
 
-    # (c) 逐地形 height_scan 断言（每地形独立起 8-env env）
-    terrain_results: dict[str, bool] = {}
-    for terrain in SMOKE_TERRAINS:
-        ok, msg = False, ""
-        try:
-            cfg_t, _ = _build_env_cfg(
-                make_env_cfg, mdp, sonic_action_term_cfg_cls, terrain, cli.arm, cli, device, suffix=terrain
-            )
-            env_t = ManagerBasedRLEnv(cfg=cfg_t)
-            obs_t, _ = env_t.reset()
-            adim_t = int(env_t.action_manager.total_action_dim)
-            for _ in range(3):
-                obs_t, *_ = env_t.step(torch.zeros(n, adim_t, device=env_t.device))
-            hs, how = _height_scan_obs(env_t, obs_t["policy"])
-            ok, msg = _terrain_verdict(terrain, hs, how)
-            env_t.close()
-        except Exception as exc:  # noqa: BLE001 —— 单地形失败不吞掉整体冒烟
-            ok, msg = False, f"{type(exc).__name__}: {exc}"
-        terrain_results[terrain] = ok
-        print(f"[d064] smoke c) terrain {terrain}: {'PASS' if ok else 'FAIL'} — {msg}", flush=True)
+    # (c) 逐地形 height_scan 断言：每地形起独立子进程（--smoke-terrain-check）。
+    # 父进程内重建第二个 ManagerBasedRLEnv 是 Isaac Lab 已知雷区（主 env.close()
+    # 后场景/terrain 重建静默挂起，cvgl 冒烟 r3 根因），try/except 兜不住 hang。
+    terrain_results: dict[str, tuple[bool, str]] = _smoke_terrain_checks(cli, runner_cfg.device)
 
     # (e) 汇总行（盯守代理 grep 该行）
-    bad_terrains = [t for t, ok in terrain_results.items() if not ok]
+    bad_terrains = [t for t, (ok, _msg) in terrain_results.items() if not ok]
     _check(not bad_terrains, f"地形 height_scan 断言失败: {bad_terrains}")
-    summary = (
+    summary = _smoke_final_line(cli, obs_dim_policy, obs_dim_critic, action_dim, terrain_results, ckpt_path.name)
+    print(f"SMOKE PASS: {summary}", flush=True)
+
+
+def _smoke_final_line(cli, obs_dim_policy: int, obs_dim_critic: int, action_dim: int,
+                      terrain_results: dict, ckpt_name: str) -> str:
+    """SMOKE PASS 汇总行文本（纯函数，便于本机结构自测；terrain_results 值为 (ok, msg)）。"""
+    return (
         f"arm={cli.arm} obs(policy)={obs_dim_policy} "
         f"obs(critic)={obs_dim_critic or 'none'} action={action_dim} "
-        f"terrains=" + ",".join(f"{t}:{'PASS' if terrain_results[t] else 'FAIL'}" for t in SMOKE_TERRAINS)
-        + f" learn={SMOKE_ITERS}it ckpt={ckpt_path.name}"
+        f"terrains=" + ",".join(f"{t}:{'PASS' if terrain_results[t][0] else 'FAIL'}" for t in SMOKE_TERRAINS)
+        + f" learn={SMOKE_ITERS}it ckpt={ckpt_name}"
     )
-    print(f"SMOKE PASS: {summary}", flush=True)
+
+
+def _terrain_check_argv(cli, terrain: str, device: str) -> list[str]:
+    """父进程 cli 命名空间 -> 子进程 --smoke-terrain-check argv。
+
+    透传 arm/terrain/seed/token-*（decoder 臂必需），num_envs 强制 8，
+    headless 仅在父进程显式关闭时传 --no-headless（默认开不传）。
+    """
+    argv = [sys.executable, str(Path(__file__).resolve()), "--smoke-terrain-check", terrain]
+    argv += ["--arm", cli.arm, "--terrain", cli.terrain, "--seed", str(cli.seed)]
+    argv += ["--num-envs", str(SMOKE_NUM_ENVS), "--max-iterations", str(SMOKE_ITERS)]
+    argv += ["--token-stats", cli.token_stats or ""]
+    if cli.onnx_path:
+        argv += ["--onnx-path", cli.onnx_path]
+    if cli.token_alpha is not None:
+        argv += ["--token-alpha", str(cli.token_alpha)]
+    if cli.token_bound is not None:
+        argv += ["--token-bound", cli.token_bound]
+    if cli.output_dir:
+        argv += ["--output-dir", str(cli.output_dir)]
+    # 不传 --device：训练 argparse 无此参数（主进程 device 来自 AppLauncher parser，
+    # 子进程 worker 同样经 launcher_args 自取）；传了会 argparse exit 2（r4 实证）。
+    if not cli.headless:
+        argv.append("--no-headless")
+    return argv
+
+
+def _smoke_terrain_checks(cli, device: str) -> dict[str, tuple[bool, str]]:
+    """(c) 段：每地形独立子进程跑 --smoke-terrain-check 并收集结果。
+
+    - 子进程 stdout/stderr 由父进程 capture 后原样转发（选 capture-and-forward：
+      tee 仍能看到完整 Isaac 日志与 TERRAIN_CHECK 行，同时父进程可解析结果行）。
+    - 超时 kill（TimeoutExpired 先 proc.kill() 再 communicate 收尸）；
+      超时 / 非零退出 / 无 TERRAIN_CHECK 行 -> 该地形 FAIL 并注明原因
+      （timeout>480s / exit N / no-line）。
+    - 环境变量默认继承（PYTHONPATH 随之），无任何定制 env。
+    """
+    results: dict[str, tuple[bool, str]] = {}
+    for terrain in SMOKE_TERRAINS:
+        argv = _terrain_check_argv(cli, terrain, device)
+        out = err = ""
+        timed_out = False
+        try:
+            # encoding 必须显式：det 容器 C locale 下 text=True 默认 ASCII 解码，
+            # 子进程输出含 UTF-8 汉字即 UnicodeDecodeError 且吞掉转发（r5 实证）。
+            proc = subprocess.Popen(
+                argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace",
+            )
+        except Exception as exc:  # noqa: BLE001 —— 子进程都起不来
+            results[terrain] = (False, f"spawn-failed: {type(exc).__name__}: {exc}")
+            print(f"[d064] smoke c) terrain {terrain}: FAIL — {results[terrain][1]}", flush=True)
+            continue
+        try:
+            out, err = proc.communicate(timeout=TERRAIN_CHECK_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()  # 显式 kill，防悬挂子进程残留
+            out, err = proc.communicate()
+        # capture 后转发（父 tee 仍可见完整子进程输出）
+        if err:
+            sys.stderr.write(err if err.endswith("\n") else err + "\n")
+            sys.stderr.flush()
+        if out:
+            sys.stdout.write(out if out.endswith("\n") else out + "\n")
+            sys.stdout.flush()
+        line = next((ln for ln in (out or "").splitlines() if ln.startswith("TERRAIN_CHECK ")), None)
+        if timed_out:
+            ok, msg = False, f"timeout>{TERRAIN_CHECK_TIMEOUT_S}s"
+        elif line is None:
+            ok, msg = False, f"no-line (exit {proc.returncode})"
+        else:
+            parts = line.split(maxsplit=3)  # ["TERRAIN_CHECK", terrain, PASS|FAIL, msg...]
+            child_ok = len(parts) >= 3 and parts[2] == "PASS"
+            child_msg = parts[3] if len(parts) == 4 else ""
+            if proc.returncode == 0 and child_ok:
+                ok, msg = True, child_msg
+            elif proc.returncode != 0:
+                ok, msg = False, f"exit {proc.returncode}: {child_msg}".rstrip(": ")
+            else:
+                ok, msg = False, child_msg or "child FAIL"
+        results[terrain] = (ok, msg)
+        print(f"[d064] smoke c) terrain {terrain}: {'PASS' if ok else 'FAIL'} — {msg}", flush=True)
+    return results
+
+
+def _terrain_check_main(cli, launcher_args) -> int:
+    """--smoke-terrain-check 子命令体（独立子进程运行）。
+
+    与 --smoke 相同的 AppLauncher/env 构建链（num_envs 已强制 8）：
+    起 env -> reset + 3 步 zero action -> _height_scan_obs/_terrain_verdict 判定
+    -> 打一行机器可读 "TERRAIN_CHECK <terrain> PASS|FAIL <msg>"（flush）。
+    exit 0/1。复用 make_env_cfg 工厂与既有判定函数，判定逻辑不复制。
+    """
+    hv = _import_heavy()
+    torch = hv.torch
+    device = getattr(launcher_args, "device", "cuda:0")
+    terrain = cli.smoke_terrain_check
+    n = cli.num_envs
+    print(
+        f"[d064] terrain-check child: terrain={terrain} arm={cli.arm} num_envs={n} "
+        f"device={device} pid={os.getpid()}",
+        flush=True,
+    )
+    env_t = None
+    ok, msg = False, ""
+    try:
+        cfg_t, _ = _build_env_cfg(
+            hv.make_env_cfg, hv.mdp, hv.SonicDecoderActionTermCfg, terrain, cli.arm, cli, device, suffix=terrain
+        )
+        env_t = hv.ManagerBasedRLEnv(cfg=cfg_t)
+        obs_t, _ = env_t.reset()
+        adim_t = int(env_t.action_manager.total_action_dim)
+        for _ in range(3):
+            obs_t, *_ = env_t.step(torch.zeros(n, adim_t, device=env_t.device))
+        hs, how = _height_scan_obs(env_t, obs_t["policy"])
+        ok, msg = _terrain_verdict(terrain, hs, how)
+    except Exception as exc:  # noqa: BLE001 —— 任何失败都落到 TERRAIN_CHECK FAIL 行
+        ok, msg = False, f"{type(exc).__name__}: {exc}"
+    finally:
+        if env_t is not None:
+            try:
+                env_t.close()
+            except Exception:
+                pass
+    print(f"TERRAIN_CHECK {terrain} {'PASS' if ok else 'FAIL'} {msg}".rstrip(), flush=True)
+    return 0 if ok else 1
 
 
 def main() -> None:
@@ -804,7 +1002,7 @@ def main() -> None:
     cli = build_args().parse_args()
     if cli.resume and not cli.ckpt:
         build_args().error("--resume 需要 --ckpt <path>")
-    if cli.smoke:
+    if cli.smoke or cli.smoke_terrain_check:
         cli.num_envs = SMOKE_NUM_ENVS
         cli.max_iterations = SMOKE_ITERS
 
@@ -822,14 +1020,20 @@ def main() -> None:
     app_launcher = AppLauncher(launcher_args)
     simulation_app = app_launcher.app
 
+    exit_code = 0
     try:
-        _run(cli, out_dir, launcher_args)
+        if cli.smoke_terrain_check:
+            # 单地形检查子进程体：打 TERRAIN_CHECK 行后以 exit 0/1 结束
+            exit_code = _terrain_check_main(cli, launcher_args)
+        else:
+            _run(cli, out_dir, launcher_args)
     except Exception as exc:
         if cli.smoke:
             print(f"SMOKE FAIL: {type(exc).__name__}: {exc}", flush=True)
         raise
     finally:
         simulation_app.close()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
