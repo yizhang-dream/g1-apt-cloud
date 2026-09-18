@@ -405,6 +405,22 @@
 
 **预算与停止**：G1 半天；G2 lab-ts CPU 隔夜；G3 冒烟半天+全网格 ≤1 天；G4 ≤半天；源 4 首批 ≤2h CVGL 4090（≤100 run，EULA 已验证）。窗格式字段变更=判据变更报 owner；源 1 KL 越带 >50% 命令点 → 源 1 停线报 owner。
 
+## §5u D064：RL 底座迁移（Isaac Lab manager-based + rsl_rl）+ 冻结 decoder 归因重跑（09-19 立项，owner「我支持你的计划,开始吧.记得使用cvgl」；承接 09-18 快照〔DS_TRACKING_STATUS_2026-09-18〕训练框架未决 + owner 09-19 纠正「RL 失败期是自研手搓流水线、调研已有可模仿开源工作」）
+
+**动机与归因定位**：E 系全部负结果跑在自建 DirectRLEnv + 手写 ppo_core（最小 5 项奖励 / PPO epochs 默认 1 / 无 lr 调度 / 无地形课程 / 无域随机化）+ 64–128 envs（E9/E11/E16=64，E48=128——09-18 快照「都是 128 envs」勘误）；`LITERATURE_SURVEY_FROZEN_DECODER` 解法 1（stock 官方配方当决定性基线）**从未带冻结 decoder 跑过**（M-FROM0 换整套栈不隔离）。本实验 = 解法 1 的「带冻结 decoder」版：官方配方 + 千级 envs 下，单变量隔离「冻结 decoder 接口」的真实代价。
+
+**底座决策（owner 09-19 已批）**：Isaac Lab manager-based velocity 栈 + rsl_rl（官方 G1 rough 任务为底）；冻结 SONIC ONNX decoder 挂自定义 ActionTerm（`sonic_action_term.py`）；动作空间 = 64 维 FSQ token 直出（无 VAE，计划 v2 决策③）；特权高程 = 官方 height_scan（RayCaster 网格，任意地形成立——旧 `elevation_map.py`「结构化地形静默全零」缺口在新栈结构性不存在）；asymmetric actor-critic（critic 特权组 = policy 全项 + base_lin_vel + height_scan 原值）。mjlab 保持跨引擎对照轨道；InstinctLab 只作零件参考（CC BY-NC，借地形定义 / foot volume points / depth 管线模式，不 fork）；单阶段 vs 蒸馏维持推迟 G6（APT 自身 = 特权高程教师 → depth/LIDAR 学生 DAgger 蒸馏，本轮已查实）。
+
+**设计（双臂同资产、动作通路单变量）**：同一 SONIC G1 articulation（USD/PD/关节名单与 E 系一致，逐字段对照 apt_flat_env 场景初始化），唯一差异 = 动作通路——A 臂 direct：官方 JointPositionActionCfg 29 维直出；B 臂 decoder：64 维 raw a → token = mean + alpha·std·a（E49/D055 已验证仿射）→ 冻结 decoder → 29 关节目标（ActionTerm 内维护 10 帧 930 维本体历史环形缓冲，last_act=(q_des−default)/scale）。奖励/课程/终止/事件全继承官方 G1 rough（含 G1Rewards 覆写：终止罚 −200、速度权重 1.0/2.0 等），不自创。
+
+**内部 gate**：G0 冒烟（8 envs × 2 it：policy/critic obs 形状断言 / decoder 臂 q_des 非零且有限 / height_scan 在 rough+stairs+stones+discrete 非零有方差、plane≈0 / rsl_rl learn 两步 / ckpt+身份信封落盘；输出可 grep 的 SMOKE PASS/FAIL 行）→ G1 双臂归因重跑（cvgl 4090 池，4096 envs 默认、2 seed/臂、≤5000 it 或收敛平台，plane→rough 官方课程）。
+
+**判读门（预注册）**：主指标 = ①课程 terrain level 中位 ②rough 0.06/0.08 固定档存活率（沿 E 系 60s 评测口径）③平地 vx 跟踪 RMSE。判读：**B≈A**（B 的 level 中位 ≥ A−1 且固定档存活率 ≥ A−25%）→ E 系负结果重定性为「自研最小配方 + 规模伪影」，地形线 RL 阶段直接用新底座；**B≪A** → 冻结 decoder 接口为机制性瓶颈（规模混淆已消的受控证据），转接口改造/残差重审。A 臂 1000 it 仍不行走 = 资产/PD 接线问题，停查再续（owner 09-05 快速迭代规范）。边界写法照纪律：结论限定在「本配方本规模」，gate≠机制。
+
+**预算与停止**：冒烟 ≤30min；双臂 2 seed × 4096 envs（4090 池实测 0.64s/it@64envs 折算，隔夜级），ckpt 每 500 it；算力不足优先于协议跑满（owner 09-05 规范），提前停则判读只对已跑部分负责；3090 池 Isaac 启动卡死前科未复验，不用。
+
+**不变量与坑**：冻结 decoder md5 入身份信封；IsaacLab 2.0.0（cvgl 镜像）与 2.1.0（lab-ts）双兼容（API 以 v2.0.0 参考源码为准，仓内 tmp/isaac_ref/ 有快照）；SONIC 29 ↔ asset 关节序映射由 G0 对拍把关；与 D060 主线并行——本线只新建文件不动旧文件，提交选择性 staging（工作树压 09-15 在途批次勿 swept）。
+
 ## 6. 阶段 2：速度覆盖、切换和独立终评
 
 0.4 m/s过门后，固定候选配方，从独立训练种子复训并评测0.2/0.4/0.6 m/s、零偏航命令；每档持续20秒。建议沿用存活、最大横漂≤0.5m、终末航向偏差≤15°、平均upright≥0.90和速度RMSE≤0.10m/s门，前进距离改为命令距离±max(1m,25%命令距离)。每档、每训练种子、每执行模式分别报告成功率，不以整体均值掩盖某一档失败。

@@ -46,7 +46,7 @@
 
 - **输入**：①运动命令（target_vel 标量 + movement_direction + mode + height，官方 planner 同构；工程坑沿 D033 在案：target_vel 数值非单调〔-1 哨兵≈2.5 > 显式 1.5〕，源 1 采集与评测统一 -1 哨兵约定 + mode 走 SLOW_WALK/RUN 调速路径）；②意图动作 token 流（语料段 / planner 生成剧本）；③特权地形观测（局部高程图/地形参数）；④本体感觉历史（**状态输入非决策口**，§3② 的「三口」指决策条件口）。
 - **输出**：64 维 FSQ token chunk（40 步 @50Hz）。
-- **训练配方**：BC 先行（四源语料 token 预测，监督式）→ RL 后续（Isaac/mjlab 地形课程 + 命令跟踪奖励）；**TA-MSE 登记=模仿漂移对策③**（①扰动回放 ②闭环微调 ③TA-MSE）；planner 生成剧本与语料段同池混训，防作者对 planner 分布 OOD。
+- **训练配方**：BC 先行（四源语料 token 预测，监督式）→ RL 后续（**Isaac manager-based 地形课程 + 命令跟踪奖励〔09-19 D064 落定，预注册=DS_CONTINUOUS_EXECUTION_PLAN §5u；mjlab 留作跨引擎对照〕**）；**TA-MSE 登记=模仿漂移对策③**（①扰动回放 ②闭环微调 ③TA-MSE）；planner 生成剧本与语料段同池混训，防作者对 planner 分布 OOD。
 - **算力纪律**：CVGL 3090 优先、4090 不足再上、**不碰 6000Ada**；bf16+grad ckpt+adafactor；单卡+梯度累积默认，多卡仅被数据量逼到时申请。
 
 ## 5. 阶段与实验号映射（v2）
@@ -76,7 +76,7 @@
 
 - **主指标**：联合任务通过率（命令+地形+意图全口，held-out 地形组合）——与 SOLO（97.5% 穿越）/FastStair（速度-成功率带）同一语言可对话；
 - **诊断轴 A · 平地命令**：速度跟踪带（对照官方 planner 实测档：deploy 回路 1.0 / planner 裸出 2.1 / 论文稳 ~4）；**方向子项**（航向误差/横漂）= ⑪ 的评测出口；
-- **诊断轴 B · 地形**：mjlab/Isaac 地形 realized_ratio + 存活率，甲乙丙式判读（沿 G0-③ 口径）；
+- **诊断轴 B · 地形**：Isaac（D064 manager-based 新栈）realized_ratio + 存活率为主〔09-19 落定〕，mjlab 跨引擎对照，甲乙丙式判读（沿 G0-③ 口径）；
 - **诊断轴 C · 保留动作**：意图 token 保真（改写距离 ≤ 阈值）+ 人工抽查录像；不许把挥手演成走路（最小改写约束的可测化）；
 - 一体训练（⑤）的失败经三轴定位到轴，不设训练关卡。
 
@@ -111,3 +111,4 @@
 
 - **v1（2026-09-16，d3ce221）**：立项版——G0 生死判别 / 数据发动机三源 / 作者 v0「z 序列臂 vs token 臂」对照 / v1 300M–1B；§5s 预注册。
 - **v2（2026-09-17，本版）**：grill-me 访谈 11 项重设计——端到端双口、三口输入、token 直出（取消 z 臂）、特权地形先行、一体训练、联合+三轴评测、三级阶梯（D061/D062/D063）、数据四源（planner 命令标注生成入列）、D058 关闭归档、N1.7 可选不动、方向轴随行+评测出口。依据=官方 planner 命令先例 + SOLO/FastStair 外部对照 + 速度遵循三证据链（§1）。G0/纲领/差异化口径不变。
+- **v2.1（2026-09-19）**：RL 底座两处「Isaac/mjlab 二选一」落定 Isaac（§4 训练配方 / §5 轴 B）——D064 = Isaac Lab manager-based + rsl_rl 新栈（冻结 decoder 挂 ActionTerm、64 维 token 直出、官方 height_scan、asymmetric critic、cvgl 4090 池双臂归因重跑）；依据 = owner 09-19「我支持你的计划,开始吧.记得使用cvgl」+「RL 失败期是自研手搓流水线、调研已有可模仿开源」纠正（E 系负结果配方/规模双混淆，LITERATURE_SURVEY 解法 1 从未带冻结 decoder 跑过）。判据口径不变；判读门见 §5u 预注册。
