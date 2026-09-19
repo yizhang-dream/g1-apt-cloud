@@ -151,7 +151,7 @@ def _load_actor_weights(hv, ckpt_path: str, obs_dim: int, action_dim: int, devic
     from rsl_rl.modules import ActorCritic
 
     ac = ActorCritic(
-        num_obs=obs_dim,
+        num_actor_obs=obs_dim,  # rsl-rl-lib 2.3.3 签名= num_actor_obs（镜像实装源码核实；新版的 num_obs 会被 TypeError）
         num_critic_obs=obs_dim,  # 评测只用 actor；critic 形状不影响 det 推理
         num_actions=action_dim,
         actor_hidden_dims=[512, 256, 128],  # = train 侧 RslRlPpoActorCriticCfg（g1_agents_ppo.py:18-23）
@@ -198,6 +198,7 @@ def _run_batches(env, ac, cli, cond, hv) -> dict:
         root_end = root0.clone()
         vx_sq_sum = torch.zeros(n, device=device)
         vx_cnt = torch.zeros(n, device=device)
+        vx_sum = torch.zeros(n, device=device)  # 诊断：命令通道核验（D048h 纪律——指标身份先于机制归因）
         obs_p = obs["policy"]
         for step in range(cli.ep_steps):
             alive_pre = alive.clone()
@@ -217,6 +218,7 @@ def _run_batches(env, ac, cli, cond, hv) -> dict:
             if cond["kind"] == "flat":
                 m = keep  # 摔步/到时步不计入 RMSE（摔步速度若计入=复位后≈0 的伪样本）
                 vx_sq_sum[m] += (pre_vel[m] - cond["vx"]) ** 2
+                vx_sum[m] += pre_vel[m]
                 vx_cnt[m] += 1
             alive = keep
             if not bool(alive.any()):
@@ -249,6 +251,23 @@ def _run_batches(env, ac, cli, cond, hv) -> dict:
         ),
         "episodes": episodes,
     }
+    if cond["kind"] == "flat":
+        # 诊断（命令通道核验）：命令是否真的钉在 vx、实际速度是否≈0——区分
+        # 「策略没学会走」与「评测命令通道失效」两种解释，判定前必读。
+        cmd_term = env.command_manager.get_term("base_velocity")
+        agg["diag"] = {
+            "cmd_vx_mean_last_batch": float(cmd_term.vel_command_b[:, 0].mean().item()),
+            "actual_vx_mean_per_env": [
+                round(float((vx_sum[i] / vx_cnt[i]).item()), 4) if vx_cnt[i].item() > 0 else None
+                for i in range(n)
+            ],
+        }
+        print(
+            f"[d064-eval][diag] flat vx={cond['vx']} cmd_vx_mean(last batch)="
+            f"{agg['diag']['cmd_vx_mean_last_batch']:.4f} actual_vx_mean(env0-2)="
+            f"{agg['diag']['actual_vx_mean_per_env'][:3]}",
+            flush=True,
+        )
     return agg
 
 
@@ -262,7 +281,10 @@ def _eval_one_main(cli, launcher_args) -> int:
     env = None
     try:
         kw = dict(
-            terrain="rough" if cond["kind"] in ("rough_levels", "rough_paper") else "plane",
+            # flat 也建 rough cfg 再换平面几何：ckpt 训练于 rough（obs=321 含 height_scan），
+            # plane cfg 的 obs=134 会让 actor 首层 size mismatch（12269 实证）；换几何后
+            # height_scan 在平地上读 ≈0 = flat 语义，奖励项在评测中不被消费。
+            terrain="rough",
             num_envs=cli.num_envs,
             action=cli.arm,
             token_stats=cli.token_stats,
@@ -287,6 +309,14 @@ def _eval_one_main(cli, launcher_args) -> int:
             if _gen is not None and hasattr(_gen, "curriculum"):
                 _gen.curriculum = False  # 与工厂 stairs/stones/discrete 分支对齐（同构不漂移）
         if cond["kind"] == "flat":
+            from isaac.terrain_cfg import make_terrain_importer_cfg  # 双路径见 _import_heavy 同款处理
+
+            # flat=rough cfg + 平面几何（保 obs 321，见上 kw 注释）
+            cfg.scene.terrain = make_terrain_importer_cfg("plane", seed=cli.seed)
+            cfg.curriculum.terrain_levels = None
+            _gen_f = getattr(cfg.scene.terrain, "terrain_generator", None)
+            if _gen_f is not None and hasattr(_gen_f, "curriculum"):
+                _gen_f.curriculum = False
             # 命令钉死第一步：重采样区间拉至无穷大（cfg 侧），批次内再戳 vel_command_b
             cmd_cfg = cfg.commands.base_velocity
             cmd_cfg.resampling_time_range = (1.0e9, 1.0e9)  # 冒烟核对：term cfg 字段名
