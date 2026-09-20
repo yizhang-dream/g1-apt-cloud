@@ -421,6 +421,28 @@
 
 **不变量与坑**：冻结 decoder md5 入身份信封；IsaacLab 2.0.0（cvgl 镜像）与 2.1.0（lab-ts）双兼容（API 以 v2.0.0 参考源码为准，仓内 tmp/isaac_ref/ 有快照）；SONIC 29 ↔ asset 关节序映射由 G0 对拍把关；与 D060 主线并行——本线只新建文件不动旧文件，提交选择性 staging（工作树压 09-15 在途批次勿 swept）。
 
+## §5v D061：作者阶梯 v0——≤80M 训练管线+BC 链路贯通（09-20 立项，owner「按顺序进行下一步实验,不停止」；D060 G5 产量门 PASS〔09-20，四源 9,583 窗/1,916,600 帧，g1_assembly_full 就绪〕后按 §5t 预注册自动获得发射资格；计划=DS_TERRAIN_AUTHOR_PLAN §5 G2 门；零 RL——纯 BC 监督训练）
+
+**定位（两段制）**：作者阶梯 v0（D061）管线验证+BC 链路贯通冒烟，非能力验收——**D061a 训练管线+BC 收敛门（本段即刻发射）/ D061b 三轴电池贯通（a 过门后发射，占位不预支预算）**。
+
+**动机**：D060 G5 产量门 PASS（1,916,600 帧/9,583 窗四源统一窗语料），作者 v0（≤80M）BC 先行的数据前置闭合；模型阶梯 80M→300M→1B 升档受产量门控（计划 §3⑦）。
+
+**模型规格（v0）**：TinyCausalWindowTransformer 同构放大（G1 消费者测试 d060_consumer_stub.TinyCausalWindowTransformer 的骨架：64 token 维共享 embedding 表取均值+state 线性投影+command/terrain 双前缀上下文帧+可学位置表+causal mask+Linear 头出 (b,t,64,V)）——d_model 768/n_layer 11/n_head 12/ffn 3072，**参数量硬门 ≤80M（实测打印，超则减一层重配）**；码域并集 [-15,13] V=29（G4 装配实读四源：src1 [-14,13]/src2 [-13,12]/src3 [-15,13]/src4 [-14,12]）；训练口径=**逐帧 teacher-forcing next-token CE（199 目标位/窗，与 G1 消费者测试同口径）**；「40 步 chunk」为推理期滑窗自回归接口，v0 不训 chunk 头（升档 D062 再评直接 chunk 头）。
+
+**数据口径**：g1_assembly_full 四源全池**均匀混训**（窗级均匀；src1 占 78% 系网格生成天然占比，不加权）；**heldout 窗（演员级，78 名）绝不进训练**（loader 断言 split=train only，泄漏审计=0 入门）；val=从 train 池**窗级随机抽 5%（seed 0）**（heldout 只进 G5 评测不算 BC val）；state=36 维冻结（owner 09-17 裁决，jv 不并入〔d060_windows 显式留给本项的决策=不并〕）；**源 4 q_des_cmd_root 口径直混**（manifest state_source 分列在案；--exclude-src4 敏感性对照臂仅在主臂收敛异常时启动，不预占预算）。装配内窗全 split=train（heldout 演员已在 D060 选段上游排除），门④ leak 审计=结构性满足+loader 断言双保险。
+
+**超参与记账**：adafactor（lr 1e-3、relative_step=False、scale_parameter=False）+warmup 1000 步+cosine 至 1e-5；batch 64 窗；bf16 autocast+grad ckpt（3060 不支持 bf16 则 fp16+GradScaler 回退，meta 如实记录）；max_epochs 30；eval 每 0.1 epoch（val loss+next-token top1-acc）；ckpt 每 0.5 epoch+final；meta.json 曲线+身份信封（git rev/语料 manifest md5/args）+沙箱防覆盖（E39 工程惯例）。步数账=9,583 窗×(1-5% val)÷64≈142 步/epoch×30≈4,300 步（3 epochs 仅 ~430 步走不完 warmup 1000，收敛判读不成立故定 30）；warmup 1000 步≈23% 预热；3060 预估 1-3h（吞吐实测入账）。
+
+**算力**：lab-ts 3060 首发算力（语料在本地零搬运；80M bf16+ckpt 12GB 可容；单卡纪律）；吞吐实测入账，不足再 CVGL 3090（不碰 6000Ada；3090 Isaac 卡死前科与本任务无关——本任务非 Isaac 栈）。
+
+**D061a 门（BC 链路贯通，预注册判读）**：四条全过=PASS——①全程无发散/NaN 完成预设 epoch 预算（或触发平台早停）；②val loss 尾部 5 个 eval 点相对变化 <3% 且较首个 eval 点净下降；③val next-token top1-acc ≥5×均匀基线（1/29≈3.4%→17.2%，门值冻结 0.185 较此从严〔保守方向〕）；④训练 loader 泄漏审计=0（heldout 窗零进入，断言+计数入 meta）。**不过=如实落账**（数据/架构/超参三轴归因排查表），不硬凑。
+
+**D061b 门（三轴电池「可跑」，占位）**：数值不设门——阈值门是作者阶梯 D063/G5 验收的事；三轴只验贯通出数——轴 A 平地命令闭环（BC ckpt→冻结 decoder→MuJoCo flat env rollout 出数）；轴 B Isaac D064 栈（eval_g1_decoder 或等价 adapter 接受 BC 作者 ckpt 出数）；轴 C 意图保真（token 改写距离 metric 出数）。
+
+**预算与停止**：lab-ts 单卡隔夜级（吞吐实测后入账精确预算；6h 无 eval 点产出=杀线报 owner；val loss 连续 10 eval 点上行=早停落账）；不因慢加卡；窗格式字段变更=判据变更报 owner。
+
+**台账与交付**：tracker D.md D061 行随发射提交（a 段状态 RUNNING）；训练脚本 apt_g1/training/train_author_v0.py 入仓+SCRIPT_MAP 登记。
+
 ## 6. 阶段 2：速度覆盖、切换和独立终评
 
 0.4 m/s过门后，固定候选配方，从独立训练种子复训并评测0.2/0.4/0.6 m/s、零偏航命令；每档持续20秒。建议沿用存活、最大横漂≤0.5m、终末航向偏差≤15°、平均upright≥0.90和速度RMSE≤0.10m/s门，前进距离改为命令距离±max(1m,25%命令距离)。每档、每训练种子、每执行模式分别报告成功率，不以整体均值掩盖某一档失败。
