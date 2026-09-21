@@ -149,6 +149,13 @@ try:  # 服务器执行根平铺 import / 仓库根包 import 双兼容（仓内
 except ImportError:  # pragma: no cover（本机走此支，需 apt_g1 可导入）
     from apt_g1.isaac.sonic_action_term import SonicDecoderActionTermCfg
 
+# D065 C 臂（v2 in-graph）：decoder 迁进 policy 后，env 侧只负责提供 decoder 的
+# **本体历史观测**（930 维，raw 无噪声）——即 B 臂 ActionTerm 的 assemble 内容。
+try:
+    from isaac.sonic_lora_policy import PROPRIO_DIM, sonic_proprio_hist
+except ImportError:  # pragma: no cover（本机走此支）
+    from apt_g1.isaac.sonic_lora_policy import PROPRIO_DIM, sonic_proprio_hist
+
 __all__ = [
     "DecoderActionsCfg",
     "DirectActionsCfg",
@@ -157,6 +164,8 @@ __all__ = [
     "G1SonicDecoderEnvCfg_PLAY",
     "G1SonicDirectEnvCfg",
     "G1SonicDirectEnvCfg_PLAY",
+    "LoRAPolicyObservationsCfg",
+    "G1SonicLoRAPolicyEnvCfg",
     "make_env_cfg",
 ]
 
@@ -326,6 +335,51 @@ class G1SonicDirectEnvCfg(G1RoughEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         _adapt_g1_sonic_asset(self)
+
+
+##
+# D065 C 臂（v2 in-graph）：A 臂动作通路逐字 + policy 组追加 930 维 decoder 本体历史观测
+##
+
+
+@configclass
+class LoRAPolicyObservationsCfg(G1SonicObservationsCfg):
+    """policy 组 = 官方八项（逐字继承）+ 末位追加 `sonic_proprio`（930 维）。
+
+    - 追加项 = decoder 的**本体输入契约**（token 64 之外的 930 维，见 sonic_action_term.py:24-34
+      的通道序）；值由 `sonic_lora_policy.sonic_proprio_hist` 用 **SonicActionCore 同一份代码**
+      （历史环形缓冲 + assemble）产出，raw 无噪声——因为它是 decoder 的输入而不是策略输入，
+      加噪/缩放会与 B 臂 ActionTerm 的输入分布不一致。
+    - 末位追加（dataclass 字段序）保证策略侧切片 `obs[:, :official_dim]` 恰为官方八项，
+      即 token head 的输入与 A/B 臂 actor 输入逐字同维（见 sonic_lora_policy.SonicLoRAPolicy）。
+    - critic 组不动（`CriticCfg` 显式列项，不受 policy 组新增项影响）⇒ 特权 critic 与 A/B 逐字同构。
+    """
+
+    @configclass
+    class PolicyCfg(G1SonicObservationsCfg.PolicyCfg):  # type: ignore[misc]
+        # 末位追加（继承字段在前 ⇒ 该项在拼接序末位）
+        sonic_proprio = ObsTerm(
+            func=sonic_proprio_hist,
+            params={"action_term_name": "joint_pos", "asset_name": "robot"},
+        )
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class G1SonicLoRAPolicyEnvCfg(G1SonicDirectEnvCfg):
+    """D065 C 臂（v2）：env 侧 = Direct 臂逐字（同一 `DirectActionsCfg` 对象类）+ 本体历史观测项。
+
+    与 `G1SonicDirectEnvCfg` 的唯一差异 = `observations.policy` 末位多一项 930 维
+    `sonic_proprio`；动作通路（JointPositionActionCfg scale=0.5/use_default_offset=True）、
+    奖励、终止、课程、命令、critic 组全部逐字继承 ⇒ 「C vs A」的单变量 = **decoder 是否在
+    动作路径上且其权重可否适配**（decoder 由 policy 侧持有，见 sonic_lora_policy.py）。
+    """
+
+    observations: LoRAPolicyObservationsCfg = LoRAPolicyObservationsCfg()
+
+    def __post_init__(self):
+        super().__post_init__()  # Direct 臂链：G1Rewards/资产适配/DirectActionsCfg 全部照旧
 
 
 ##
@@ -504,7 +558,9 @@ def make_env_cfg(
     - terrain in {"stairs","stones","discrete"}：terrain_cfg.py:149-217 的 Hf 配方，
       课程关（terrain_levels=None + generator.curriculum=False，官方置 False 先例
       rough_env_cfg.py:170）；height_scan RayCaster 保留（与地形类型无关，T1）。
-    - action="decoder"|"direct"：两臂唯一差异在 actions（其余逐字同构）。
+    - action="decoder"|"direct"|"lora_policy"：decoder/direct 两臂唯一差异在 actions；
+      lora_policy（D065 C 臂 v2）= direct 逐字 + policy 组末位追加 930 维本体历史观测
+      （decoder 由 policy 侧持有，env 侧无 decoder action term）。
     - play=True：官方 PLAY 配方（rough_env_cfg.py:156-180）叠加在地形变体之后；
       含官方 PLAY 的命令覆写（非 rough 地形 + play 时命令也取 PLAY 值，工厂层约定）。
     - num_envs 在类默认/PLAY 值之后最终生效。
@@ -517,8 +573,10 @@ def make_env_cfg(
         cfg = G1SonicDecoderEnvCfg()
     elif action == "direct":
         cfg = G1SonicDirectEnvCfg()
+    elif action == "lora_policy":
+        cfg = G1SonicLoRAPolicyEnvCfg()
     else:
-        raise ValueError(f"unknown action {action!r} (expect 'decoder' or 'direct')")
+        raise ValueError(f"unknown action {action!r} (expect 'decoder'/'direct'/'lora_policy')")
 
     if terrain == "rough":
         pass  # 官方课程原样
