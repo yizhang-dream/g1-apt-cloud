@@ -1,0 +1,323 @@
+{
+  "format": "d061b.axis_b.v0",
+  "identity": {
+    "script": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/isaac/eval_author_v0_decoder.py",
+    "script_md5": "3092fc753e892af04427c6ce70e90ff4",
+    "git_head": "2ca1b40",
+    "ckpt": "/home/cvgluser/ros2_data/apt_g1/outputs/d061_author_v0/ckpt_final.pt",
+    "ckpt_md5": "00fbaed5f325271ae7e047f578dc9abb",
+    "model_cfg": {
+      "d_model": 768,
+      "n_layer": 11,
+      "n_head": 12,
+      "ffn": 3072,
+      "vocab": 29,
+      "code_min": -15,
+      "state_dim": 36,
+      "win": 200,
+      "token_dim": 64
+    },
+    "env_module_md5": {
+      "g1_velocity_decoder_env.py": "575435c490c4d715226e699139348514",
+      "sonic_action_term.py": "a93b095bec0a390fc3604f30d07082b3",
+      "sonic_decoder_torch.py": "5b5a3046bb36f38516496bde47ba9736",
+      "eval_author_v0_decoder.py": "3092fc753e892af04427c6ce70e90ff4",
+      "gear_sonic/robots/g1.py": "ccc611133f63131c6c55d87abcf3de13",
+      "gear_sonic/env_utils/joint_utils.py": "8a73692f49097e7593caf1fc643b5b91"
+    },
+    "joint_perm": {
+      "mujoco_to_isaaclab": [
+        0,
+        6,
+        12,
+        1,
+        7,
+        13,
+        2,
+        8,
+        14,
+        3,
+        9,
+        15,
+        22,
+        4,
+        10,
+        16,
+        23,
+        5,
+        11,
+        17,
+        24,
+        18,
+        25,
+        19,
+        26,
+        20,
+        27,
+        21,
+        28
+      ],
+      "md5": "89b90257b4744ba3c0ee68d204096f6a"
+    },
+    "onnx_path": {
+      "requested": "",
+      "consumed": false,
+      "effective": "factory-default(make_env_cfg, SONIC_DECODER_ONNX)"
+    },
+    "obs_dim_assumption": {
+      "flat": 134,
+      "rough": 321
+    }
+  },
+  "env_dim_check": {
+    "obs_dim_policy_observed": [
+      321
+    ],
+    "action_dim_observed": [
+      64
+    ],
+    "obs_dim_expected": 321,
+    "action_dim_expected": 64,
+    "ok": true
+  },
+  "conditions": [
+    {
+      "kind": "flat",
+      "cond": {
+        "kind": "flat",
+        "vx": 0.4,
+        "seed": 0
+      },
+      "n_episodes": 8,
+      "survival_rate": 1.0,
+      "mean_disp_x": -0.00625,
+      "mean_vx_rmse": 0.38120000000000004,
+      "obs_dim_policy": 321,
+      "action_dim": 64,
+      "perm_identity": true,
+      "term_joint_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "token_bound": "tanh",
+      "token_alpha": 1.0,
+      "token_scale": 16,
+      "onnx_path_requested": "",
+      "episodes": [
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.033,
+          "disp_x": 0.004,
+          "vx_rmse": 0.3841
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.038,
+          "disp_x": -0.032,
+          "vx_rmse": 0.3812
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.04,
+          "disp_x": 0.012,
+          "vx_rmse": 0.3794
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.043,
+          "disp_x": -0.042,
+          "vx_rmse": 0.3786
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.035,
+          "disp_x": -0.019,
+          "vx_rmse": 0.3828
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.042,
+          "disp_x": -0.018,
+          "vx_rmse": 0.3787
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.041,
+          "disp_x": 0.025,
+          "vx_rmse": 0.3813
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.031,
+          "disp_x": 0.02,
+          "vx_rmse": 0.3835
+        }
+      ],
+      "diag": {
+        "cmd_vx_mean_last_batch": 0.5004174709320068,
+        "cmd_term_shape": [
+          8,
+          3
+        ]
+      }
+    },
+    {
+      "kind": "flat",
+      "cond": {
+        "kind": "flat",
+        "vx": 0.6,
+        "seed": 0
+      },
+      "n_episodes": 8,
+      "survival_rate": 1.0,
+      "mean_disp_x": 0.020375,
+      "mean_vx_rmse": 0.5775625,
+      "obs_dim_policy": 321,
+      "action_dim": 64,
+      "perm_identity": true,
+      "term_joint_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "token_bound": "tanh",
+      "token_alpha": 1.0,
+      "token_scale": 16,
+      "onnx_path_requested": "",
+      "episodes": [
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.118,
+          "disp_x": 0.071,
+          "vx_rmse": 0.5635
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.037,
+          "disp_x": 0.035,
+          "vx_rmse": 0.5801
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.038,
+          "disp_x": 0.011,
+          "vx_rmse": 0.581
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.033,
+          "disp_x": 0.032,
+          "vx_rmse": 0.581
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.046,
+          "disp_x": -0.035,
+          "vx_rmse": 0.5773
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.041,
+          "disp_x": 0.034,
+          "vx_rmse": 0.5787
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.041,
+          "disp_x": 0.041,
+          "vx_rmse": 0.5789
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.038,
+          "disp_x": -0.026,
+          "vx_rmse": 0.58
+        }
+      ],
+      "diag": {
+        "cmd_vx_mean_last_batch": 0.816585123538971,
+        "cmd_term_shape": [
+          8,
+          3
+        ]
+      }
+    }
+  ],
+  "aggregate": {
+    "n_conditions": 2,
+    "n_ok": 2,
+    "n_failed": 0,
+    "n_episodes": 16,
+    "survival_rate": 1.0,
+    "mean_disp_x": 0.0070625
+  }
+}

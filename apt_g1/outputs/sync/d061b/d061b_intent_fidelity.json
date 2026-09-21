@@ -1,0 +1,225 @@
+{
+ "exp": "D061B_INTENT_FIDELITY",
+ "created_at": "2026-09-20 23:51:29",
+ "elapsed_s": 333.9,
+ "metric_defs": {
+  "token_top1_acc": "【主轴】自回归生成区（帧 K..WIN-1，K=--prefix-frames）内 64 个 token 维各自 argmax 命中真值码的比例，分母 = 生成区帧数×64（前 K 帧给真值上下文，K 起 token/intent 两槽同时回填生成码）。",
+  "token_top1_acc_full_window": "单次整窗 teacher-forcing 前向（token/intent 两槽全真值）下，帧 1..WIN-1 的逐码 top1 命中率（真值前缀上界口径，不受 K 影响）。",
+  "token_top1_acc_last100": "teachers-forcing 整窗口径下最后 min(100, WIN-1) 帧的逐码 top1 命中率（默认 K=100 时其帧区间与生成区一致，可与主轴对读）。",
+  "token_value_mae": "生成区码→物理值（value = code / token_scale，token_scale=16）后与真值逐码绝对误差均值（诊断用辅助量）。",
+  "frame_exact_match": "生成区内 64 维全部命中的帧占比（帧级全中，比逐码更严）。",
+  "frame_exact_match_full_window": "teacher-forcing 整窗口径（帧 1..WIN-1）的 64 维全中帧占比。",
+  "intent_rewrite_distance": "生成区 intent 槽被回填生成码后，与真值 intent 码的逐帧汉明距离（每帧 0..64 个码不同）对帧取平均——量化 intent 重写保真度。",
+  "intent_rewrite_distance_norm": "intent_rewrite_distance / 64（归一化到 [0,1]）。",
+  "n_windows": "该分组（per source 或 overall）参与评测的 val 窗数。",
+  "n_frames": "该分组生成区帧数（n_windows × (WIN-K)）。",
+  "n_codes": "该分组生成区码数（n_frames × 64，等于 token_top1_acc 的分母）。"
+ },
+ "overall": {
+  "token_top1_acc": 0.5510141570981211,
+  "token_top1_acc_full_window": 0.6474548827120992,
+  "token_top1_acc_last100": 0.6632571111691022,
+  "frame_exact_match": 0.06334029227557411,
+  "frame_exact_match_full_window": 0.05937831118011771,
+  "intent_rewrite_distance": 28.73509394572025,
+  "token_value_mae": 0.04781384557672234,
+  "n_windows": 479,
+  "n_frames": 47900,
+  "n_codes": 3065600,
+  "intent_rewrite_distance_norm": 0.44898584290187893
+ },
+ "per_source": {
+  "src1_planner_script": {
+   "token_top1_acc": 0.5518910590277778,
+   "token_top1_acc_full_window": 0.6549538054857621,
+   "token_top1_acc_last100": 0.6637296006944444,
+   "frame_exact_match": 0.005111111111111111,
+   "frame_exact_match_full_window": 0.0066303740926856505,
+   "intent_rewrite_distance": 28.67897222222222,
+   "token_value_mae": 0.045145209418402776,
+   "n_windows": 360,
+   "n_frames": 36000,
+   "n_codes": 2304000,
+   "intent_rewrite_distance_norm": 0.4481089409722222
+  },
+  "src2_climb_corpus": {
+   "token_top1_acc": 0.37587109375,
+   "token_top1_acc_full_window": 0.506381516959799,
+   "token_top1_acc_last100": 0.55933984375,
+   "frame_exact_match": 0.0,
+   "frame_exact_match_full_window": 0.0,
+   "intent_rewrite_distance": 39.94425,
+   "token_value_mae": 0.0777001953125,
+   "n_windows": 40,
+   "n_frames": 4000,
+   "n_codes": 256000,
+   "intent_rewrite_distance_norm": 0.62412890625
+  },
+  "src3_official_flat": {
+   "token_top1_acc": 0.4013164893617021,
+   "token_top1_acc_full_window": 0.5148414947075804,
+   "token_top1_acc_last100": 0.5295146276595745,
+   "frame_exact_match": 0.000851063829787234,
+   "frame_exact_match_full_window": 0.008232652624826258,
+   "intent_rewrite_distance": 38.31574468085106,
+   "token_value_mae": 0.07424430684840426,
+   "n_windows": 47,
+   "n_frames": 4700,
+   "n_codes": 300800,
+   "intent_rewrite_distance_norm": 0.5986835106382978
+  },
+  "src4_closed_loop": {
+   "token_top1_acc": 0.9799462890625,
+   "token_top1_acc_full_window": 0.9342096223304021,
+   "token_top1_acc_last100": 0.9842724609375,
+   "frame_exact_match": 0.889375,
+   "frame_exact_match_full_window": 0.8021356783919598,
+   "intent_rewrite_distance": 1.2834375,
+   "token_value_mae": 0.0016583251953125,
+   "n_windows": 32,
+   "n_frames": 3200,
+   "n_codes": 204800,
+   "intent_rewrite_distance_norm": 0.0200537109375
+  }
+ },
+ "env": {
+  "ckpt": "/home/cvgluser/ros2_data/apt_g1/outputs/d061_author_v0/ckpt_final.pt",
+  "ckpt_md5": "00fbaed5f325271ae7e047f578dc9abb",
+  "ckpt_step": 4290,
+  "ckpt_format": "d061a.v0",
+  "meta": {
+   "path": "/home/cvgluser/ros2_data/apt_g1/outputs/d061_author_v0/meta.json",
+   "md5": "f3c360b0c939437f79dc8aa87a8fcf7c",
+   "model": {
+    "d_model": 768,
+    "n_layer": 11,
+    "n_head": 12,
+    "ffn": 3072,
+    "n_params": 79634240,
+    "max_params": 80000000,
+    "grad_ckpt": true,
+    "vocab": 29,
+    "code_range": [
+     -15,
+     13
+    ],
+    "param_budget_ok": true
+   },
+   "args": {
+    "assembly_manifest": "data/d060/g1_assembly_full/assembly_manifest.json",
+    "data_root": "data",
+    "exclude_src4": false,
+    "limit_windows": null,
+    "val_frac": 0.05,
+    "val_seed": 0,
+    "num_workers": 2,
+    "batch_windows": 64,
+    "epochs": 30,
+    "lr": 0.001,
+    "warmup_steps": 1000,
+    "amp": "auto",
+    "grad_ckpt": true,
+    "d_model": 768,
+    "n_layer": 11,
+    "n_head": 12,
+    "ffn": 3072,
+    "max_params": 80000000,
+    "eval_every_frac": 0.1,
+    "ckpt_every_frac": 0.5,
+    "patience": 10,
+    "out_dir": "outputs/d061_author_v0",
+    "force": false,
+    "device": "auto",
+    "seed": 0,
+    "selftest": false,
+    "print_params_only": false
+   },
+   "gate": {
+    "marker": "D061A_GATE_PASS",
+    "pass": true
+   },
+   "leak_audit": {
+    "train_windows": 9583,
+    "heldout_excluded": 0,
+    "heldout_entered": 0,
+    "corpus_has_heldout": false,
+    "other_split_excluded": 0,
+    "train_before_limit": 9583
+   }
+  },
+  "script": "/home/cvgluser/ros2_data/apt_g1/author_intent_fidelity.py",
+  "script_md5": "2494f414eafe6477ca4ed1b4855cb1ac",
+  "train_module": "/home/cvgluser/ros2_data/training/train_author_v0.py",
+  "train_module_md5": null,
+  "module_fallback": true,
+  "assembly_manifest": "/home/cvgluser/ros2_data/apt_g1/data/d060/g1_assembly_full/assembly_manifest.json",
+  "assembly_md5": "40aa783e3e172173bec89849f5438711",
+  "corpus_md5_combined": null,
+  "source_stats": {
+   "src1_planner_script": {
+    "manifest": "/home/cvgluser/ros2_data/apt_g1/data/d060/windows_src1_full/manifest.json",
+    "manifest_md5": "4ff69d20b98717d1d52e1d80c21c434c",
+    "windows_train": 7485,
+    "windows_heldout": 0
+   },
+   "src2_climb_corpus": {
+    "manifest": "/home/cvgluser/ros2_data/apt_g1/data/ds_bones/g1_d060_climb_full/windows/manifest.json",
+    "manifest_md5": "cb0b2329e3745dcf4e2a38b7ec4c7c1b",
+    "windows_train": 688,
+    "windows_heldout": 0
+   },
+   "src3_official_flat": {
+    "manifest": "/home/cvgluser/ros2_data/apt_g1/data/ds_bones/d060_windows_src3/manifest.json",
+    "manifest_md5": "8294709d850af0f1f3980e6d67de865a",
+    "windows_train": 732,
+    "windows_heldout": 0
+   },
+   "src4_closed_loop": {
+    "manifest": "/home/cvgluser/ros2_data/apt_g1/data/d060/windows_src4_full/manifest.json",
+    "manifest_md5": "604dcf6b62a2298ab0c08c71395dbfa5",
+    "windows_train": 678,
+    "windows_heldout": 0
+   }
+  },
+  "leak_audit": {
+   "train_windows": 9583,
+   "heldout_excluded": 0,
+   "heldout_entered": 0,
+   "corpus_has_heldout": false,
+   "other_split_excluded": 0,
+   "train_before_limit": 9583
+  },
+  "exclude_src4": false,
+  "torch": "2.5.1+cu124",
+  "device": "cuda"
+ },
+ "config": {
+  "prefix_frames": 100,
+  "win": 200,
+  "token_dim": 64,
+  "token_scale": 16,
+  "code_min": -15,
+  "vocab": 29,
+  "model_cfg": {
+   "d_model": 768,
+   "n_layer": 11,
+   "n_head": 12,
+   "ffn": 3072,
+   "vocab": 29,
+   "code_min": -15,
+   "state_dim": 36,
+   "win": 200,
+   "token_dim": 64
+  },
+  "val_frac": 0.05,
+  "val_seed": 0,
+  "limit_val_windows": null,
+  "batch_windows": 4,
+  "data_root": "data",
+  "exclude_src4": false,
+  "rollout": "teacher-forced 前 K 帧 + K..WIN-1 逐帧自回归；每步前向 0..k-1（因果掩码等价整窗）；token 与 intent 两槽同时回填生成码；state/ctx 只用真值（无其它回填）"
+ },
+ "notes": [
+  "train_author_v0 加载失败（文件不存在：/home/cvgluser/ros2_data/training/train_author_v0.py）→ 启用内置副本（模型类/索引/窗读取）；上游路径 /home/cvgluser/ros2_data/training/train_author_v0.py"
+ ]
+}
