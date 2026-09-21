@@ -1,0 +1,376 @@
+{
+  "entry": "apt_g1/isaac/d066_privileged_gate.py",
+  "format": 1,
+  "experiment": "D066",
+  "gate": "A0-privileged (C2+C3)",
+  "created_at": "2026-09-22T05:10:29+0800",
+  "git_head": "unknown",
+  "cli": {
+    "arm": "direct",
+    "num_envs": 8,
+    "steps": 20,
+    "seed": 0,
+    "onnx_path": "/home/cvgluser/ros2_data/GR00T-WholeBodyControl/gear_sonic_deploy/policy/release/model_decoder.onnx",
+    "onnx_md5_baseline": "1d4391ad404d0ff36281abec349b23fd",
+    "baseline_json": ""
+  },
+  "family_order": [
+    "plane",
+    "rough_paper_0.04",
+    "rough_paper_0.08",
+    "climb_box_0.5"
+  ],
+  "complex_families": [
+    "rough_paper_0.04",
+    "rough_paper_0.08",
+    "climb_box_0.5"
+  ],
+  "families": {
+    "plane": {
+      "spec": {
+        "box_height": null,
+        "complex": false,
+        "desc": "官方 G1FlatEnvCfg flat 语义（_apply_flat_semantics；height_scan 整项置 None）→ 幅值约定 ≈0",
+        "kind": "plane",
+        "noise": null,
+        "terrain": "plane"
+      },
+      "climb_box_height_range": [
+        0.4,
+        0.5
+      ],
+      "critic": {
+        "abs_max": 0.0,
+        "abs_mean": 0.0,
+        "abs_std": 0.0,
+        "all_finite": true,
+        "mean": 0.0,
+        "n": 8,
+        "n_finite": 8,
+        "nonzero_frac": 0.0,
+        "std": 0.0
+      },
+      "family": "plane",
+      "groups": {
+        "critic": "term-absent",
+        "policy": "term-absent"
+      },
+      "height_scan": {
+        "critic": {
+          "how": "term-absent",
+          "stats": {
+            "abs_max": 0.0,
+            "abs_mean": 0.0,
+            "abs_std": 0.0,
+            "all_finite": true,
+            "mean": 0.0,
+            "n": 8,
+            "n_finite": 8,
+            "nonzero_frac": 0.0,
+            "std": 0.0
+          },
+          "term_absent": true
+        },
+        "policy": {
+          "how": "term-absent",
+          "stats": {
+            "abs_max": 0.0,
+            "abs_mean": 0.0,
+            "abs_std": 0.0,
+            "all_finite": true,
+            "mean": 0.0,
+            "n": 8,
+            "n_finite": 8,
+            "nonzero_frac": 0.0,
+            "std": 0.0
+          },
+          "term_absent": true
+        }
+      },
+      "policy": {
+        "abs_max": 0.0,
+        "abs_mean": 0.0,
+        "abs_std": 0.0,
+        "all_finite": true,
+        "mean": 0.0,
+        "n": 8,
+        "n_finite": 8,
+        "nonzero_frac": 0.0,
+        "std": 0.0
+      }
+    },
+    "rough_paper_0.04": {
+      "spec": {
+        "box_height": null,
+        "complex": true,
+        "desc": "terrain_cfg.rough_paper noise=0.04（G0 论文形对称噪声，E 系口径）",
+        "kind": "rough_paper",
+        "noise": 0.04,
+        "terrain": "rough_paper"
+      },
+      "climb_box_height_range": [
+        0.4,
+        0.5
+      ],
+      "critic": {
+        "abs_max": 0.41107940673828125,
+        "abs_mean": 0.2991541627256628,
+        "abs_std": 0.03406348571783296,
+        "all_finite": true,
+        "mean": 0.2991541627256628,
+        "n": 29920,
+        "n_finite": 29920,
+        "nonzero_frac": 1.0,
+        "std": 0.03406348571783296
+      },
+      "family": "rough_paper_0.04",
+      "groups": {
+        "critic": "slice@7[99:286]",
+        "policy": "slice@7[99:286]"
+      },
+      "height_scan": {
+        "critic": {
+          "how": "slice@7[99:286]",
+          "stats": {
+            "abs_max": 0.41107940673828125,
+            "abs_mean": 0.2991541627256628,
+            "abs_std": 0.03406348571783296,
+            "all_finite": true,
+            "mean": 0.2991541627256628,
+            "n": 29920,
+            "n_finite": 29920,
+            "nonzero_frac": 1.0,
+            "std": 0.03406348571783296
+          },
+          "term_absent": false
+        },
+        "policy": {
+          "how": "slice@7[99:286]",
+          "stats": {
+            "abs_max": 0.49961337447166443,
+            "abs_mean": 0.2988028187095561,
+            "abs_std": 0.06673534646473023,
+            "all_finite": true,
+            "mean": 0.2988028187095561,
+            "n": 29920,
+            "n_finite": 29920,
+            "nonzero_frac": 1.0,
+            "std": 0.06673534646473023
+          },
+          "term_absent": false
+        }
+      },
+      "policy": {
+        "abs_max": 0.49961337447166443,
+        "abs_mean": 0.2988028187095561,
+        "abs_std": 0.06673534646473023,
+        "all_finite": true,
+        "mean": 0.2988028187095561,
+        "n": 29920,
+        "n_finite": 29920,
+        "nonzero_frac": 1.0,
+        "std": 0.06673534646473023
+      }
+    },
+    "rough_paper_0.08": {
+      "spec": {
+        "box_height": null,
+        "complex": true,
+        "desc": "terrain_cfg.rough_paper noise=0.08（E 系 0.08 悬崖档）",
+        "kind": "rough_paper",
+        "noise": 0.08,
+        "terrain": "rough_paper"
+      },
+      "climb_box_height_range": [
+        0.4,
+        0.5
+      ],
+      "critic": {
+        "abs_max": 0.49950289726257324,
+        "abs_mean": 0.3073358834347623,
+        "abs_std": 0.06466062217835968,
+        "all_finite": true,
+        "mean": 0.3073358834347623,
+        "n": 29920,
+        "n_finite": 29920,
+        "nonzero_frac": 1.0,
+        "std": 0.06466062217835968
+      },
+      "family": "rough_paper_0.08",
+      "groups": {
+        "critic": "slice@7[99:286]",
+        "policy": "slice@7[99:286]"
+      },
+      "height_scan": {
+        "critic": {
+          "how": "slice@7[99:286]",
+          "stats": {
+            "abs_max": 0.49950289726257324,
+            "abs_mean": 0.3073358834347623,
+            "abs_std": 0.06466062217835968,
+            "all_finite": true,
+            "mean": 0.3073358834347623,
+            "n": 29920,
+            "n_finite": 29920,
+            "nonzero_frac": 1.0,
+            "std": 0.06466062217835968
+          },
+          "term_absent": false
+        },
+        "policy": {
+          "how": "slice@7[99:286]",
+          "stats": {
+            "abs_max": 0.5687041282653809,
+            "abs_mean": 0.3071788327377489,
+            "abs_std": 0.08715585463230487,
+            "all_finite": true,
+            "mean": 0.3071788327377489,
+            "n": 29920,
+            "n_finite": 29920,
+            "nonzero_frac": 1.0,
+            "std": 0.08715585463230487
+          },
+          "term_absent": false
+        }
+      },
+      "policy": {
+        "abs_max": 0.5687041282653809,
+        "abs_mean": 0.3071788327377489,
+        "abs_std": 0.08715585463230487,
+        "all_finite": true,
+        "mean": 0.3071788327377489,
+        "n": 29920,
+        "n_finite": 29920,
+        "nonzero_frac": 1.0,
+        "std": 0.08715585463230487
+      }
+    },
+    "climb_box_0.5": {
+      "spec": {
+        "box_height": 0.5,
+        "complex": true,
+        "desc": "terrain_cfg.climb_box（MeshRandomGridTerrainCfg boxes，高度档 0.5m 量级；语料 climbing_box{height:0.5}）",
+        "kind": "climb_box",
+        "noise": null,
+        "terrain": "climb_box"
+      },
+      "climb_box_height_range": [
+        0.4,
+        0.5
+      ],
+      "critic": {
+        "abs_max": 1.2580698728561401,
+        "abs_mean": 0.3133672315009775,
+        "abs_std": 0.1271998958358186,
+        "all_finite": true,
+        "mean": 0.3133672315009775,
+        "n": 29920,
+        "n_finite": 29920,
+        "nonzero_frac": 1.0,
+        "std": 0.1271998958358186
+      },
+      "family": "climb_box_0.5",
+      "groups": {
+        "critic": "slice@7[99:286]",
+        "policy": "slice@7[99:286]"
+      },
+      "height_scan": {
+        "critic": {
+          "how": "slice@7[99:286]",
+          "stats": {
+            "abs_max": 1.2580698728561401,
+            "abs_mean": 0.3133672315009775,
+            "abs_std": 0.1271998958358186,
+            "all_finite": true,
+            "mean": 0.3133672315009775,
+            "n": 29920,
+            "n_finite": 29920,
+            "nonzero_frac": 1.0,
+            "std": 0.1271998958358186
+          },
+          "term_absent": false
+        },
+        "policy": {
+          "how": "slice@7[99:286]",
+          "stats": {
+            "abs_max": 1.0,
+            "abs_mean": 0.3124723108804082,
+            "abs_std": 0.1357125923341325,
+            "all_finite": true,
+            "mean": 0.3124723108804082,
+            "n": 29920,
+            "n_finite": 29920,
+            "nonzero_frac": 1.0,
+            "std": 0.1357125923341325
+          },
+          "term_absent": false
+        }
+      },
+      "policy": {
+        "abs_max": 1.0,
+        "abs_mean": 0.3124723108804082,
+        "abs_std": 0.1357125923341325,
+        "all_finite": true,
+        "mean": 0.3124723108804082,
+        "n": 29920,
+        "n_finite": 29920,
+        "nonzero_frac": 1.0,
+        "std": 0.1357125923341325
+      }
+    }
+  },
+  "c2": {
+    "pass": true,
+    "plane_abs_mean": 0.0,
+    "per_family": {
+      "rough_paper_0.04": {
+        "plane_abs_mean": 0.0,
+        "complex_abs_mean": 0.2991541627256628,
+        "complex_abs_std": 0.03406348571783296,
+        "complex_nonzero_frac": 1.0,
+        "mean_diff": 0.2991541627256628,
+        "nonzero_ok": true,
+        "nonzero_with_variance": true,
+        "criterion": "|plane_abs_mean - complex_abs_mean| >= complex_abs_std 且 complex_nonzero_frac > 0",
+        "pass": true
+      },
+      "rough_paper_0.08": {
+        "plane_abs_mean": 0.0,
+        "complex_abs_mean": 0.3073358834347623,
+        "complex_abs_std": 0.06466062217835968,
+        "complex_nonzero_frac": 1.0,
+        "mean_diff": 0.3073358834347623,
+        "nonzero_ok": true,
+        "nonzero_with_variance": true,
+        "criterion": "|plane_abs_mean - complex_abs_mean| >= complex_abs_std 且 complex_nonzero_frac > 0",
+        "pass": true
+      },
+      "climb_box_0.5": {
+        "plane_abs_mean": 0.0,
+        "complex_abs_mean": 0.3133672315009775,
+        "complex_abs_std": 0.1271998958358186,
+        "complex_nonzero_frac": 1.0,
+        "mean_diff": 0.3133672315009775,
+        "nonzero_ok": true,
+        "nonzero_with_variance": true,
+        "criterion": "|plane_abs_mean - complex_abs_mean| >= complex_abs_std 且 complex_nonzero_frac > 0",
+        "pass": true
+      }
+    },
+    "family_errors": {},
+    "nonzero_tol_abs": 0.02,
+    "nonzero_tol_std": 0.001,
+    "point_nonzero_tol": 0.001,
+    "criterion_zh": "四族地形 elevation patch 复杂族非零占比>0，且族间可分（plane 与复杂族均值差 ≥ 复杂族内标准差）"
+  },
+  "c3": {
+    "pass": true,
+    "onnx_path": "/home/cvgluser/ros2_data/GR00T-WholeBodyControl/gear_sonic_deploy/policy/release/model_decoder.onnx",
+    "onnx_md5": "1d4391ad404d0ff36281abec349b23fd",
+    "baseline_md5": "1d4391ad404d0ff36281abec349b23fd",
+    "baseline_source": "cli:--onnx-md5-baseline",
+    "criterion_zh": "修复不触碰冻结 decoder（权重 md5 修复前后一致）；不改变 author token 接口",
+    "error": null
+  },
+  "verdict": "PASS"
+}

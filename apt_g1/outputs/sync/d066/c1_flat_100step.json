@@ -1,0 +1,365 @@
+{
+  "format": "d061b.axis_b.v0",
+  "identity": {
+    "script": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/isaac/eval_author_v0_decoder.py",
+    "script_md5": "0af2acf1aa35d1692581e96d7d951963",
+    "git_head": "2ca1b40",
+    "ckpt": "/home/cvgluser/ros2_data/apt_g1/outputs/d061_author_v0/ckpt_final.pt",
+    "ckpt_md5": "00fbaed5f325271ae7e047f578dc9abb",
+    "model_cfg": {
+      "d_model": 768,
+      "n_layer": 11,
+      "n_head": 12,
+      "ffn": 3072,
+      "vocab": 29,
+      "code_min": -15,
+      "state_dim": 36,
+      "win": 200,
+      "token_dim": 64
+    },
+    "env_module_md5": {
+      "g1_velocity_decoder_env.py": "1b16623b5142fb4bdf22b6e213b4cfa2",
+      "sonic_action_term.py": "a93b095bec0a390fc3604f30d07082b3",
+      "sonic_decoder_torch.py": "5b5a3046bb36f38516496bde47ba9736",
+      "eval_author_v0_decoder.py": "0af2acf1aa35d1692581e96d7d951963",
+      "gear_sonic/robots/g1.py": "ccc611133f63131c6c55d87abcf3de13",
+      "gear_sonic/env_utils/joint_utils.py": "8a73692f49097e7593caf1fc643b5b91"
+    },
+    "joint_perm": {
+      "mujoco_to_isaaclab": [
+        0,
+        6,
+        12,
+        1,
+        7,
+        13,
+        2,
+        8,
+        14,
+        3,
+        9,
+        15,
+        22,
+        4,
+        10,
+        16,
+        23,
+        5,
+        11,
+        17,
+        24,
+        18,
+        25,
+        19,
+        26,
+        20,
+        27,
+        21,
+        28
+      ],
+      "md5": "89b90257b4744ba3c0ee68d204096f6a"
+    },
+    "onnx_path": {
+      "requested": "",
+      "consumed": false,
+      "effective": "factory-default(make_env_cfg, SONIC_DECODER_ONNX)"
+    },
+    "obs_dim_assumption": {
+      "flat": 134,
+      "rough": 321
+    }
+  },
+  "env_dim_check": {
+    "obs_dim_policy_observed": [
+      321
+    ],
+    "action_dim_observed": [
+      64
+    ],
+    "obs_dim_expected": 321,
+    "action_dim_expected": 64,
+    "ok": true
+  },
+  "conditions": [
+    {
+      "kind": "flat",
+      "cond": {
+        "kind": "flat",
+        "vx": 0.4,
+        "seed": 0
+      },
+      "n_episodes": 8,
+      "survival_rate": 1.0,
+      "mean_disp_x": 0.014125,
+      "mean_vx_rmse": 0.38002499999999995,
+      "obs_dim_policy": 321,
+      "action_dim": 64,
+      "perm_identity": true,
+      "term_joint_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "token_bound": "tanh",
+      "token_alpha": 1.0,
+      "token_scale": 16,
+      "onnx_path_requested": "",
+      "episodes": [
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.03,
+          "disp_x": 0.001,
+          "vx_rmse": 0.3833
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.056,
+          "disp_x": 0.014,
+          "vx_rmse": 0.3722
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.041,
+          "disp_x": 0.04,
+          "vx_rmse": 0.3788
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.034,
+          "disp_x": -0.024,
+          "vx_rmse": 0.3835
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.032,
+          "disp_x": 0.001,
+          "vx_rmse": 0.3822
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.04,
+          "disp_x": 0.029,
+          "vx_rmse": 0.3806
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.04,
+          "disp_x": 0.02,
+          "vx_rmse": 0.3809
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.043,
+          "disp_x": 0.032,
+          "vx_rmse": 0.3787
+        }
+      ],
+      "diag": {
+        "cmd_vx_nominal": 0.4,
+        "cmd_vx_mean_over_steps": 0.4000000059604645,
+        "cmd_vx_min_over_steps": 0.4000000059604645,
+        "cmd_vx_max_over_steps": 0.4000000059604645,
+        "cmd_vx_std_over_steps": 0.0,
+        "cmd_steps_sampled": 100,
+        "obs_cmd_slot": {
+          "term": "velocity_commands",
+          "index": 3,
+          "start": 9,
+          "width": 3
+        },
+        "obs_cmd_vx_n_samples": 792,
+        "obs_cmd_vx_mean": 0.4000000059604645,
+        "obs_cmd_vx_min": 0.4000000059604645,
+        "obs_cmd_vx_max": 0.4000000059604645,
+        "obs_cmd_vx_std": 0.0,
+        "obs_cmd_vx_step0_mean": 0.5285797715187073,
+        "cmd_matches_nominal": true,
+        "cmd_vx_mean_last_batch": 0.493833065032959,
+        "cmd_vx_mean_last_batch_note": "batch 末重读命令项（reset 覆盖后值，D061b 实测≈0.5=U(0,1) 随机均值）；仅对照，判据用 obs_cmd_*/cmd_*_over_steps",
+        "cmd_term_shape": [
+          8,
+          3
+        ],
+        "note": "obs_cmd_* = 策略消费的 obs 命令槽采样（判据口径；第 0 步 obs 出自 env.reset() 不参与、done/reset 行排除）；cmd_*_over_steps = 每控制步重戳后的命令项；实测机体速度见 episodes[].vx_rmse（未 done 步的 root_lin_vel_b[:,0] 对 vx 的 RMSE）"
+      }
+    },
+    {
+      "kind": "flat",
+      "cond": {
+        "kind": "flat",
+        "vx": 0.6,
+        "seed": 0
+      },
+      "n_episodes": 8,
+      "survival_rate": 1.0,
+      "mean_disp_x": 0.010499999999999999,
+      "mean_vx_rmse": 0.5809124999999999,
+      "obs_dim_policy": 321,
+      "action_dim": 64,
+      "perm_identity": true,
+      "term_joint_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "token_bound": "tanh",
+      "token_alpha": 1.0,
+      "token_scale": 16,
+      "onnx_path_requested": "",
+      "episodes": [
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.034,
+          "disp_x": 0.004,
+          "vx_rmse": 0.5814
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.035,
+          "disp_x": -0.002,
+          "vx_rmse": 0.5823
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.04,
+          "disp_x": 0.038,
+          "vx_rmse": 0.5799
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.036,
+          "disp_x": -0.026,
+          "vx_rmse": 0.5812
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.035,
+          "disp_x": 0.0,
+          "vx_rmse": 0.5803
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.04,
+          "disp_x": 0.03,
+          "vx_rmse": 0.58
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.04,
+          "disp_x": 0.018,
+          "vx_rmse": 0.5806
+        },
+        {
+          "survived": true,
+          "fall_step": null,
+          "disp": 0.038,
+          "disp_x": 0.022,
+          "vx_rmse": 0.5816
+        }
+      ],
+      "diag": {
+        "cmd_vx_nominal": 0.6,
+        "cmd_vx_mean_over_steps": 0.6000000238418579,
+        "cmd_vx_min_over_steps": 0.6000000238418579,
+        "cmd_vx_max_over_steps": 0.6000000238418579,
+        "cmd_vx_std_over_steps": 0.0,
+        "cmd_steps_sampled": 100,
+        "obs_cmd_slot": {
+          "term": "velocity_commands",
+          "index": 3,
+          "start": 9,
+          "width": 3
+        },
+        "obs_cmd_vx_n_samples": 792,
+        "obs_cmd_vx_mean": 0.6000000238418579,
+        "obs_cmd_vx_min": 0.6000000238418579,
+        "obs_cmd_vx_max": 0.6000000238418579,
+        "obs_cmd_vx_std": 0.0,
+        "obs_cmd_vx_step0_mean": 0.5285797715187073,
+        "cmd_matches_nominal": true,
+        "cmd_vx_mean_last_batch": 0.493833065032959,
+        "cmd_vx_mean_last_batch_note": "batch 末重读命令项（reset 覆盖后值，D061b 实测≈0.5=U(0,1) 随机均值）；仅对照，判据用 obs_cmd_*/cmd_*_over_steps",
+        "cmd_term_shape": [
+          8,
+          3
+        ],
+        "note": "obs_cmd_* = 策略消费的 obs 命令槽采样（判据口径；第 0 步 obs 出自 env.reset() 不参与、done/reset 行排除）；cmd_*_over_steps = 每控制步重戳后的命令项；实测机体速度见 episodes[].vx_rmse（未 done 步的 root_lin_vel_b[:,0] 对 vx 的 RMSE）"
+      }
+    }
+  ],
+  "aggregate": {
+    "n_conditions": 2,
+    "n_ok": 2,
+    "n_failed": 0,
+    "n_episodes": 16,
+    "survival_rate": 1.0,
+    "mean_disp_x": 0.0123125
+  }
+}
