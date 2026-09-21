@@ -12,6 +12,14 @@
 survived=整段未 terminated（truncated 到时不算摔）；vx_rmse=body 前向速度对命令的 RMSE
 （仅 flat，摔步/到时步本身不计入样本）。策略=det 推理（actor 均值动作，无采样）。
 
+命令钉死回填（2026-09-22，从 D065 fork `eval_g1_decoder_lora.py` 同构回并，只修测量链、
+**不改任何评测口径默认值**）：cfg 侧 resampling_time_range=(1e9,1e9) 只挡 step 内周期重采样，
+**reset 路径**（上游 command_manager.reset() 无条件 _resample）仍会把命令覆写成 U(0,1)，
+heading_command=True 每步覆写 wz、rel_standing_envs=0.02 清零行亦属同源污染 ⇒ flat 条件
+**每控制步重戳** `vel_command_b`；diag 改**逐步采样**（`cmd_vx_*_over_steps` + 策略实际消费
+obs 槽 `obs_cmd_vx_*`）汇总进条件结果 JSON，旧循环外读法 `cmd_vx_mean_last_batch` 保留为
+legacy 对照；子进程入口播 RNG 种子（`_seed_everything`）保可复现。
+
 用法（cvgl）：
   python apt_g1/isaac/eval_g1_decoder.py --arm decoder \
       --ckpt .../d064_g1_decoder_rough_s0/model_final.pt \
@@ -36,6 +44,9 @@ DEFAULT_NOISE = "0.06,0.08"
 DEFAULT_VX = "0.4,0.6"
 EVAL_NUM_ENVS = 8
 COND_TIMEOUT_S = 1500  # 单条件子进程上限：env 启动 ~1min + 批次 rollout，宽裕
+# 命令通道诊断容差（只作用于 diag 判读，不改动任何评测口径默认值；与 D065 fork 同名同值）
+CMD_NOMINAL_TOL = 1e-6
+NEAR_STATIC_VX = 0.05
 
 
 def _parse_csv_float(s: str) -> list[float]:
@@ -169,21 +180,104 @@ def _load_actor_weights(hv, ckpt_path: str, obs_dim: int, action_dim: int, devic
     return ac
 
 
+def _seed_everything(seed: int, hv=None) -> None:
+    """子进程入口播全局 RNG 种子（torch + numpy + random）——条件可复现。
+
+    条件子进程此前只把 seed 传给 env 配置，torch/numpy/random 全局 RNG 未播种：
+    resampling / 噪声 / 复位等随机量在不同子进程间无固定重放。此处入口补齐（与
+    `eval_author_v0_decoder.seed_everything` 同款）；在 env 构造与 reset 之前调用。
+    """
+    import random  # noqa: WPS433
+
+    random.seed(seed)
+    try:
+        import numpy as np  # noqa: WPS433
+
+        np.random.seed(seed)
+    except ImportError:  # numpy 属重型栈，理论必在；缺失不阻断评测
+        pass
+    torch = getattr(hv, "torch", None)
+    if torch is None:  # 主进程 early 路径理论上不调；保底自行 import
+        import torch  # noqa: WPS433
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 def _stamp_command(env, vx: float):
-    """把命令钉死为 (vx, 0, 0)（命令重采样已被 cfg 侧拉至无穷大；每批 reset 后补一次戳）。"""
+    """把命令钉死为 (vx, 0, 0)，返回本步命令的 vx 列（供逐步采样）。
+
+    命令钉死第一步（cfg 侧）把 resampling_time_range 拉至 1e9，但那只挡 **step 内的周期
+    重采样**；**reset 路径无条件 `_resample`**（上游 command_manager.reset() 每让一个 env
+    复位就重采样一条 U(0,1) 命令，D064 flat 实测 cmd_vx_mean≈0.5 即此）——故批次内必须
+    **每个控制步重戳**（D065 fork 已验证的黄金模式；通道正常时为幂等 no-op，被覆写时立刻
+    纠正）。重戳写回整条 (vx,0,0) 同时对冲同源越权：rel_standing_envs=0.02 的 standing
+    行清零、heading_command=True 每步对 wz 的覆写。
+    """
     import torch  # noqa: WPS433
 
     term = env.command_manager.get_term("base_velocity")
     n = term.vel_command_b.shape[0]  # 冒烟核对：UniformVelocityCommand.vel_command_b（2.1.0）
     term.vel_command_b[:] = torch.tensor([vx, 0.0, 0.0], device=term.vel_command_b.device).repeat(n, 1)
+    return term.vel_command_b[:, 0].clone()
+
+
+def _policy_obs_cmd_slot(env, torch) -> dict:
+    """定位 policy obs 组里 `velocity_commands` 的切片（命令通道核验的采样槽）。
+
+    与 D065 fork `eval_g1_decoder_lora._policy_obs_cmd_slot` 同款（静态 + 运行期双保险）：
+    - **静态**：policy 组 = `velocity_env_cfg.ObservationsCfg.PolicyCfg` 的 term 序
+      （base_lin_vel, base_ang_vel, projected_gravity, **velocity_commands**,
+      joint_pos, joint_vel, actions, height_scan）⇒ velocity_commands 预期 index=3、
+      start=9、width=3。
+    - **运行期**：term 序 = `observation_manager.active_terms[group]` 顺序（拼接序），逐 term
+      维度乘积累加得起点——不硬编码索引；term 序若漂移，此处随之漂移并显式报错而非静默错位。
+
+    采样链独立性：该槽取值 = obs 项 `mdp.generated_commands` 读命令项的 `command`，与
+    `_stamp_command` 写的是同一个 `vel_command_b` ⇒ 采样验证的是「写入 → 命令项 → obs
+    计算 → 策略输入」整段管线（含 resampling 覆写、obs 槽位错位、噪声项）；真正独立于命令
+    通道的证据是 `actual_vx_*`（实测机体速度）。
+    """
+    om = env.observation_manager
+    names = [str(n) for n in om.active_terms["policy"]]
+    dims = list(om.group_obs_term_dim["policy"])
+    if len(names) != len(dims):
+        raise RuntimeError(f"policy 组 names/dims 错位：{len(names)} vs {len(dims)}")
+    if "velocity_commands" not in names:
+        raise RuntimeError(
+            f"policy 组无 velocity_commands 项（现有 {names}）——命令通道核验无处采样，拒绝出数"
+        )
+    idx = names.index("velocity_commands")
+    start = 0
+    for term_dims in dims[:idx]:
+        start += int(torch.tensor(list(term_dims)).prod())
+    width = int(torch.tensor(list(dims[idx])).prod())
+    if width < 1:
+        raise RuntimeError(f"velocity_commands 槽宽 {width} 非法（dims={dims[idx]}）")
+    return {"term": "velocity_commands", "index": int(idx), "start": int(start),
+            "width": int(width), "policy_terms": names}
+
+
+def _obs_cmd_vx(obs, slot):
+    """从 policy obs 里切出命令槽的 vx 列（(N,)）——判据采样口径（不是刚写进去的值）。"""
+    return obs[:, slot["start"]: slot["start"] + slot["width"]][:, 0]
 
 
 def _run_batches(env, ac, cli, cond, hv) -> dict:
-    """批次 rollout：每 env 记 首次 terminated 步/净位移/vx RMSE（首次 done 后不计）。"""
+    """批次 rollout：每 env 记 首次 terminated 步/净位移/vx RMSE（首次 done 后不计）。
+
+    D064 命令钉死缺陷回填：flat 条件**每控制步重戳**命令，核验采样走**策略实际消费的
+    obs 命令槽**（`_policy_obs_cmd_slot` + `_obs_cmd_vx`；不是刚写进去的值），diag 增
+    per-step `cmd_vx_*` 与 `obs_cmd_vx_*`。
+    """
     torch = hv.torch
     device = env.device
     n = cli.num_envs
     episodes: list[dict] = []
+    cmd_hist: list[float] = []  # 每控制步「重戳后」命令项 vx 均值（写通道自检）
+    obs_cmd_hist: list[float] = []  # 策略实际消费的 obs 命令槽 vx 采样（判据口径）
+    obs_cmd_step0: list[float] = []  # 第 0 步 obs 出自 env.reset()（重采样先于戳写、obs 未重算）
+    slot = _policy_obs_cmd_slot(env, torch) if cond["kind"] == "flat" else None
     for _batch in range(cli.episodes):
         obs, _ = env.reset()
         if cond["kind"] == "flat":
@@ -204,6 +298,19 @@ def _run_batches(env, ac, cli, cond, hv) -> dict:
             alive_pre = alive.clone()
             pre_pos = robot.root_pos_w[:, :2].clone()
             pre_vel = robot.root_lin_vel_b[:, 0].clone()
+            if cond["kind"] == "flat":
+                # 核验采样 = 策略本步实际消费的 obs（obs_p）命令槽。第 0 步 obs 出自
+                # env.reset()（reset 内命令重采样发生在戳写之前、obs 未重算）⇒ 单独记录、
+                # 不参与判据；step>=1 的 obs 含上一步戳写值。reset 路径的重采样只影响被复位
+                # 的行（done/reset），故只对仍存活的行（alive_pre）采样。
+                obs_cmd = _obs_cmd_vx(obs_p, slot)
+                if step == 0:
+                    obs_cmd_step0.append(float(obs_cmd.mean().item()))
+                elif bool(alive_pre.any()):
+                    obs_cmd_hist.extend(float(v) for v in obs_cmd[alive_pre].tolist())
+                # 每控制步重戳（D064 教训：只在 reset 后戳一次会被 reset 路径的 resampling
+                # 覆写；同时纠正 heading/standing 的同源覆写）
+                cmd_hist.append(float(_stamp_command(env, cond["vx"]).mean().item()))
             with torch.no_grad():
                 action = ac.act_inference(obs_p)  # det：actor 均值动作（冒烟核对：rsl_rl 2.3.3 API）
             obs, _, terminated, truncated, _ = env.step(action)
@@ -252,20 +359,64 @@ def _run_batches(env, ac, cli, cond, hv) -> dict:
         "episodes": episodes,
     }
     if cond["kind"] == "flat":
-        # 诊断（命令通道核验）：命令是否真的钉在 vx、实际速度是否≈0——区分
+        # 诊断（命令通道核验，D064 缺陷回填）：命令是否真的钉在 vx、实际速度是否≈0——区分
         # 「策略没学会走」与「评测命令通道失效」两种解释，判定前必读。
+        # 判据口径 = **逐步采样**（旧法在循环外读 vel_command_b 只反映批次末一步，且 reset 路径
+        # 重采样可把它覆盖成 U(0,1) 值 ⇒ 口径脏，仅作 legacy 对照保留）。
         cmd_term = env.command_manager.get_term("base_velocity")
+        nominal = float(cond["vx"])
+        cmd_mean = sum(cmd_hist) / len(cmd_hist) if cmd_hist else None
+        cmd_var = (
+            sum((v - cmd_mean) ** 2 for v in cmd_hist) / len(cmd_hist) if cmd_hist else None
+        )
+        obs_mean = sum(obs_cmd_hist) / len(obs_cmd_hist) if obs_cmd_hist else None
+        obs_var = (
+            sum((v - obs_mean) ** 2 for v in obs_cmd_hist) / len(obs_cmd_hist) if obs_cmd_hist else None
+        )
+        actual_per_env = [
+            round(float((vx_sum[i] / vx_cnt[i]).item()), 4) if vx_cnt[i].item() > 0 else None
+            for i in range(n)
+        ]
+        actual_valid = [x for x in actual_per_env if x is not None]
+        actual_mean = sum(actual_valid) / len(actual_valid) if actual_valid else None
         agg["diag"] = {
+            "cmd_vx_nominal": nominal,
+            # legacy 对照：循环外读法（只反映批次末命令项，受 reset 路径重采样污染）
             "cmd_vx_mean_last_batch": float(cmd_term.vel_command_b[:, 0].mean().item()),
-            "actual_vx_mean_per_env": [
-                round(float((vx_sum[i] / vx_cnt[i]).item()), 4) if vx_cnt[i].item() > 0 else None
-                for i in range(n)
-            ],
+            # per-step 采样（判据口径）
+            "cmd_vx_mean_over_steps": cmd_mean,
+            "cmd_vx_min_over_steps": min(cmd_hist) if cmd_hist else None,
+            "cmd_vx_max_over_steps": max(cmd_hist) if cmd_hist else None,
+            "cmd_vx_std_over_steps": (cmd_var ** 0.5) if cmd_var is not None else None,
+            "cmd_steps_sampled": len(cmd_hist),
+            # ---- 判据采样 = 策略实际消费的 obs 命令槽 ----
+            "obs_cmd_slot": {"term": slot["term"], "index": slot["index"], "start": slot["start"],
+                             "width": slot["width"]},
+            "obs_cmd_vx_n_samples": len(obs_cmd_hist),
+            "obs_cmd_vx_mean": obs_mean,
+            "obs_cmd_vx_min": min(obs_cmd_hist) if obs_cmd_hist else None,
+            "obs_cmd_vx_max": max(obs_cmd_hist) if obs_cmd_hist else None,
+            "obs_cmd_vx_std": (obs_var ** 0.5) if obs_var is not None else None,
+            "obs_cmd_vx_step0_mean": (sum(obs_cmd_step0) / len(obs_cmd_step0)) if obs_cmd_step0 else None,
+            "cmd_matches_nominal": bool(
+                obs_cmd_hist and all(abs(v - nominal) <= CMD_NOMINAL_TOL for v in obs_cmd_hist)
+            ),
+            "actual_vx_mean_per_env": actual_per_env,
+            "actual_vx_mean_all_envs": actual_mean,
+            "actual_vx_near_static": (abs(actual_mean) < NEAR_STATIC_VX) if actual_mean is not None else None,
+            "note": "obs_cmd_* = 策略消费的 obs 命令槽 per-step 采样（判据口径；第 0 步 obs 出自 "
+            "env.reset() 不参与、done/reset 行排除）；cmd_* = 戳写路径 per-step 采样（写通道自检）；"
+            "cmd_vx_mean_last_batch = 旧循环外读法，仅 legacy 对照；"
+            "actual_* = 未 done 步的 root_lin_vel_b[:,0]",
         }
         print(
-            f"[d064-eval][diag] flat vx={cond['vx']} cmd_vx_mean(last batch)="
-            f"{agg['diag']['cmd_vx_mean_last_batch']:.4f} actual_vx_mean(env0-2)="
-            f"{agg['diag']['actual_vx_mean_per_env'][:3]}",
+            f"[d064-eval][diag] flat vx={nominal} obs_cmd_mean={obs_mean} "
+            f"obs_cmd[min,max]=[{agg['diag']['obs_cmd_vx_min']},{agg['diag']['obs_cmd_vx_max']}] "
+            f"obs_cmd_n={agg['diag']['obs_cmd_vx_n_samples']} "
+            f"matches_nominal={agg['diag']['cmd_matches_nominal']} "
+            f"cmd_stamp_mean={cmd_mean} cmd_last_batch={agg['diag']['cmd_vx_mean_last_batch']:.4f} "
+            f"actual_vx_mean={actual_mean} near_static={agg['diag']['actual_vx_near_static']} "
+            f"actual_vx_mean(env0-2)={actual_per_env[:3]}",
             flush=True,
         )
     return agg
@@ -277,6 +428,9 @@ def _eval_one_main(cli, launcher_args) -> int:
     hv = _import_heavy()  # 同款重型 import 入口（train_g1_decoder.py:496-560 的镜像，见下）
     torch = hv.torch
     device = getattr(launcher_args, "device", "cuda:0")
+    # RNG 种子：条件子进程入口播全局 RNG（torch/numpy/random）——resampling/噪声/复位等随机量
+    # 跨子进程可复现。在 env 构造与 reset 之前；不改任何评测口径默认值。
+    _seed_everything(cli.seed, hv)
     print(f"[d064-eval] child: cond={cond} arm={cli.arm} pid={os.getpid()}", flush=True)
     env = None
     try:
@@ -317,7 +471,9 @@ def _eval_one_main(cli, launcher_args) -> int:
             _gen_f = getattr(cfg.scene.terrain, "terrain_generator", None)
             if _gen_f is not None and hasattr(_gen_f, "curriculum"):
                 _gen_f.curriculum = False
-            # 命令钉死第一步：重采样区间拉至无穷大（cfg 侧），批次内再戳 vel_command_b
+            # 命令钉死第一步：重采样区间拉至无穷大（cfg 侧，只挡 step 内的周期重采样）
+            # ⚠ 挡不住 reset 路径：上游 command_manager.reset() 对复位 env 无条件 _resample
+            #   ⇒ 真正钉死靠 `_run_batches` 里**每控制步重戳**（见 _stamp_command docstring）
             cmd_cfg = cfg.commands.base_velocity
             cmd_cfg.resampling_time_range = (1.0e9, 1.0e9)  # 冒烟核对：term cfg 字段名
         # B2：落地 60s 口径——env 继承官方 episode_length_s=20s，不覆写则 ~1000 步即全体 truncated

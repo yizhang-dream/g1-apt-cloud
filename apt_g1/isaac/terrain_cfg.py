@@ -8,9 +8,16 @@ from isaaclab.terrains import (
     HfPyramidStairsTerrainCfg,
     HfRandomUniformTerrainCfg,
     HfSteppingStonesTerrainCfg,
+    MeshRandomGridTerrainCfg,
     TerrainGeneratorCfg,
     TerrainImporterCfg,
 )
+
+# D066 C2 门（§5w）climb_box 地形高度档：对齐 D060 语料 terrain_desc
+# climbing_box{height:0.5}（build/d060_windows.py:109，源 2 爬障 0.5 m 箱）。
+# 网格高度取 (0.4, 0.5) = 0.5 m 量级（单值 0.5 是语料侧箱高，地形侧留一档变化
+# 以免 187 点 patch 退化为常量；量级对齐是单变量，见下方 climb_box 分支注释）。
+CLIMB_BOX_HEIGHT_RANGE = (0.4, 0.5)
 
 
 def make_terrain_importer_cfg(
@@ -204,6 +211,47 @@ def make_terrain_importer_cfg(
                 slope_threshold=0.75,
                 use_cache=False,
                 sub_terrains=sub_terrain,
+            ),
+            collision_group=-1,
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                friction_combine_mode="average",
+                restitution_combine_mode="average",
+                static_friction=1.0,
+                dynamic_friction=1.0,
+                restitution=0.0,
+            ),
+            debug_vis=False,
+        )
+    if terrain_type == "climb_box":
+        # D066 C2 门（§5w）四族之一：语料侧 climb_box=0.5 m 箱
+        # （build/d060_windows.py:109 climbing_box{height:0.5}）在 Isaac 栈的
+        # 地形对应物（本文件此前无该族，工厂亦不认——D066 补件）。
+        # 配方 = 官方 MeshRandomGridTerrainCfg boxes 原语（tmp/rough_terrain_v210.py:37-39
+        # 官方 G1 rough 的 boxes 写法逐字：grid_width=0.45、platform_width=2.0），
+        # 唯一变量 = grid_height_range 抬到 CLIMB_BOX_HEIGHT_RANGE（0.5 m 量级，
+        # 对齐语料 height=0.5）；其余 generator 参数（8x8/边 20/10x20/0.1/0.005/0.75/
+        # 无缓存 + average 摩擦材质）与既有 Hf 族同源，保证族间可比。
+        return TerrainImporterCfg(
+            prim_path="/World/ground",
+            terrain_type="generator",
+            terrain_generator=TerrainGeneratorCfg(
+                seed=seed,
+                size=(8.0, 8.0),
+                border_width=20.0,
+                num_rows=10,
+                num_cols=20,
+                horizontal_scale=0.1,
+                vertical_scale=0.005,
+                slope_threshold=0.75,
+                use_cache=False,
+                sub_terrains={
+                    "climb_box": MeshRandomGridTerrainCfg(
+                        proportion=1.0,
+                        grid_width=0.45,
+                        grid_height_range=CLIMB_BOX_HEIGHT_RANGE,
+                        platform_width=2.0,
+                    ),
+                },
             ),
             collision_group=-1,
             physics_material=sim_utils.RigidBodyMaterialCfg(

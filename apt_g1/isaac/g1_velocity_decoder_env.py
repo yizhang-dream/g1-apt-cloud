@@ -124,6 +124,7 @@ from isaaclab.terrains import (
     HfDiscreteObstaclesTerrainCfg,
     HfPyramidStairsTerrainCfg,
     HfSteppingStonesTerrainCfg,
+    MeshRandomGridTerrainCfg,
     TerrainGeneratorCfg,
     TerrainImporterCfg,
 )
@@ -141,6 +142,14 @@ from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
 
 # 同一 G1 资产：直接复用 apt_flat_env.py:201 所用对象（零字段漂移）。
 from gear_sonic.envs.manager_env.robots import g1
+
+# D066 C2 门（§5w）climb_box 配方的高度档单一事实源在 terrain_cfg.py
+# （CLIMB_BOX_HEIGHT_RANGE，对齐 D060 语料 climbing_box{height:0.5}）；此处只
+# 引用常量、不复制数值，防两处漂移（双兼容 import 同 sonic_action_term 惯例）。
+try:
+    from isaac.terrain_cfg import CLIMB_BOX_HEIGHT_RANGE
+except ImportError:  # pragma: no cover（本机走此支，需 apt_g1 可导入）
+    from apt_g1.isaac.terrain_cfg import CLIMB_BOX_HEIGHT_RANGE
 
 # 冻结 decoder 的自定义 ActionTerm cfg（同批 D064 模块；action_dim=64）。
 try:  # 服务器执行根平铺 import / 仓库根包 import 双兼容（仓内既有惯例，
@@ -457,8 +466,21 @@ def _hf_terrain_importer_cfg(kind: str, seed: int | None) -> TerrainImporterCfg:
                 border_width=0.25,
             ),
         }
+    elif kind == "climb_box":
+        # D066 C2 门（§5w）四族之一：与 terrain_cfg.make_terrain_importer_cfg
+        # ("climb_box") 同配方（官方 MeshRandomGridTerrainCfg boxes 原语 +
+        # CLIMB_BOX_HEIGHT_RANGE 高度档），仅供本工厂经 make_env_cfg(terrain=
+        # "climb_box") 接入 height_scan；数值唯一事实源=terrain_cfg.py 常量。
+        sub_terrains = {
+            "climb_box": MeshRandomGridTerrainCfg(
+                proportion=1.0,
+                grid_width=0.45,
+                grid_height_range=CLIMB_BOX_HEIGHT_RANGE,
+                platform_width=2.0,
+            ),
+        }
     else:
-        raise ValueError(f"unknown hf terrain kind {kind!r} (expect stairs/stones/discrete)")
+        raise ValueError(f"unknown hf terrain kind {kind!r} (expect stairs/stones/discrete/climb_box)")
     return TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",
@@ -558,6 +580,10 @@ def make_env_cfg(
     - terrain in {"stairs","stones","discrete"}：terrain_cfg.py:149-217 的 Hf 配方，
       课程关（terrain_levels=None + generator.curriculum=False，官方置 False 先例
       rough_env_cfg.py:170）；height_scan RayCaster 保留（与地形类型无关，T1）。
+    - terrain="climb_box"（D066 C2 门新增，§5w）：官方 MeshRandomGridTerrainCfg
+      boxes 原语、高度档 CLIMB_BOX_HEIGHT_RANGE（terrain_cfg.py 单一事实源，
+      对齐 D060 语料 climbing_box{height:0.5}）；课程关同 Hf 族。既有族配方与
+      默认值零改动（单变量纪律）。
     - action="decoder"|"direct"|"lora_policy"：decoder/direct 两臂唯一差异在 actions；
       lora_policy（D065 C 臂 v2）= direct 逐字 + policy 组末位追加 930 维本体历史观测
       （decoder 由 policy 侧持有，env 侧无 decoder action term）。
@@ -582,7 +608,7 @@ def make_env_cfg(
         pass  # 官方课程原样
     elif terrain == "plane":
         _apply_flat_semantics(cfg)
-    elif terrain in ("stairs", "stones", "discrete"):
+    elif terrain in ("stairs", "stones", "discrete", "climb_box"):
         cfg.scene.terrain = _hf_terrain_importer_cfg(terrain, seed)
         # 课程关（官方置 False 先例 rough_env_cfg.py:170；官方 post_init 的
         # curriculum 耦合逻辑在 velocity_env_cfg.py:314-321，须在其后覆写）。
@@ -591,7 +617,7 @@ def make_env_cfg(
             cfg.scene.terrain.terrain_generator.curriculum = False
     else:
         raise ValueError(
-            f"unknown terrain {terrain!r} (expect rough/plane/stairs/stones/discrete)"
+            f"unknown terrain {terrain!r} (expect rough/plane/stairs/stones/discrete/climb_box)"
         )
 
     if play:
