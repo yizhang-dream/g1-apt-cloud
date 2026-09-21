@@ -320,3 +320,9 @@ L4 代码层  apt_g1/SCRIPT_MAP.md + 脚本/       ← 每个脚本的角色与�
   近邻 T-GMP / 2604.17335 / Perceptive BFM / SceneBot）；DS 计划冲突条款
   按纲领 §9 处置（Phase 1 全网格挂起、全动作组网格转设计储备等）。
   本文 §3 结论口径不受影响（负结果与定界仍是已确立贡献）。
+- **DS 线 2026-09-22 路线重整（owner 七项拍板）**：对外叙事认领「离散化 World
+  Action Model」；A0=D066 强制前置门（命令通道修复+特权输入验证）；D062=A3 联合
+  升级四跑消融（§5x）；G2 输出端残差=D067 优先于 D065 LoRA（§5y）；G6 感知蒸馏
+  提前激活（仿真深度图先行，真机硬件不立项）；encoder 接口重开（09-18「encoder
+  不在环」撤回，冻结 decoder 不变量维持）；D5 观察位/D1/D3 远期池/F1/F2 进评估
+  路线。详见 refine-logs/ds/DS_TERRAIN_AUTHOR_PLAN.md 路线重整节。

@@ -116,3 +116,7 @@
 
 - **v1（2026-09-21，本版）**：立项预注册——定位（D064 接口改造候选具体化 / 纲领 §6 对照路线外部同构实例 / 不作主假设证据）、G0 对齐冒烟门三小项、G1 三臂单变量对照（C = B + rank-16 零初始化 LoRA，只训 adapter、无感知条件化）、主/辅/遗忘三组判据、纲领 §6 分支 2 裁决映射、D062 并行关系、风险与限定（ViBe 非复现 / 限定语四条 / NVIDIA Open Model License 只留服务器）。依据 = owner 09-21 拍板执行 [ORCS_SURVEY](../surveys/ORCS_SURVEY.md) §4 建议 A。
 - **v1.1（2026-09-21，G0 PASS 后发射前修正，§3a）**：G0 三门已在服务器全 PASS（明细见 [tracker/D.md](../tracker/D.md) D065 行尾注）；G1 训练臂实现发现 B 臂 decoder 在 env 侧 ActionTerm 且 `torch.no_grad()`（`sonic_action_term.py:285-291`）⇒ adapter 无策略梯度、C≡B 假阴性风险；owner 授权按 ORCS（in-graph）形态重构 C 臂为「A 臂架构 + μ 路径经 decoder（挂 rank-16 零初始化 LoRA）」=E44 架构低秩版，对照结构改写为 C vs A / C vs E44 单变量、B vs C 降参考水位；主/辅/遗忘判据原文不变；trainable 两档登记（policy+adapter 默认 / adapter-only 须 `--init-head-from`）；产物目录口径统一为 `outputs/d065/`。
+
+## 顺位调整（2026-09-22 owner 拍板）
+
+owner 路线重整拍板第 4 项：G2 输出端并行残差臂（D067，预注册见 [DS_CONTINUOUS_EXECUTION_PLAN](DS_CONTINUOUS_EXECUTION_PLAN.md) §5y）**直接上并优先于本臂发射**；本臂（decoder LoRA）顺位其后，发射前置门同步改为 D066（§5w）全过。本臂既有预注册设计不变；与 D062/D067 的并行互不阻塞关系维持。
