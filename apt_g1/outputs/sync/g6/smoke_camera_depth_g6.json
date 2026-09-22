@@ -1,0 +1,101 @@
+{
+  "entry": "apt_g1/isaac/smoke_camera_depth_g6.py",
+  "timestamp": "2026-09-22T16:21:48+0800",
+  "format": 1,
+  "git_commit": "d61d8cc87b0c0dc7ec59b70240bf64df848f2221",
+  "mode": "camera",
+  "out_dir": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/outputs/g6",
+  "cli": {
+    "num_envs": 8,
+    "duration_s": 30.0,
+    "res": "192x108",
+    "terrain": "plane",
+    "seed": 0,
+    "baseline_no_camera": false,
+    "out": "outputs/g6",
+    "selftest": false,
+    "headless": true
+  },
+  "camera": {
+    "link": "head_link",
+    "name": "ego_camera",
+    "prim_path": "{ENV_REGEX_NS}/Robot/head_link/ego_camera",
+    "height": 108,
+    "width": 192,
+    "res_tag": "192x108",
+    "data_types": [
+      "rgb",
+      "depth"
+    ],
+    "spawn": {
+      "focal_length": 1.88,
+      "focus_distance": 0.5,
+      "horizontal_aperture": 2.6035,
+      "vertical_aperture": 1.4621,
+      "clipping_range": [
+        0.1,
+        20.0
+      ]
+    },
+    "offset": {
+      "pos": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rot_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "convention": "world"
+    },
+    "attach_via": "pending"
+  },
+  "feasibility": {
+    "enable_cameras": true,
+    "app_launcher_ok": false,
+    "env_built_ok": false,
+    "first_step_ok": false,
+    "camera_attached": false,
+    "depth_ok": false,
+    "verdict": "PENDING",
+    "error": "preflight stub：进程在写完整 JSON 前退出（AppLauncher/stage 创建段错误则本 stub 即最终产物）"
+  },
+  "timing": {
+    "num_envs": 8,
+    "duration_s": 30.0,
+    "max_steps": 2000,
+    "warmup_steps": 5
+  },
+  "vram": {
+    "device": null,
+    "has_cuda": null,
+    "baseline_peak_mb": null,
+    "camera_peak_mb": null,
+    "delta_mb": null,
+    "note": "preflight"
+  },
+  "depth": {
+    "frames": [],
+    "summary": {
+      "n_frames": 0,
+      "mean_of_means": null,
+      "min_of_mins": null,
+      "max_of_maxes": null,
+      "min_finite_ratio": null
+    },
+    "error": "preflight"
+  },
+  "answers": {
+    "render_feasible": false,
+    "step_overhead_ms": null,
+    "vram_delta_mb": null
+  },
+  "versions": {
+    "isaaclab": "2.1.0",
+    "isaacsim": "4.5.0.0",
+    "torch": "2.5.1"
+  }
+}

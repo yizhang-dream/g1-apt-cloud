@@ -1,0 +1,46 @@
+{
+ "marker": "D062_GATE_PASS",
+ "pass": true,
+ "criteria": {
+  "c1_finite_complete": {
+   "rule": "无 NaN/Inf 且完成 epoch 预算（或 early_stop / 收敛判据停止）",
+   "pass": true,
+   "loss_finite": true,
+   "completed_epochs": false,
+   "early_stop": false,
+   "converged": true,
+   "nan_seen": false
+  },
+  "c2_val_loss_converged": {
+   "rule": "尾部 5 eval 点 (max-min)/min<0.03 且尾部均值 < 首 eval 点",
+   "pass": true,
+   "tail_rel_change": 0.025336773284646064,
+   "tail_mean": 1.2530358278806777,
+   "first_val_loss": 3.54283081148173,
+   "n_eval_points": 143
+  },
+  "c3_val_top1": {
+   "rule": "val top1 ≥ 0.185（5×均匀基线 1/29 从严）",
+   "pass": true,
+   "final_val_top1": 0.5235187222647685
+  },
+  "c4_leak_audit": {
+   "rule": "leak_audit heldout_entered==0（训练索引 heldout 零进入）",
+   "pass": true,
+   "heldout_entered": 0,
+   "leak_audit": {
+    "train_windows": 9583,
+    "heldout_excluded": 0,
+    "heldout_entered": 0,
+    "corpus_has_heldout": false,
+    "other_split_excluded": 0,
+    "train_before_limit": 9583
+   }
+  }
+ },
+ "variant": "chunk",
+ "prereg_name": "v1a",
+ "final_val_loss": 1.2372973648948355,
+ "final_val_top1": 0.5235187222647685,
+ "judged_at": "2026-09-22 19:08:31"
+}
