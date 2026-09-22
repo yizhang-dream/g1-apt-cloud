@@ -54,8 +54,11 @@ warmup + cosine，warmup 步数按新规模放大到 2,000）。
 - val 窗级 5% seed0（rng 独立于语料 seed，不碰 heldout）。
 - 码域 V=29（G4 装配实读四源并集 [-15,13]）与 199 目标位（logits[:,:-1] vs tok[:,1:]）。
 - 身份信封：git commit / 四源 manifest md5 / variant / 参数量（写 meta.json）。
-- **步数预算 = 收敛判据**（尾部 5 eval 点相对变化 <3% 即停，--converge-stop 默认开；
-  epochs 与 --max-steps 只是上界，不硬编码「必须跑满 N 步」）。
+- **步数预算 = 收敛判据**（尾部 5 eval 点相对变化 <3% 且过两条触发守卫即停，
+  --converge-stop 默认开；epochs 与 --max-steps 只是上界，不硬编码「必须跑满 N 步」）。
+  两条守卫（D063 1B，防 D062 首轮四臂误停于 warmup 终点）：① 相位守卫=尾窗须全部
+  落在 warmup 后的余弦下降段；② 降势守卫=窗口须整体走平（净降 ≤ 单步噪声带），拦
+  「缓慢匀速下降被 max-min<3% 误当平台」。触发状态写入 meta.converge_guard。
 - 门判读沿用 D061a 四条（NaN/尾部收敛/top1≥0.185/泄漏=0），打印 D062_GATE_*。
 - --intent-pin-max：**仅推理期**把 ctx 命令槽（target_vel）钉到语料速度带最大档
   （速度带 = train 窗 speedA 三分位，最大档取值 = 上三分位中位），训练不受影响。
@@ -1018,20 +1021,78 @@ def build_adafactor(params, lr):
     return torch.optim.Adafactor(params, lr=float(lr)), "torch>=2.12 fixed-lr rewrite"
 
 
-def tail_converged(eval_points, tail_n=GATE_TAIL_N, rel=GATE_TAIL_REL):
-    """收敛判据（=门②口径）：尾部 tail_n 个 eval 点相对变化 < rel 且尾均 < 首点。
+def converge_guard(eval_points, warmup_steps, tail_n=GATE_TAIL_N,
+                   rel=GATE_TAIL_REL):
+    """收敛判据（=门②口径）叠加两条触发守卫，返回判读明细 dict。
 
-    训练循环用它决定**步数预算**（不硬编码步数）：收敛即停。
+    判据本体：尾部 tail_n 个 eval 点相对变化 < rel 且尾均 < 全序列首点。
+    两条守卫（D063 1B 触发，防 D062 首轮四臂误停：min_steps=warmup=2000 →
+    warmup 一结束的首个 eval 点即取得触发资格，停时 LR 仍在峰值、top1 单调爬升）：
+      ① 相位守卫 tail_in_descent：尾部滑窗**全部**落在 warmup 后的余弦下降段
+         （窗口首 eval 点 step > warmup_steps）——把触发资格推离 warmup 终点。
+      ② 降势守卫 net_flat：窗口须整体走平（|末点-首点| ≤ 单步噪声带），拦
+         「缓慢匀速下降被 max-min<3% 误当平台」。
+
+    返回 {"ok": bool, ...诊断字段}；ok=True 才可触发停止。诊断字段供 meta/
+    train.log 追溯（warmup_done / tail_in_descent / tail_flat / net_flat /
+    net_drop / noise_band / tail_rel_change / first_tail_step / …）。
     """
-    ev = [float(e["val_loss"]) for e in eval_points
-          if e.get("val_loss") is not None and math.isfinite(float(e["val_loss"]))]
-    if len(ev) < int(tail_n):
-        return False
-    tail = ev[-int(tail_n):]
-    if min(tail) <= 0:
-        return False
-    return ((max(tail) - min(tail)) / min(tail) < float(rel)) and \
-        (sum(tail) / len(tail) < ev[0])
+    pts = [(e.get("step"), float(e["val_loss"])) for e in eval_points
+           if e.get("val_loss") is not None
+           and math.isfinite(float(e["val_loss"]))]
+    g = {"ok": False, "warmup_done": False, "tail_in_descent": False,
+         "tail_flat": False, "net_flat": False, "net_drop": None,
+         "noise_band": None, "tail_rel_change": None,
+         "first_tail_step": None, "last_tail_step": None,
+         "warmup_steps": int(warmup_steps), "reason": ""}
+    if len(pts) < int(tail_n):
+        g["reason"] = "eval 点不足（%d<%d）" % (len(pts), int(tail_n))
+        return g
+    tail = pts[-int(tail_n):]
+    vals = [v for _s, v in tail]
+    steps = [s for s, _v in tail]
+    g["first_tail_step"], g["last_tail_step"] = steps[0], steps[-1]
+    if any(s is None for s in steps):
+        g["reason"] = "eval 点缺 step（相位守卫无法判读）"
+        return g
+    if min(vals) <= 0:
+        g["reason"] = "val_loss 非正"
+        return g
+    # ① 相位守卫：尾窗全部越过 warmup 终点（严格大于，排除仍在 LR 峰值的边界点）
+    g["warmup_done"] = bool(steps[-1] >= int(warmup_steps))
+    g["tail_in_descent"] = bool(steps[0] > int(warmup_steps))
+    # 判据本体（尾部相对变化 + 尾均 < 首点）
+    g["tail_rel_change"] = (max(vals) - min(vals)) / min(vals)
+    g["tail_flat"] = bool(g["tail_rel_change"] < float(rel)
+                          and (sum(vals) / len(vals)) < pts[0][1])
+    # ② 降势守卫：|末点-首点| 落在单步噪声带（尾窗相邻差分均值）内才算走平
+    diffs = [abs(vals[i + 1] - vals[i]) for i in range(len(vals) - 1)]
+    noise = sum(diffs) / len(diffs) if diffs else 0.0
+    g["noise_band"] = noise
+    g["net_drop"] = abs(vals[-1] - vals[0])
+    g["net_flat"] = bool(g["net_drop"] <= noise)
+    g["ok"] = bool(g["tail_flat"] and g["tail_in_descent"] and g["net_flat"])
+    if not g["ok"]:
+        if not g["tail_in_descent"]:
+            g["reason"] = ("相位守卫：尾窗首点 step=%s 未越过 warmup=%d"
+                           % (steps[0], int(warmup_steps)))
+        elif not g["net_flat"]:
+            g["reason"] = ("降势守卫：净降 %.5f > 单步噪声带 %.5f"
+                           "（匀速下降非平台）" % (g["net_drop"], noise))
+        else:
+            g["reason"] = "判据本体未满足（尾部未走平或尾均未低于首点）"
+    return g
+
+
+def tail_converged(eval_points, tail_n=GATE_TAIL_N, rel=GATE_TAIL_REL,
+                   warmup_steps=0):
+    """收敛判据布尔包装（含相位/降势守卫；warmup_steps=0 时相位守卫恒过）。
+
+    训练循环用它决定**步数预算**（不硬编码步数）：收敛即停；判读明细见
+    converge_guard（触发时写入 meta 的 converge_guard 诊断字段）。
+    """
+    return converge_guard(eval_points, warmup_steps=warmup_steps,
+                          tail_n=tail_n, rel=rel)["ok"]
 
 
 def train_model(args, corpus, model, device, logger, train_pool, val_pool,
@@ -1068,8 +1129,8 @@ def train_model(args, corpus, model, device, logger, train_pool, val_pool,
     min_steps = max(int(args.warmup_steps), GATE_TAIL_N * eval_every)
     logger.info("[train] variant=%s（%s）device=%s amp=%s grad_ckpt=%s | "
                 "train %d 窗 / val %d 窗 | batch %d → %d 步/epoch × %d epoch"
-                "（上界 %d 步；收敛判据=尾部 %d eval 点相对变化 <%.0f%% 即停，"
-                "min_steps=%d）| eval 每 %d 步 / ckpt 每 %d 步 | chunk_k=%d "
+                "（上界 %d 步；收敛判据=尾部 %d eval 点相对变化 <%.0f%% 且过相位/"
+                "降势守卫即停，min_steps=%d）| eval 每 %d 步 / ckpt 每 %d 步 | chunk_k=%d "
                 "prefix=%d rollout_w=%.3f ramp=%d | priv_w=%.3f extra_cols=%s",
                 variant, VARIANT_PREREG_NAME[variant], device, amp_dtype,
                 model.grad_ckpt, len(train_pool), len(val_pool),
@@ -1095,7 +1156,9 @@ def train_model(args, corpus, model, device, logger, train_pool, val_pool,
             "chunk_k": int(args.chunk_k), "chunk_prefix": int(args.chunk_prefix),
             "priv_extra_dim": int(model.priv_extra), "converged": False,
             "converge_stop": bool(args.converge_stop),
-            "steps_budget_source": ("收敛判据（尾部 %d eval 点相对变化<%.0f%% 即停）；"
+            "converge_guard": None,   # 最新一次 eval 的收敛守卫判读明细（可追溯）
+            "steps_budget_source": ("收敛判据（尾部 %d eval 点相对变化<%.0f%% 且过"
+                                    "相位/降势守卫即停）；"
                                     "epochs=%d/--max-steps=%s 仅为上界"
                                     % (GATE_TAIL_N, GATE_TAIL_REL * 100,
                                        args.epochs, args.max_steps)),
@@ -1192,16 +1255,29 @@ def train_model(args, corpus, model, device, logger, train_pool, val_pool,
                         logger.info("[early_stop] 连续 %d 个 eval 点无改善"
                                     "（best=%.4f）→ 停", bad_evals, best_val)
                         stop = True
-                # 收敛判据（步数预算来源，非硬编码）：尾部变化 <3% 即停
+                # 收敛判据（步数预算来源，非硬编码）：尾部变化 <3% 且过两条守卫即停
+                cg = converge_guard(hist["eval_points"], int(args.warmup_steps))
+                hist["converge_guard"] = cg  # 逐 eval 点覆盖存最新判读（可追溯）
                 if args.converge_stop and not stop and \
-                        hist["steps_done"] >= min_steps and \
-                        tail_converged(hist["eval_points"]):
+                        hist["steps_done"] >= min_steps and cg["ok"]:
                     hist["converged"] = True
-                    logger.info("[converge] 尾部 %d eval 点相对变化 <%.0f%% "
-                                "（val_loss=%.4f）→ 步数预算达成，停（非硬编码步数）",
-                                GATE_TAIL_N, GATE_TAIL_REL * 100,
-                                ev["val_loss"])
+                    logger.info("[converge] 尾部 %d eval 点相对变化 %.2f%%<%.0f%% "
+                                "（val_loss=%.4f）→ 步数预算达成，停（非硬编码步数）"
+                                "｜守卫 warmup_done=%s tail_in_descent=%s "
+                                "net_flat=%s（净降%.5f≤噪声带%.5f）",
+                                GATE_TAIL_N, (cg["tail_rel_change"] or 0.0) * 100,
+                                GATE_TAIL_REL * 100, ev["val_loss"],
+                                cg["warmup_done"], cg["tail_in_descent"],
+                                cg["net_flat"], cg["net_drop"] or 0.0,
+                                cg["noise_band"] or 0.0)
                     stop = True
+                elif args.converge_stop and not stop and \
+                        hist["steps_done"] >= min_steps and cg["tail_flat"]:
+                    # 近失（本体判平但守卫拦下）：只在此时打诊断，避免逐点刷屏
+                    logger.info("[converge] 近失拦下（%s）｜tail_in_descent=%s "
+                                "net_flat=%s net_drop=%s noise_band=%s",
+                                cg["reason"], cg["tail_in_descent"],
+                                cg["net_flat"], cg["net_drop"], cg["noise_band"])
             if hist["steps_done"] % ckpt_every == 0:
                 p = os.path.join(args.out_dir,
                                  f"ckpt_step{hist['steps_done']:07d}.pt")
@@ -1358,7 +1434,8 @@ def write_run_meta(out_dir, args, corpus, hist, n_params, gate, device,
         "eval_points": hist["eval_points"],
         "summary": {k: hist.get(k) for k in (
             "steps_done", "total_steps", "early_stop", "completed_epochs",
-            "converged", "converge_stop", "steps_budget_source", "nan_seen",
+            "converged", "converge_stop", "converge_guard", "steps_budget_source",
+            "nan_seen",
             "logits_shape", "final_val_loss", "final_val_top1",
             "final_val_rollout", "final_val_priv", "best_val_loss", "elapsed_s",
             "amp", "adafactor_variant", "rollout_weight_target",
@@ -1641,15 +1718,39 @@ def run_selftest():
         logger.info("[selftest] chunk 推理接口 ok（生成 %s / clean 前缀保留 / "
                     "pin 后 logits maxdiff=%.3e）", tuple(gen.shape), diff)
 
-        # ---- 收敛判据（步数预算来源）helper 直测
-        conv = [{"step": (i + 1) * 10, "val_loss": 3.50 - 0.5 * min(i, 1) - 0.001 * i,
-                 "val_top1": 0.2} for i in range(8)]
-        assert tail_converged(conv), "收敛判据对已收敛序列判 False"
+        # ---- 收敛判据（步数预算来源）helper 直测：本体 + 两条触发守卫
+        def _pt(step, loss):
+            return {"step": step, "val_loss": loss, "val_top1": 0.2}
+        # 下降段平台（尾窗步 40..80 全越过 warmup=5，尾部走平）→ True
+        conv = [_pt(10, 3.50), _pt(20, 3.00), _pt(30, 2.50), _pt(40, 2.000),
+                _pt(50, 2.001), _pt(60, 2.000), _pt(70, 2.001), _pt(80, 2.000)]
+        assert tail_converged(conv, warmup_steps=5), \
+            "收敛判据对下降段平台判 False"
+        cg = converge_guard(conv, warmup_steps=5)
+        assert cg["ok"] and cg["warmup_done"] and cg["tail_in_descent"] \
+            and cg["net_flat"], f"下降段平台守卫误判：{cg}"
+        # ① 相位守卫：同一平台序列但 warmup 未结束（尾窗首点 step≤warmup）→ False
+        assert not tail_converged(conv, warmup_steps=40), \
+            "相位守卫失效：warmup 内（=40）仍判收敛"
+        assert not converge_guard(conv, warmup_steps=40)["tail_in_descent"], \
+            "相位守卫未把 tail_in_descent 置 False"
+        # ② 降势守卫：下降段但匀速下降（净降 0.02 > 单步噪声 0.005）→ False
+        drift = [_pt(10, 3.50), _pt(20, 3.00), _pt(30, 2.50), _pt(40, 1.100),
+                 _pt(50, 1.095), _pt(60, 1.090), _pt(70, 1.085), _pt(80, 1.080)]
+        gd = converge_guard(drift, warmup_steps=5)
+        assert gd["tail_flat"] and not gd["net_flat"] and not gd["ok"], \
+            f"降势守卫失效：匀速下降被当平台 {gd}"
+        assert not tail_converged(drift, warmup_steps=5), \
+            "降势守卫失效：下降段匀速下降仍判收敛"
+        # 本体反例：震荡超相对变化上限 → False；eval 点不足 → False
         noisy = [dict(e, val_loss=1.0 + 0.5 * (i % 2)) for i, e in enumerate(conv)]
-        assert not tail_converged(noisy), "收敛判据对震荡序列判 True"
-        assert not tail_converged(conv[:3]), "收敛判据在 eval 点不足时判 True"
-        logger.info("[selftest] 收敛判据 helper ok（收敛序列 True / 震荡 False / "
-                    "点数不足 False）")
+        assert not tail_converged(noisy, warmup_steps=5), \
+            "收敛判据对震荡序列判 True"
+        assert not tail_converged(conv[:3], warmup_steps=5), \
+            "收敛判据在 eval 点不足时判 True"
+        logger.info("[selftest] 收敛判据 helper ok（下降段平台 True / 相位守卫 "
+                    "warmup 内 False / 降势守卫匀速下降 False / 震荡与点数不足 "
+                    "False）")
 
         # ---- gate 判读 mock（真实代码路径：四条全过 + 失败分支）
         mock_evals, loss = [], 3.50

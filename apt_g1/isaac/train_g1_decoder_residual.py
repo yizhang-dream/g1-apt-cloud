@@ -50,7 +50,7 @@
       `assemble_decoder_obs`（decoder 输入组装）
     - `run_selftest()`：零初始化恒等 / 梯度隔离 / 奖励数学 / 三臂表 / 身份信封 /
       **前向仿射往返** / **residual vs decoder 臂 decoder 输入逐位一致** / 地形契约 /
-      切片守卫
+      切片守卫 / **执行-反馈闭环增益恒等** / **旧标量 0.5 反例** / **29 维 scale 形状与来源**
   Layer 2（isaac，import 集中在函数内；本机不 import）
     - `_import_heavy`（复用 train_g1_decoder._import_heavy，单份组装防漂移）
     - env cfg 构建 + max_forward 奖励覆写 + author_token 观测项注入
@@ -104,9 +104,15 @@
   A2 intent-pin 值：`--intent-pin-value` 缺省 1.0（= 官方 G1 rough 命令 lin_vel_x 上界，
      rough_env_cfg.py:146-148 的 (0,1) 上界）。若语料速度带另有最大档，用
      `--intent-pin-value` 显式覆盖。
-  A3 残差臂动作语义：env 侧 = direct 臂 JointPositionAction（scale=0.5、
-     use_default_offset=True），policy μ（29 维）= 冻结 decoder 归一化输出 + r；与 D065 C 臂
-     同口径（decoder 输出按归一化关节目标进分布，env 侧再 affine）。
+  A3 残差臂动作语义：env 侧 = direct 臂 JointPositionAction（use_default_offset=True），
+     **scale 覆写为逐关节 sonic_scale 向量**（不是 direct 臂的标量 0.5；见下方「执行/反馈
+     仿射一致性」小节）；policy μ（29 维）= 冻结 decoder 归一化输出 + r。
+     **修订记录（2026-09-22，CVGL 探针坐实根因）**：原 A3 口径「scale=0.5、与 D065 C 臂
+     同口径」存在闭环增益缺陷——反馈通路 `sonic_proprio_hist` 的 last_act 通道按**逐关节
+     sonic_scale** 反归一化（`last_act=(q_des-default)/sonic_scale`），而执行端 scale=0.5 ⇒
+     `last_act = μ·0.5/sonic_scale ≠ μ`，闭环增益 0.91–6.71×（踝≈0.0745 ⇒ 增益 6.71），
+     12 步几何发散至 2.49e7（与训练 iter0-2 NaN/action_rate 1e15 签名吻合）。修法 = 执行端
+     scale 改逐关节 sonic_scale，使 (q_des-default)/sonic_scale ≡ μ 严格互逆、闭环增益恒 1。
   A4 critic 可训：PPO 值函数必须有梯度路径（同 D065 adapter-only），故 critic 与 r 可训，
      decoder/actor 占位/σ 冻结。
   A5 r 的输入 = 官方 policy obs 切片（`total - 930(proprio) - 64(token)`），即原 D064
@@ -114,6 +120,31 @@
      **SF-2**：该「前缀切片」不再靠隐式假设——`_build_residual_policy_kwargs` 经
      `official_obs_slice` 按运行期 term 序推出宽度，并断言 `sonic_proprio`/`author_token`
      两 term 全部落在 official 段之后（起始=0 前缀契约），对不上即 fail loud。
+
+执行/反馈仿射一致性（2026-09-22 修复，CVGL 探针坐实根因）：
+  残差臂闭环里同一条关节目标要过两处仿射，二者必须严格互逆，否则每步乘一个 ≠1 的增益：
+    - **执行端**（env 侧动作项）：JointPositionAction
+      `q_des = default + raw * scale + 0`（joint_actions.py:130-139）；本臂 raw = μ。
+    - **反馈端**（decoder 本体历史观测项）：`sonic_proprio_hist` -> `SonicActionCore.
+      last_act_from_q_des`：`last_act = (q_des - default) / sonic_scale`
+      （sonic_lora_policy.py:517 附近取 processed_actions；sonic_action_term.py:244）。
+  取执行端 `scale = sonic_scale`（**逐关节 29 维向量**）⇒
+    `last_act = (default + μ*sonic_scale - default)/sonic_scale ≡ μ`（逐位），闭环增益恒 1。
+  原实现执行端 scale=0.5（标量）⇒ `last_act = μ*0.5/sonic_scale`，增益 0.5/sonic_scale
+  逐关节 0.91–6.71×（踝 sonic_scale≈0.0745 ⇒ 6.71），12 步几何发散至 2.49e7。
+  本文件的覆写落点 = `_override_residual_action_scale`（**只改本臂 cfg 实例**，不动
+  g1_velocity_decoder_env.py 的 DirectActionsCfg 默认值，保 direct 臂 D064 逐字可比）。
+  `sonic_scale` 与 `sonic_proprio_hist` **同源**：两者都经 `sonic_action_term._sonic_scale_isaac()`
+  取（单一事实源），本文件不再复制第二份常量（防漂移）。
+
+D065 潜伏缺陷警示（**只登记不修**，owner 2026-09-22 口径）：
+  同一缺陷潜伏在 D065 C 臂：`train_g1_decoder_lora.py` 的 C 臂 env 侧走
+  `G1SonicLoRAPolicyEnvCfg`，其动作项 = `DirectActionsCfg`（`g1_velocity_decoder_env.py:247-249`
+  的 `JointPositionActionCfg(scale=0.5, use_default_offset=True)`），而 policy 组末位同样挂了
+  `sonic_proprio_hist`（按逐关节 sonic_scale 反归一化）⇒ C 臂存在与残差臂**同款**的执行/反馈
+  仿射不一致（增益 0.5/sonic_scale）。本文件**不修** C 臂：D065 已产出的结论与 ckpt 身份绑定
+  于旧口径，就地改动会让历史可比性失真；如需修，应在 `train_g1_decoder_lora.py` 侧以新实验号
+  单独立项（改动范围、重训与结论修订均超出本次任务）。
 """
 
 from __future__ import annotations
@@ -122,8 +153,10 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -269,6 +302,126 @@ def forward_token_affine(
         raise ValueError(f"token_bound 须 ∈ ('none','tanh')，收到 {bound!r}")
     a = raw if bound != "tanh" else torch.tanh(raw)
     return m + float(token_alpha) * s * a
+
+
+# ------------------------------------------------- 执行/反馈仿射（闭环增益契约）
+# 残差臂闭环里同一条关节目标过两处仿射，二者必须严格互逆（否则每步乘 ≠1 的增益）：
+#   执行端 JointPositionAction：q_des = default + raw * scale（joint_actions.py:130-139），
+#                              本臂 raw = μ；use_default_offset=True ⇒ offset = default。
+#   反馈端 SonicActionCore.last_act_from_q_des：last_act = (q_des-default)/sonic_scale
+#                              （sonic_action_term.py:244；sonic_proprio_hist 取
+#                              action_manager.get_term("joint_pos").processed_actions）。
+# 取执行端 scale == sonic_scale（逐关节 29 维）⇒ last_act ≡ μ（逐位），闭环增益恒 1。
+# 旧实现（direct 臂逐字）执行端 scale = 标量 0.5 ⇒ 增益 0.5/sonic_scale（0.91–6.71×）。
+RESIDUAL_LEGACY_ACTION_SCALE = 0.5   # direct 臂逐字标量；仅作反例/信封记录，不用于本臂
+RESIDUAL_ACTION_SCALE_FIELD = "residual_action_scale"
+# sonic_scale 的单一事实源（与 sonic_proprio_hist 同源）：sonic_action_term._sonic_scale_isaac
+SONIC_SCALE_SOURCE = "sonic_action_term._sonic_scale_isaac()（= sonic_proprio_hist 反归一化同一份）"
+
+
+def sonic_joint_names() -> tuple[str, ...]:
+    """SONIC 29 序关节名（= G1_ISAACLab_ORDER，与 sonic_scale/sonic_proprio_hist 同序）。
+
+    从 `gear_sonic.envs.env_utils.joint_utils.G1_ISAACLab_ORDER` 取——**与
+    `sonic_action_term.py:50` 同一 import 源**（该模块 SONIC_JOINT_NAMES = 此序），
+    故本文件不再复制第二份关节名/scale 常量（防漂移）。本机（无 isaaclab）亦可 import。
+    """
+    try:  # 服务器执行根平铺 import / 仓库根包 import 双兼容
+        from gear_sonic.envs.env_utils.joint_utils import G1_ISAACLab_ORDER
+    except ImportError as exc:  # pragma: no cover（gear_sonic 是 SONIC 契约来源，缺则无法定序）
+        raise RuntimeError(
+            "gear_sonic.envs.env_utils.joint_utils 不可导入——无法确定 SONIC 29 序关节名"
+            "（与 sonic_scale 同源契约）"
+        ) from exc
+    names = tuple(str(n) for n in G1_ISAACLab_ORDER)
+    if len(names) != ACTION_DIM:
+        raise RuntimeError(f"SONIC 关节名应为 {ACTION_DIM} 个，收到 {len(names)}")
+    if len(set(names)) != ACTION_DIM:
+        raise RuntimeError(f"SONIC 关节名存在重复：{names}")
+    return names
+
+
+def build_sonic_scale_map(
+    sonic_scale, joint_names: Sequence[str] | None = None
+) -> dict[str, float]:
+    """逐关节 sonic_scale 向量 -> `JointPositionActionCfg.scale` 接受的 {关节名: 标量}。
+
+    **为什么是 dict 而不是张量**：isaaclab 2.1.0（服务器 installed）的 `JointAction`
+    scale 只支持 `float | dict[str,float]`（joint_actions.py:80-88 实测；**不接受
+    裸 tensor/list**，传入即 `ValueError: Unsupported scale type`）。dict 经
+    `string_utils.resolve_matching_names_values`（`re.fullmatch`）解析到 term
+    `find_joints` 得到的关节名序（joint_actions.py:61-63, 83-86），命中后按 term 序
+    写进 `_scale[:, index_list]`。用**精确关节名**（无正则元字符）作 key ⇒ 每关节唯一
+    命中 ⇒ `_scale` 逐关节等于 sonic_scale 向量。含正则元字符的关节名直接报错
+    （否则可能一 key 命中多关节 -> isaaclab 抛 "Multiple matches"，或误匹配）。
+    """
+    s = np.asarray(sonic_scale, dtype=np.float64).reshape(-1)
+    if s.shape != (ACTION_DIM,):
+        raise ValueError(f"sonic_scale 须为 ({ACTION_DIM},)，收到 {tuple(s.shape)}")
+    names = tuple(sonic_joint_names() if joint_names is None else (str(n) for n in joint_names))
+    if len(names) != ACTION_DIM:
+        raise ValueError(f"关节名数应为 {ACTION_DIM}，收到 {len(names)}")
+    if len(set(names)) != ACTION_DIM:
+        raise ValueError("关节名存在重复（scale dict 会互相覆盖）")
+    meta = re.compile(r"[.^$*+?{}\[\]\\|()]")
+    for n in names:
+        if meta.search(n):
+            raise ValueError(f"关节名 {n!r} 含正则元字符（会被 isaaclab re.fullmatch 误解析）")
+    return {n: float(v) for n, v in zip(names, s)}
+
+
+def exec_feedback_gain(action_scale, sonic_scale) -> np.ndarray:
+    """闭环增益 g = action_scale / sonic_scale（逐关节，纯函数，可本机单测）。
+
+    推导：执行端 `q_des = default + μ*action_scale`（use_default_offset=True ⇒ offset=default），
+    反馈端 `last_act = (q_des-default)/sonic_scale = μ * action_scale/sonic_scale`。
+    故 `last_act = μ * g`，g≡1 ⇔ 执行/反馈仿射严格互逆（闭环无附加增益）。
+    `action_scale` 可为标量（广播，如旧 0.5）或 29 维向量（本臂的 sonic_scale）。
+    """
+    a = np.asarray(action_scale, dtype=np.float64).reshape(-1)
+    s = np.asarray(sonic_scale, dtype=np.float64).reshape(-1)
+    if s.shape != (ACTION_DIM,):
+        raise ValueError(f"sonic_scale 须为 ({ACTION_DIM},)，收到 {tuple(s.shape)}")
+    if a.size == 1:
+        a = np.full(ACTION_DIM, float(a[0]))
+    if a.shape != (ACTION_DIM,):
+        raise ValueError(f"action_scale 须为标量或 ({ACTION_DIM},)，收到 {tuple(a.shape)}")
+    if np.any(s == 0.0):
+        raise ValueError("sonic_scale 含 0（反馈端除零）")
+    return a / s
+
+
+def residual_action_scale_envelope(
+    sonic_scale, *, joint_names: Sequence[str] | None = None, source: str = ""
+) -> dict:
+    """`residual_action_scale` 信封字段（值/来源/逐关节 min-max；JSON 可序列化）。
+
+    纯本机可构建（不 import isaaclab）。
+    """
+    s = np.asarray(sonic_scale, dtype=np.float64).reshape(-1)
+    if s.shape != (ACTION_DIM,):
+        raise ValueError(f"sonic_scale 须为 ({ACTION_DIM},)，收到 {tuple(s.shape)}")
+    names = tuple(sonic_joint_names() if joint_names is None else (str(n) for n in joint_names))
+    if len(names) != ACTION_DIM:
+        raise ValueError(f"关节名数应为 {ACTION_DIM}，收到 {len(names)}")
+    return {
+        "field": RESIDUAL_ACTION_SCALE_FIELD,
+        "value_kind": "per_joint_vector",
+        "dim": ACTION_DIM,
+        "source": str(source) or SONIC_SCALE_SOURCE,
+        "joint_order": "SONIC/G1_ISAACLab_ORDER",
+        "per_joint": {n: float(v) for n, v in zip(names, s)},
+        "min": float(s.min()),
+        "max": float(s.max()),
+        "argmin_joint": names[int(s.argmin())],
+        "argmax_joint": names[int(s.argmax())],
+        "legacy_scalar": RESIDUAL_LEGACY_ACTION_SCALE,
+        "gain_identity": True,
+        "note": (
+            "执行端 JointPositionAction scale=逐关节 sonic_scale ⇒ "
+            "(q_des-default)/sonic_scale ≡ μ，闭环增益恒 1；旧标量 0.5 ⇒ 增益 0.5/sonic_scale"
+        ),
+    }
 
 
 def ctx_terrain(terrain: str) -> str:
@@ -994,6 +1147,168 @@ def selftest_official_obs_slice_guard() -> dict:
     return {"official_width": off["width"], "excluded": off["excluded"], "fail_loud_ok": True}
 
 
+# ------------------------------------------------- 执行/反馈仿射 selftest（修复验证）
+def _fixture_sonic_scale(seed: int = 7) -> np.ndarray:
+    """selftest 用的 29 维正 scale 夹具（**非生产源**；生产源 = `hv._sonic_scale_isaac()`）。
+
+    刻意含踝部量级 0.0745（SONIC 序 13/14/17/18 = 踝 pitch/roll），其余取 [0.35,0.55]
+    量级——踝部小 scale 把旧标量 0.5 的增益缺陷放大到 6.71×，使反例有区分度。
+    只验证**关系**（增益/互逆/形状），不复制生产常量（防漂移）。
+    """
+    g = np.random.default_rng(seed)
+    s = 0.35 + 0.2 * g.random(ACTION_DIM)
+    for i in (13, 14, 17, 18):  # 踝 pitch/roll（SONIC/G1_ISAACLab_ORDER）
+        s[i] = 0.0745008703
+    return s.astype(np.float64)
+
+
+def selftest_residual_action_scale_gain_identity(seed: int = 3) -> dict:
+    """新增断言 ①：闭环增益恒等（执行端 scale=sonic_scale ⇒ 反馈反归一化恢复 μ，gain≡1）。
+
+    执行端：q_des = default + μ*scale（use_default_offset=True，joint_actions.py:130-139）。
+    反馈端：last_act = (q_des-default)/sonic_scale（sonic_action_term.py:244）。
+    取 scale == sonic_scale ⇒ last_act ≡ μ，闭环增益 g = scale/sonic_scale ≡ 1（逐关节）。
+
+    三层校验：
+      (a) **结构性恒等（逐位）**：`exec_feedback_gain(sonic_scale, sonic_scale)` 逐元素
+          == 1.0（IEEE x/x==1 精确）——这是互逆关系的硬证据；
+      (b) 数值往返（精确子例）：default=0、scale=2 的幂向量 ⇒ 乘除均为精确运算 ⇒
+          q_des→(q_des-default)/scale 与 μ **逐位**相等；
+      (c) 数值往返（真实量级子例）：default≠0、scale=夹具向量 ⇒ 恢复 μ 的偏差仅 float
+          舍入（≤1e-6；相对缺陷增益 ~6.7 小 6 个量级），证明 offset 严格消项。
+    """
+    n = 4096
+    sonic_scale = _fixture_sonic_scale()
+    _check(sonic_scale.shape == (ACTION_DIM,), "夹具 sonic_scale 形状非 29")
+    _check(bool((sonic_scale > 0).all()), "夹具 sonic_scale 含非正值")
+
+    # (a) 结构性恒等：执行端 scale 就是 sonic_scale ⇒ 增益逐位 == 1
+    gain = exec_feedback_gain(sonic_scale, sonic_scale)
+    _check(np.array_equal(gain, np.ones(ACTION_DIM)), f"结构性增益非逐位 1（{gain.min()}..{gain.max()}）")
+    # 通过 cfg 覆写路径构造的 scale dict，其值必须与 sonic_scale 逐位一致（同源无重排）
+    scale_map = build_sonic_scale_map(sonic_scale)
+    vec_from_map = np.array([scale_map[j] for j in sonic_joint_names()], dtype=np.float64)
+    _check(np.array_equal(vec_from_map, sonic_scale), "scale_map 重排/改变了 sonic_scale 向量")
+    gain_map = exec_feedback_gain(vec_from_map, sonic_scale)
+    _check(np.array_equal(gain_map, np.ones(ACTION_DIM)), "scale_map 路径增益非逐位 1")
+
+    # (b) 精确子例：default=0、scale=2 的幂 ⇒ 乘除精确 ⇒ 逐位往返
+    g = np.random.default_rng(seed)
+    mu = g.standard_normal((n, ACTION_DIM))
+    pow2_scale = np.power(2.0, g.integers(-3, 1, size=ACTION_DIM)).astype(np.float64)
+    q_des = mu * pow2_scale                     # default = 0
+    mu_back = q_des / pow2_scale
+    _check(np.array_equal(mu_back, mu), f"精确子例 μ 往返非逐位（maxdiff={np.abs(mu_back - mu).max()}）")
+
+    # (c) 真实量级子例：default≠0 ⇒ offset 消项（偏差仅 float 舍入）
+    default = 0.2 * np.sign(g.standard_normal(ACTION_DIM))
+    mu2 = g.standard_normal((n, ACTION_DIM))
+    q_des2 = default + mu2 * sonic_scale
+    mu2_back = (q_des2 - default) / sonic_scale
+    dev = float(np.abs(mu2_back - mu2).max())
+    _check(dev <= 1.0e-6, f"真实量级 μ 往返偏差过大（{dev}；应仅 float 舍入）")
+    return {
+        "gain_bitwise_one": True,
+        "gain_min": float(gain.min()),
+        "gain_max": float(gain.max()),
+        "exact_roundtrip_bitwise": True,
+        "offset_roundtrip_maxdev": dev,
+    }
+
+
+def selftest_residual_action_scale_legacy_counterexample(seed: int = 5) -> dict:
+    """新增断言 ②：旧配置（scale=0.5 标量）增益 = 0.5/sonic_scale > 1 的反例。
+
+    证明断言 ① 能抓原缺陷：标量 0.5 时反馈端 last_act = μ*0.5/sonic_scale，增益逐关节
+    ≠1（踝 0.0745 ⇒ 6.71；大关节 0.5475 ⇒ 0.913），数值往返 μ 偏差量级 ~0.5|μ|（远大于
+    1e-6）。断言 ② 要求：增益非恒 1、且 5 个量级上可区分。
+    """
+    sonic_scale = _fixture_sonic_scale()
+    gain_old = exec_feedback_gain(RESIDUAL_LEGACY_ACTION_SCALE, sonic_scale)  # 0.5/scale
+    _check(not np.array_equal(gain_old, np.ones(ACTION_DIM)), "旧标量增益竟为 1（反例失效）")
+    _check(float(gain_old.max()) > 1.0, f"旧标量增益上界应 > 1，实 {gain_old.max()}")
+    _check(float(gain_old.min()) < 1.0, f"旧标量增益下界应 < 1，实 {gain_old.min()}")
+    # 踝部（scale≈0.0745）增益≈6.71，与探针量化的 0.91–6.71× 区间一致
+    _check(abs(float(gain_old.max()) - 0.5 / 0.0745008703) < 1.0e-6,
+           f"旧标量踝部增益应≈{0.5 / 0.0745008703:.4f}，实 {gain_old.max():.4f}")
+
+    # 数值往返：旧标量下恢复的 μ 与真 μ 显著偏离（可区分断言 ① 的 1e-6 容差）
+    g = np.random.default_rng(seed)
+    n = 2048
+    default = 0.2 * np.sign(g.standard_normal(ACTION_DIM))
+    mu = g.standard_normal((n, ACTION_DIM))
+    q_des = default + mu * RESIDUAL_LEGACY_ACTION_SCALE          # 旧执行端
+    mu_back = (q_des - default) / sonic_scale                     # 反馈端（逐关节 sonic_scale）
+    dev = float(np.abs(mu_back - mu).max())
+    _check(dev > 0.1, f"旧标量往返偏差应显著（>0.1），实 {dev}")
+    return {
+        "legacy_gain_min": float(gain_old.min()),
+        "legacy_gain_max": float(gain_old.max()),
+        "legacy_roundtrip_maxdev": dev,
+        "discriminates_identity": True,
+    }
+
+
+def selftest_residual_action_scale_shape_source() -> dict:
+    """新增断言 ③：29 维 scale 向量形状/来源一致性（单一事实源，无第二份常量）。
+
+    校验：
+      - `sonic_joint_names()` = 29 个唯一名，且 == `gear_sonic...G1_ISAACLab_ORDER`
+        （与 `sonic_action_term.SONIC_JOINT_NAMES` / `_sonic_scale_isaac()` 同序同源）；
+      - `build_sonic_scale_map` 键 == 上述名序，值 == 输入向量逐位（无重排/丢失）；
+      - `SONIC_SCALE_SOURCE` 指向 `sonic_action_term._sonic_scale_isaac`（与
+        `sonic_proprio_hist` 反归一化同一份），杜绝本文件复制第二份 scale 常量；
+      - 信封 `residual_action_scale` 字段：dim=29、per_joint 29 项、min/max 与向量一致、
+        JSON 可序列化。
+    """
+    from gear_sonic.envs.env_utils.joint_utils import G1_ISAACLab_ORDER  # noqa: PLC0415
+
+    names = sonic_joint_names()
+    _check(len(names) == ACTION_DIM, f"关节名应 {ACTION_DIM} 个，实 {len(names)}")
+    _check(len(set(names)) == ACTION_DIM, "关节名有重复")
+    _check(names == tuple(G1_ISAACLab_ORDER), "sonic_joint_names != G1_ISAACLab_ORDER（来源不一致）")
+
+    sonic_scale = _fixture_sonic_scale()
+    scale_map = build_sonic_scale_map(sonic_scale)
+    _check(tuple(scale_map) == names, "scale_map 键序 != SONIC 关节名序")
+    _check(np.array_equal(np.array(list(scale_map.values())), sonic_scale),
+           "scale_map 值 != 输入 sonic_scale（逐位）")
+
+    # 来源一致性（字符串契约）：单一事实源函数名 + 与 sonic_proprio_hist 同源声明
+    _check("_sonic_scale_isaac" in SONIC_SCALE_SOURCE, "SONIC_SCALE_SOURCE 未指向 _sonic_scale_isaac")
+    _check("sonic_proprio_hist" in SONIC_SCALE_SOURCE, "SONIC_SCALE_SOURCE 未声明与 sonic_proprio_hist 同源")
+
+    # 形状守卫：非 29 维必须 fail loud（防静默广播）
+    for bad in (np.zeros(ACTION_DIM - 1), np.zeros(ACTION_DIM + 1)):
+        try:
+            build_sonic_scale_map(bad)
+            raise RuntimeError("非 29 维 scale 未 fail loud")
+        except ValueError:
+            pass
+    try:
+        exec_feedback_gain(0.5, np.zeros(ACTION_DIM - 1))
+        raise RuntimeError("非 29 维 sonic_scale 未 fail loud（exec_feedback_gain）")
+    except ValueError:
+        pass
+
+    # 信封字段结构
+    env_field = residual_action_scale_envelope(sonic_scale)
+    _check(env_field["dim"] == ACTION_DIM, "信封 dim 非 29")
+    _check(len(env_field["per_joint"]) == ACTION_DIM, "信封 per_joint 非 29 项")
+    _check(abs(env_field["min"] - float(sonic_scale.min())) < 1e-12, "信封 min 与向量不符")
+    _check(abs(env_field["max"] - float(sonic_scale.max())) < 1e-12, "信封 max 与向量不符")
+    _check(env_field["gain_identity"] is True, "信封未声明 gain_identity")
+    _check(env_field["legacy_scalar"] == RESIDUAL_LEGACY_ACTION_SCALE, "信封 legacy_scalar 错")
+    json.dumps(env_field, ensure_ascii=False)
+    return {
+        "n_joints": len(names),
+        "source": SONIC_SCALE_SOURCE,
+        "envelope_dim": env_field["dim"],
+        "scale_min": env_field["min"],
+        "scale_max": env_field["max"],
+    }
+
+
 def run_selftest() -> None:
     """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
     torch.manual_seed(0)
@@ -1007,6 +1322,10 @@ def run_selftest() -> None:
         "residual_vs_decoder_arm_decoder_input": selftest_residual_vs_decoder_arm_decoder_input(),
         "ctx_terrain_contract": selftest_ctx_terrain_contract(),
         "official_obs_slice_guard": selftest_official_obs_slice_guard(),
+        # 执行/反馈仿射一致性（CVGL 探针根因修复）
+        "residual_action_scale_gain_identity": selftest_residual_action_scale_gain_identity(),
+        "residual_action_scale_legacy_counterexample": selftest_residual_action_scale_legacy_counterexample(),
+        "residual_action_scale_shape_source": selftest_residual_action_scale_shape_source(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -1063,6 +1382,13 @@ def _import_heavy() -> SimpleNamespace:
     except ImportError:  # pragma: no cover
         from apt_g1.isaac.sonic_decoder_torch import SonicTorchDecoder  # type: ignore[no-redef]
 
+    # sonic_scale 单一事实源（与 sonic_proprio_hist 反归一化同一份）：残差臂执行端
+    # JointPositionAction scale 覆写要用它。与 sonic_action_term.py:462 的调用同源。
+    try:  # noqa: PLC0415
+        from isaac.sonic_action_term import _sonic_scale_isaac  # noqa: PLC0415
+    except ImportError:  # pragma: no cover
+        from apt_g1.isaac.sonic_action_term import _sonic_scale_isaac  # type: ignore[no-redef]
+
     hv.ObsTerm = ObsTerm
     hv.RewTerm = RewTerm
     hv.SceneEntityCfg = SceneEntityCfg
@@ -1073,6 +1399,7 @@ def _import_heavy() -> SimpleNamespace:
     hv.ctx_from_command = ctx_from_command
     hv.load_author_ckpt = load_author_ckpt
     hv.SonicTorchDecoder = SonicTorchDecoder
+    hv._sonic_scale_isaac = _sonic_scale_isaac
     return hv
 
 
@@ -1595,6 +1922,129 @@ def _attach_token_obs(cfg, hv, cli, terrain: str) -> dict:
     }
 
 
+def _override_residual_action_scale(cfg, hv) -> dict:
+    """把残差臂 JointPositionAction 的 scale 覆写为**逐关节 sonic_scale 向量**（执行/反馈互逆）。
+
+    **只改本臂 cfg 实例**（`cfg.actions.joint_pos`），不动 `g1_velocity_decoder_env.py`
+    的 `DirectActionsCfg` 默认值（保 direct 臂 D064 逐字可比）；因此 C 臂（D065）默认仍是
+    标量 0.5，其潜伏缺陷只登记不修（见模块 docstring「D065 潜伏缺陷警示」）。
+
+    做法：`cfg.actions.joint_pos.scale = {关节名: sonic_scale[j]}`（isaaclab 2.1.0 只接受
+    float|dict，见 `build_sonic_scale_map` docstring）。use_default_offset=True 不动（offset
+    = default，与反馈端 `q_des-default` 消项一致）。同时断言覆写落地（配置对象自检，
+    fail loud，不静默保留 0.5）。
+
+    返回 {"scale_map": ..., "n_joints": 29, "source": ..., "legacy_scalar": 0.5}（进打印）。
+    """
+    action_term = getattr(cfg.actions, "joint_pos", None)
+    if action_term is None:
+        raise RuntimeError(
+            "残差臂 cfg.actions.joint_pos 不存在（lora_policy 变体应 = DirectActionsCfg 的 "
+            "JointPositionActionCfg）——动作通路接线漂移，拒绝开训"
+        )
+    if not bool(getattr(action_term, "use_default_offset", False)):
+        raise RuntimeError(
+            "残差臂 joint_pos.use_default_offset 应为 True（offset=default；否则反馈端 "
+            "(q_des-default)/sonic_scale 与执行端仿射不互逆）"
+        )
+    sonic_scale = np.asarray(hv._sonic_scale_isaac(), dtype=np.float64).reshape(-1)
+    if sonic_scale.shape != (ACTION_DIM,):
+        raise RuntimeError(f"sonic_scale 应为 ({ACTION_DIM},)，收到 {tuple(sonic_scale.shape)}")
+    scale_map = build_sonic_scale_map(sonic_scale)
+    action_term.scale = scale_map
+    # 覆写落地自检（配置对象级；运行期 action term 的 _scale 另在 _run 断言）
+    if action_term.scale != scale_map:
+        raise RuntimeError("joint_pos.scale 覆写未落地（仍为旧值？）")
+    if action_term.scale == RESIDUAL_LEGACY_ACTION_SCALE:
+        raise RuntimeError("joint_pos.scale 仍等于旧标量 0.5（覆写失效）")
+    return {
+        "scale_map": scale_map,
+        "n_joints": int(sonic_scale.shape[0]),
+        "source": SONIC_SCALE_SOURCE,
+        "legacy_scalar": RESIDUAL_LEGACY_ACTION_SCALE,
+    }
+
+
+def assert_residual_action_scale(env, hv, *, action_term_name: str = "joint_pos") -> dict:
+    """运行期守卫：action term 实际 `_scale` 逐关节 == sonic_scale（fail loud）。
+
+    这是执行/反馈互逆的**唯一硬证据**——cfg 层覆写对、但运行期 term 解析漂移（关节名不
+    命中/资产序不同）时，`_scale` 会退回 ones 或错序，闭环增益即 ≠1。
+
+    读取与比对（对齐 isaaclab 2.1.0 实际存储）：
+      - dict scale 经 `resolve_matching_names_values` 落到 `_scale = ones(num_envs, action_dim)`
+        的 **asset 关节序**列（joint_actions.py:83-86），故 `_scale` 是 (num_envs, 29) 张量；
+        取第 0 行（并断言各行一致，逐 env 无差异）。
+      - 生效 scale 重排到 SONIC 序后须逐位 == `_sonic_scale_isaac()`：优先用 term 自身
+        `_joint_names` 建 {名: scale} 映射（对 term 关节序稳健），缺名时退回
+        `resolve_sonic_joint_ids(asset.joint_names)`（反馈端 `sonic_proprio_hist` 把
+        processed_actions 重排到 SONIC 序用的同一函数，故这是闭环互逆的正确判据）。
+    返回 {"n_joints", "gain_min", "gain_max", "bitwise": True}。
+    """
+    term = env.action_manager.get_term(action_term_name)
+    scale = getattr(term, "_scale", None)
+    if scale is None:
+        raise RuntimeError(f"action term {action_term_name!r} 无 _scale（isaaclab 版本漂移？）")
+    t = hv.torch
+    if not t.is_tensor(scale):
+        # 标量 float（未覆写/覆写失效）-> 显式失败，不静默当向量
+        raise RuntimeError(
+            f"action term {action_term_name!r} 的 _scale 是标量 {scale!r}（应逐关节向量）——"
+            "执行/反馈仿射不互逆，拒绝开训"
+        )
+    if scale.ndim == 2:
+        # (num_envs, action_dim)：逐 env 必须同值（本臂 scale 与环境无关）
+        if not bool((scale == scale[0:1]).all()):
+            raise RuntimeError("action term _scale 逐 env 不一致（本臂 scale 应与环境无关）")
+        col = scale[0]
+    elif scale.ndim == 1:
+        col = scale
+    else:
+        raise RuntimeError(f"action term _scale 维度异常：{tuple(scale.shape)}")
+    col = col.detach().to("cpu", t.float64)
+
+    # SONIC 序生效 scale：优先按 term 自身关节名映射（对 term 关节序稳健）；缺名则退回
+    # asset 序（resolve_sonic_joint_ids，与 sonic_proprio_hist 重排 processed_actions 同式）。
+    term_names = getattr(term, "_joint_names", None)
+    sonic_names = list(sonic_joint_names())
+    if term_names is not None and len(term_names) == int(col.numel()):
+        name_to_scale = {str(n): float(v) for n, v in zip(term_names, col.tolist())}
+        missing = [n for n in sonic_names if n not in name_to_scale]
+        if missing:
+            raise RuntimeError(f"action term 关节名缺 SONIC 关节 {missing}（scale 映射不完整）")
+        got_sonic = np.array([name_to_scale[n] for n in sonic_names], dtype=np.float64)
+    else:
+        try:  # noqa: PLC0415
+            from isaac.sonic_action_term import resolve_sonic_joint_ids  # noqa: PLC0415
+        except ImportError:  # pragma: no cover
+            from apt_g1.isaac.sonic_action_term import resolve_sonic_joint_ids  # type: ignore[no-redef]
+        asset = env.scene["robot"]
+        ids, _identity = resolve_sonic_joint_ids(asset.joint_names)
+        ids_t = t.as_tensor(ids, dtype=t.long, device=col.device)
+        got_sonic = col[ids_t].numpy()  # SONIC 序的生效 scale
+    sonic_scale = np.asarray(hv._sonic_scale_isaac(), dtype=np.float64).reshape(-1)
+    if sonic_scale.shape != (ACTION_DIM,):
+        raise RuntimeError(f"sonic_scale 应为 ({ACTION_DIM},)，收到 {tuple(sonic_scale.shape)}")
+    if got_sonic.shape != (ACTION_DIM,):
+        raise RuntimeError(f"生效 scale（SONIC 序）形状 {got_sonic.shape} != ({ACTION_DIM},)")
+    exp = sonic_scale.astype(np.float64)
+    if not np.array_equal(got_sonic, exp):
+        raise RuntimeError(
+            "action term 生效 scale（SONIC 序）!= sonic_scale（执行/反馈仿射不互逆）："
+            f"maxdiff={float(np.max(np.abs(got_sonic - exp)))} "
+            f"argmax={int(np.argmax(np.abs(got_sonic - exp)))}"
+        )
+    gain = exec_feedback_gain(got_sonic, exp)  # 逐关节，应恒 1
+    if not np.array_equal(gain, np.ones(ACTION_DIM)):
+        raise RuntimeError(f"闭环增益非恒 1（{float(gain.min())}..{float(gain.max())}）")
+    return {
+        "n_joints": int(got_sonic.shape[0]),
+        "gain_min": float(gain.min()),
+        "gain_max": float(gain.max()),
+        "bitwise": True,
+    }
+
+
 def _build_residual_env_cfg(hv, cli, device: str, suffix: str):
     """残差臂 env cfg：direct 动作通路（29 维）+ max_forward 奖励 + author_token 观测。
 
@@ -1605,14 +2055,18 @@ def _build_residual_env_cfg(hv, cli, device: str, suffix: str):
     cfg, how = td._build_env_cfg(
         hv.make_env_cfg, hv.mdp, hv.SonicDecoderActionTermCfg, cli.terrain, "lora_policy", cli, device, suffix
     )
+    # 执行/反馈仿射互逆（CVGL 探针根因修复）：JointPositionAction scale 覆写为逐关节
+    # sonic_scale（与 sonic_proprio_hist 反归一化同源），闭环增益恒 1。只改本臂 cfg 实例。
+    scale_info = _override_residual_action_scale(cfg, hv)
     recipe = _apply_max_forward_recipe(cfg, hv, cli.forward_weight)
     token_info = _attach_token_obs(cfg, hv, cli, cli.terrain)
     print(
         f"[d067] residual env cfg via {how} + max_forward 奖励 + author_token 观测：{recipe}；"
-        f"token_info={json.dumps(token_info, ensure_ascii=False)}",
+        f"token_info={json.dumps(token_info, ensure_ascii=False)}；"
+        f"residual_action_scale={json.dumps(scale_info, ensure_ascii=False)}",
         flush=True,
     )
-    return cfg, how, recipe, token_info
+    return cfg, how, recipe, token_info, scale_info
 
 
 def _build_residual_policy_kwargs(hv, env, cli, device: str) -> tuple[dict, dict]:
@@ -1766,10 +2220,11 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
 
     # ---- env cfg ----
     token_info = None
+    scale_info = None
     if cli.arm == "residual":
         if not cli.author_ckpt:
             raise RuntimeError("--arm residual 需要 --author-ckpt（token 源 = D061a author v0 ckpt）")
-        cfg, cfg_how, recipe, token_info = _build_residual_env_cfg(hv, cli, device, suffix="main")
+        cfg, cfg_how, recipe, token_info, scale_info = _build_residual_env_cfg(hv, cli, device, suffix="main")
     else:
         cfg, cfg_how = td._build_env_cfg(
             hv.make_env_cfg, hv.mdp, hv.SonicDecoderActionTermCfg, cli.terrain, cli.arm, cli, device, suffix="main"
@@ -1785,6 +2240,12 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
         envelope["token_affine"]["token_bound"] = token_info["token_bound"]
         envelope["token_affine"]["token_alpha"] = token_info["token_alpha"]
         envelope["token_affine"]["token_stats"] = token_info["token_stats"]
+        # 执行/反馈仿射信封（值/来源/逐关节 min-max）；运行期 action term _scale 守卫
+        # 在 env 构造后追加 bitwise/gain 实测（见下）。
+        envelope[RESIDUAL_ACTION_SCALE_FIELD] = residual_action_scale_envelope(
+            hv._sonic_scale_isaac(),
+            source=str((scale_info or {}).get("source", SONIC_SCALE_SOURCE)),
+        )
         (out_dir / "run.json").write_text(json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # asymmetric 退化判定（同 D064）
@@ -1813,10 +2274,19 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
         # 若 make_env_cfg 签名回退把 lora_policy 变体拿成别的动作通路，此处即显式失败
         # （否则 μ(29) 与 env 期望动作维错位，训练静默崩）。
         _check(action_dim == ACTION_DIM, f"residual 臂 env 动作维应 {ACTION_DIM}，实 {action_dim}")
+        # 执行/反馈仿射互逆的**运行期硬证据**：action term 实际 _scale 逐位 == sonic_scale
+        # （cfg 覆写对但 term 解析漂移 -> 此处即 fail loud，拒绝用错误闭环开训）。
+        scale_guard = assert_residual_action_scale(env, hv)
+        print(f"[d067] residual 执行/反馈仿射守卫：{json.dumps(scale_guard, ensure_ascii=False)}", flush=True)
         policy_kwargs, wiring = _build_residual_policy_kwargs(hv, env, cli, device)
         print(f"[d067] residual 接线 {json.dumps(wiring, ensure_ascii=False)}", flush=True)
         # 身份信封补记实际接线（env 运行期才能确定）
         envelope["residual_wiring"] = wiring
+        envelope[RESIDUAL_ACTION_SCALE_FIELD]["runtime_guard"] = scale_guard
+        envelope[RESIDUAL_ACTION_SCALE_FIELD]["cfg_override"] = {
+            "n_joints": int((scale_info or {}).get("n_joints", 0)),
+            "legacy_scalar": RESIDUAL_LEGACY_ACTION_SCALE,
+        }
         envelope["obs_dim_policy"] = obs_dim_policy
         envelope["obs_dim_critic"] = obs_dim_critic
         envelope["action_dim"] = action_dim
@@ -1864,7 +2334,12 @@ def _smoke(*, cli, out_dir, env, policy_obs, obs_dim_policy, action_dim, hv, run
         token_slot = _policy_obs_slot(env, hv.torch, "author_token", TOKEN_DIM)
         proprio_slot = _policy_obs_slot(env, hv.torch, "sonic_proprio", PROPRIO_DIM)
         _check(action_dim == ACTION_DIM, f"residual 臂 action 维应 {ACTION_DIM}，实 {action_dim}")
-        print(f"[d067] smoke b) residual 槽 token={token_slot} proprio={proprio_slot} PASS", flush=True)
+        # 执行/反馈仿射互逆（smoke 侧再断言一次：env 已构造，term._scale 可实测）
+        guard = assert_residual_action_scale(env, hv)
+        _check(guard["bitwise"] and guard["gain_min"] == 1.0 and guard["gain_max"] == 1.0,
+               f"smoke 执行/反馈仿射守卫不通过：{guard}")
+        print(f"[d067] smoke b) residual 槽 token={token_slot} proprio={proprio_slot} "
+              f"仿射守卫={guard} PASS", flush=True)
 
     wrapped = hv.EnvWrapper(env)
     runner = hv.OnPolicyRunner(wrapped, runner_cfg_dict, log_dir=str(out_dir), device=device)
