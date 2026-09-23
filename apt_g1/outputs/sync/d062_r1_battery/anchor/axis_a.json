@@ -1,0 +1,264 @@
+{
+  "script": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/sim/rollout_author_v0_mj.py",
+  "script_md5": "2acbee0db1908673249334c533fd40cb",
+  "ckpt": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/outputs/d062_r1/anchor/ckpt_final.pt",
+  "ckpt_md5": "1cedf1c35546216dda5e5882c4fcf7dd",
+  "model_cfg": {
+    "vocab": 29,
+    "code_min": -15,
+    "variant": "anchor",
+    "state_dim": 36,
+    "win": 200,
+    "token_dim": 64,
+    "exp": "D062",
+    "d_model": 1280,
+    "n_layer": 18,
+    "n_head": 10,
+    "ffn": 2560,
+    "grad_ckpt": true,
+    "use_chunk": false,
+    "use_priv": false,
+    "chunk_k": 8,
+    "chunk_prefix": 8,
+    "chunk_d_model": 512,
+    "chunk_layers": 2,
+    "chunk_n_head": 8,
+    "chunk_ffn": 1024,
+    "priv_hidden": 256,
+    "priv_extra": 0
+  },
+  "device": "cpu",
+  "repo": "/home/cvgluser/ros2_data/GR00T-WholeBodyControl",
+  "decoder_onnx": "/home/cvgluser/ros2_data/GR00T-WholeBodyControl/gear_sonic_deploy/policy/release/model_decoder.onnx",
+  "ctrl_hz": 50.0,
+  "window": 200,
+  "token_scale": 16.0,
+  "ctx_dim": 13,
+  "ctx_layout": "cmd4(target_vel,movement_direction,mode,height; 无真值=-1 哨兵) + ht4(四字段 has_truth 标志) + onehot3(terrain: plane/rough_paper/climbing_box) + hp2(terrain height,noise; plane=(0,0))",
+  "ctx_source": "built",
+  "single_code_broadcast": false,
+  "fall_h": 0.2,
+  "aux_dim": 12,
+  "run_matrix": [
+    {
+      "target_vel": 0.6,
+      "movement_direction": 0.0,
+      "mode": 1,
+      "height": -1.0,
+      "terrain": "plane",
+      "terrain_params": {},
+      "seed": 0,
+      "dur_s": 20.0,
+      "in_distribution": true
+    },
+    {
+      "target_vel": 0.6,
+      "movement_direction": 0.0,
+      "mode": 1,
+      "height": -1.0,
+      "terrain": "plane",
+      "terrain_params": {},
+      "seed": 1,
+      "dur_s": 20.0,
+      "in_distribution": true
+    },
+    {
+      "target_vel": 1.0,
+      "movement_direction": 0.0,
+      "mode": 3,
+      "height": -1.0,
+      "terrain": "plane",
+      "terrain_params": {},
+      "seed": 0,
+      "dur_s": 20.0,
+      "in_distribution": true
+    },
+    {
+      "target_vel": 1.0,
+      "movement_direction": 0.0,
+      "mode": 3,
+      "height": -1.0,
+      "terrain": "plane",
+      "terrain_params": {},
+      "seed": 1,
+      "dur_s": 20.0,
+      "in_distribution": true
+    }
+  ],
+  "metric_defs": {
+    "survived": "整段跑满 dur_s 且未触发摔倒判据（qpos[2] < 0.2）",
+    "fall_step": "首次摔倒的控制拍序号（50 Hz），未摔倒为 null",
+    "n_steps": "实际执行的控制拍数（50 Hz）",
+    "dx_m": "root x 位移（米，世界系，末值减初值）",
+    "dur_s": "实际时长（秒）= n_steps / 50",
+    "realized_vx": "实测前进速度 dx_m / dur_s（米/秒）",
+    "h_min": "整段 root 高度最小值（米）",
+    "cmd": "命令 nominal：target_vel / movement_direction / mode / height"
+  },
+  "assumptions": [
+    "R2 off-by-one: env.step 喂的是预测的下一帧 token",
+    "ctx 后 9 维（ht4/onehot3/hp2）语义已对齐 train_author_v0.ctx_from_record（ht4=命令 has_truth / onehot3=terrain / hp2=terrain height,noise）；terrain 缺省 plane，可用 cmd['terrain']/cmd['terrain_params'] 覆盖",
+    "intent 槽与 tokens 槽同源回填（部署期 intent = 生成码，轴 C autoregressive_rollout 口径）",
+    "状态拼接 jp_mj+quat_wxyz+trans_m（d060_windows.py:106）",
+    "抑制 env 自动 reset，fall 判据由脚本复刻 qpos[2] < 0.2"
+  ],
+  "wall_time_s": 509.41,
+  "per_run": [
+    {
+      "survived": false,
+      "fall_step": 207,
+      "n_steps": 207,
+      "dx_m": 3.9666,
+      "dur_s": 4.14,
+      "realized_vx": 0.9581,
+      "h_min": 0.1937,
+      "h_end": 0.1937,
+      "x_end": 3.9666,
+      "tokens_head": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "seed": 0,
+      "cmd": {
+        "target_vel": 0.6,
+        "movement_direction": 0.0,
+        "mode": 1,
+        "height": -1.0,
+        "terrain": "plane",
+        "terrain_params": {}
+      }
+    },
+    {
+      "survived": false,
+      "fall_step": 207,
+      "n_steps": 207,
+      "dx_m": 3.9666,
+      "dur_s": 4.14,
+      "realized_vx": 0.9581,
+      "h_min": 0.1937,
+      "h_end": 0.1937,
+      "x_end": 3.9666,
+      "tokens_head": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "seed": 1,
+      "cmd": {
+        "target_vel": 0.6,
+        "movement_direction": 0.0,
+        "mode": 1,
+        "height": -1.0,
+        "terrain": "plane",
+        "terrain_params": {}
+      }
+    },
+    {
+      "survived": true,
+      "fall_step": null,
+      "n_steps": 1000,
+      "dx_m": 4.0843,
+      "dur_s": 20.0,
+      "realized_vx": 0.2042,
+      "h_min": 0.6919,
+      "h_end": 0.7279,
+      "x_end": 4.0843,
+      "tokens_head": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "seed": 0,
+      "cmd": {
+        "target_vel": 1.0,
+        "movement_direction": 0.0,
+        "mode": 3,
+        "height": -1.0,
+        "terrain": "plane",
+        "terrain_params": {}
+      }
+    },
+    {
+      "survived": true,
+      "fall_step": null,
+      "n_steps": 1000,
+      "dx_m": 4.0843,
+      "dur_s": 20.0,
+      "realized_vx": 0.2042,
+      "h_min": 0.6919,
+      "h_end": 0.7279,
+      "x_end": 4.0843,
+      "tokens_head": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "seed": 1,
+      "cmd": {
+        "target_vel": 1.0,
+        "movement_direction": 0.0,
+        "mode": 3,
+        "height": -1.0,
+        "terrain": "plane",
+        "terrain_params": {}
+      }
+    }
+  ],
+  "summary": {
+    "vx0.60_mode1": {
+      "n_runs": 2,
+      "n_survived": 0,
+      "survival_rate": 0.0,
+      "realized_vx_mean": 0.9581,
+      "realized_vx_n": 2
+    },
+    "vx1.00_mode3": {
+      "n_runs": 2,
+      "n_survived": 2,
+      "survival_rate": 1.0,
+      "realized_vx_mean": 0.2042,
+      "realized_vx_n": 2
+    }
+  },
+  "model_src": "load_author_v1",
+  "v1": {
+    "ckpt": "/home/cvgluser/ros2_data/g1-apt-cloud-sync/outputs/d062_r1/anchor/ckpt_final.pt",
+    "ckpt_md5": "1cedf1c35546216dda5e5882c4fcf7dd",
+    "model_src": "load_author_v1",
+    "variant": "anchor",
+    "model_cfg": {
+      "vocab": 29,
+      "code_min": -15,
+      "variant": "anchor",
+      "state_dim": 36,
+      "win": 200,
+      "token_dim": 64,
+      "exp": "D062",
+      "d_model": 1280,
+      "n_layer": 18,
+      "n_head": 10,
+      "ffn": 2560,
+      "grad_ckpt": true,
+      "use_chunk": false,
+      "use_priv": false,
+      "chunk_k": 8,
+      "chunk_prefix": 8,
+      "chunk_d_model": 512,
+      "chunk_layers": 2,
+      "chunk_n_head": 8,
+      "chunk_ffn": 1024,
+      "priv_hidden": 256,
+      "priv_extra": 0
+    },
+    "frame_path": "AuthorV1Transformer.encode+head（逐帧主干；chunk/priv 头不参与）"
+  }
+}
