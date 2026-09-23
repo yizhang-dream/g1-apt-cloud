@@ -249,7 +249,8 @@ advantage/returns 消毒器 + critic 前向探针（2026-09-22，第五层修复
   （参数快照 5/5 翻转）→ 全灭。**放大器 = 归一化对单个 NaN 无免疫**（一个 NaN 拉低/污染
   mean/std，除法把 NaN 摊到全量）。本层两件（**不改奖励/网络/超参，不动 rsl_rl 本体**）：
     1. **消毒器（发射解锁件）**：`_wrapped_update` 在 `orig_update` **之前**对
-       `storage.advantages`/`storage.returns` 做非有限检测；若有：
+       `storage.advantages`/`storage.returns`/`storage.values`/**`storage.privileged_observations`**/
+       **`storage.observations`** 五路做非有限检测（检测范围随第六/七层扩到五路，见第七层段）；若有：
          ① 用 `_first_nonfinite_probe` 落 `tag=nan_probe` 行（`stage=pre_mid`，含
             n_nonfinite/first_coord，与第四层 pre_mid 语义一致）；
          ② **写回消毒**：非有限元素置 0（重赋值 `storage.advantages/returns/values`，见第六层），
@@ -285,6 +286,29 @@ advantage/returns 消毒器 + critic 前向探针（2026-09-22，第五层修复
        大张量按同一阈值跳过，copy 前置判断）。**只记录不阻断、不改返回值、不改 critic_obs。**
   另收上一轮 reviewer 的 should-fix：`_wrapped_update` 中两处 `_nan_probe_param_snapshot` 调用
   包 `try/except`（探针绝不打断训练原则）。
+
+第七层：消毒器上移到观测端（critic 重算路径的污染源，2026-09-22，第七跑实证）：
+  实证（第七跑）：第六层三张量（advantages/returns/values）消毒 **0 失败**，但 `ppo.update()`
+  内部（`ppo.py:263`）用 `storage.privileged_observations` **现算 critic**——env 507 的单个 NaN
+  观测（critic_obs n_nonf=1/292864，u950，两跑位置**逐位复现** = 确定性 Isaac artifact）就在
+  这条重算路径上，消毒 values 管不到「重算」，故 `value_loss` 再 NaN → 参数全毁。
+  **坑**：obs 张量（privileged 24×1024×~1500≈37M / policy ≈32M 元素）**超过**消毒器大张量
+  跳过阈值 `NAN_PROBE_MAX_TENSOR_ELEMS=2^24`，直接加 attr 会被跳过（= 消毒器形同未加）。
+  修法两件（**不改奖励/网络/超参，不动 rsl_rl 本体**，延迟 import，健康路径零写零同步）：
+    1. **消毒器加观测端**：`_SANITIZE_STORAGE_ATTRS` 扩为
+       `(advantages, returns, values, privileged_observations, observations)`；
+       `observations` 在 rsl_rl 里是 **dict（policy/critic 两组）**、`privileged_observations`
+       是**张量**——`_sanitize_storage_tensor` 按 `getattr` 后类型分派：dict 则逐 key 走同一
+       消毒路径（写回时 `setattr` 整 dict），张量直接走。
+    2. **大张量检测改 GPU 侧（关键）**：`_sanitize_storage_tensor` 对超阈值张量**不再跳过**
+       ——检测改为 **GPU 侧 `isfinite` 归约**（`bad_n = int((~torch.isfinite(t)).sum())`，单标量
+       同步，**零全量拷贝**）；`bad_n==0` 提前返回零写；`bad_n>0` 才做 **GPU 侧 `nan_to_num`
+       重赋值**（同样零拷贝）+ 统计（first/first_coord 在 GPU 找首个非有限索引后**只拷小片**）。
+       即「obs 张量超阈值但消毒**不**跳过 = GPU 侧归约零拷贝」。
+       **探针类候选收集（`_collect_*`，只读记录用）的大张量跳过逻辑保持不变**（那是日志性能
+       保护，与消毒器职责不同；探针仍跳过超阈值张量以免反复 GPU→CPU 全量 copy 拖慢/OOM）。
+    3. 健康路径开销：**一次 GPU 侧归约同步**（`bad_n` 标量 `.item()`）——这是「不跳过超大张量」
+       的必要代价（无法在不读数据的前提下判断有没有 NaN）；健康路径仍**零写回**（对象引用不变）。
 """
 
 from __future__ import annotations
@@ -2327,6 +2351,137 @@ def selftest_advantage_sanitizer(seed: int = 0) -> dict:
     }
 
 
+def selftest_sanitize_obs_end(seed: int = 0) -> dict:
+    """第七层新增断言：消毒器上移到观测端（五路 + 大张量 GPU 侧 + dict observations）。
+
+    四路：
+      (a) **大张量场景（超阈值）** —— 把 `NAN_PROBE_MAX_TENSOR_ELEMS` 临时压到 4，造一个
+          numel=64（> 阈值）的含 NaN obs 张量：断言消毒器**不跳过**、该张量被消毒（NaN 置 0、
+          其余逐位不变），且落 `nan_probe_sanitize` 行；同时断言**探针**（`_collect_*`）对超阈值
+          张量仍**跳过**（无对应 `obs` 的 nan_probe 行）——证明「消毒不跳、探针仍跳」两条口径分离。
+      (b) **dict 型 observations 逐 key 消毒** —— observations={"policy": 含 NaN, "critic": 有限}：
+          断言 policy 被消毒、critic **对象引用不变**（未命中零写回），sanitize 行 name=
+          `storage.observations.policy`。
+      (c) **五 attr 全覆盖** —— 五个 attr 各注入 NaN，断言五条 sanitize 行 name 齐全。
+      (d) **健康零写不变** —— 五路全有限：无 sanitize 行、五路对象引用全部不变（零写回）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    # --- (c) 五 attr 全覆盖 ---
+    _check(
+        _SANITIZE_STORAGE_ATTRS
+        == ("advantages", "returns", "values", "privileged_observations", "observations"),
+        f"消毒 attr 列表应恰为五路，实为 {_SANITIZE_STORAGE_ATTRS}",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([float("nan"), 1.0], dtype=torch.float32),
+                             ret=torch.tensor([float("nan"), 1.0], dtype=torch.float32), loss=0.7)
+        alg.storage.values = torch.tensor([float("nan"), 1.0], dtype=torch.float32)
+        alg.storage.privileged_observations = torch.tensor([[float("nan"), 1.0]], dtype=torch.float32)
+        alg.storage.observations = {"policy": torch.tensor([float("nan"), 1.0], dtype=torch.float32)}
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        names = {r["name"] for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG}
+        for expected in ("storage.advantages", "storage.returns", "storage.values",
+                         "storage.privileged_observations", "storage.observations.policy"):
+            _check(expected in names, f"五路消毒缺 {expected!r}：{sorted(names)}")
+        _check(bool(torch.isfinite(alg.storage.privileged_observations).all()),
+               "privileged_observations 消毒后仍含非有限值")
+        _check(bool(torch.isfinite(alg.storage.observations["policy"]).all()),
+               "observations.policy 消毒后仍含非有限值")
+
+    # --- (a) 大张量（超阈值）不跳过（GPU 侧路径）+ 探针仍跳过 ---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        big_n = 64
+        big = torch.ones(big_n, dtype=torch.float32)
+        big[3] = float("nan")
+        big = big.reshape(8, 8)   # 2 维：使 first_coord 有意义（flat idx 3 -> [0, 3]）
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32),
+                             ret=torch.tensor([1.0], dtype=torch.float32), loss=0.7)
+        alg.storage.observations = {"policy": big}
+        _check(big.numel() > 4, "大张量夹具未超过压低的阈值（场景不成立）")
+        saved = globals()["NAN_PROBE_MAX_TENSOR_ELEMS"]
+        globals()["NAN_PROBE_MAX_TENSOR_ELEMS"] = 4   # 压低阈值，使 64 元素张量成为「超大张量」
+        try:
+            install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+            alg.update()
+        finally:
+            globals()["NAN_PROBE_MAX_TENSOR_ELEMS"] = saved
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        san = [r for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG]
+        _check(len(san) == 1 and san[0]["name"] == "storage.observations.policy",
+               f"超阈值张量应被消毒（1 条 sanitize 行），实为 {san}")
+        _check(san[0]["n_nonfinite"] == 1 and san[0]["first_index"] == 3,
+               f"超阈值张量消毒计数/首索引错：{san[0]}")
+        _check(san[0]["first_coord"] == [0, 3], f"超阈值张量 first_coord 错：{san[0]}")
+        cleaned = alg.storage.observations["policy"]
+        _check(bool(torch.isfinite(cleaned).all()), f"超阈值张量消毒后仍含非有限值：{cleaned.tolist()}")
+        _check(cleaned[0, 3].item() == 0.0 and cleaned[0, 0].item() == 1.0,
+               f"超阈值张量消毒值错：{cleaned.tolist()}")
+        # 探针口径不变：`_collect_*` 对超阈值张量仍跳过（无 obs.* 的 nan_probe 行）
+        _check(not any(r.get("tag") == NAN_PROBE_TAG and str(r.get("name", "")).startswith("obs.")
+                       for r in rows),
+               "探针本应跳过超阈值张量，却落了 obs.* nan_probe 行（探针跳过口径被破坏）")
+
+    # --- (b) dict 型 observations 逐 key 消毒（未命中 key 零写回）---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        pol = torch.tensor([float("nan"), 2.0], dtype=torch.float32)
+        cri = torch.tensor([0.5, 0.25], dtype=torch.float32)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32),
+                             ret=torch.tensor([1.0], dtype=torch.float32), loss=0.7)
+        alg.storage.observations = {"policy": pol, "critic": cri}
+        cri_obj = cri
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        obs = alg.storage.observations
+        _check(obs["policy"][0].item() == 0.0 and obs["policy"][1].item() == 2.0,
+               f"dict observations 的 policy key 未消毒：{obs['policy'].tolist()}")
+        _check(obs["critic"] is cri_obj, "dict observations 的有限 key 对象引用被换（应零写回）")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        san = [r for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG]
+        _check(len(san) == 1 and san[0]["name"] == "storage.observations.policy",
+               f"dict observations 应落 1 条 policy sanitize 行：{san}")
+
+    # --- (d) 健康零写不变（五路对象引用全不变、无 sanitize 行）---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32),
+                             ret=torch.tensor([1.0], dtype=torch.float32), loss=0.7)
+        alg.storage.values = torch.tensor([0.1], dtype=torch.float32)
+        alg.storage.privileged_observations = torch.tensor([[0.1, 0.2]], dtype=torch.float32)
+        alg.storage.observations = {"policy": torch.tensor([0.3], dtype=torch.float32),
+                                    "critic": torch.tensor([0.4], dtype=torch.float32)}
+        refs = {
+            "advantages": alg.storage.advantages, "returns": alg.storage.returns,
+            "values": alg.storage.values,
+            "privileged_observations": alg.storage.privileged_observations,
+            "observations": alg.storage.observations,
+        }
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        for attr, obj in refs.items():
+            _check(getattr(alg.storage, attr) is obj,
+                   f"健康路径 {attr} 对象引用被换（应零写回）")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        _check(not any(r.get("tag") == NAN_PROBE_SANITIZE_TAG for r in rows),
+               "健康路径不应有 sanitize 行")
+    return {
+        "five_attrs_covered": True,
+        "oversized_tensor_sanitized": True,
+        "probe_still_skips_oversized": True,
+        "dict_observations_per_key": True,
+        "healthy_zero_write": True,
+    }
+
+
 def selftest_critic_forward_probe(seed: int = 0) -> dict:
     """第五层新增断言 ②：critic 前向探针（mock evaluate 出 NaN -> 记录行含 critic_obs 幅值）。
 
@@ -2474,6 +2629,8 @@ def run_selftest() -> None:
         "advantage_sanitizer": selftest_advantage_sanitizer(),
         "critic_forward_probe": selftest_critic_forward_probe(),
         "nan_probe_snapshot_guard": selftest_nan_probe_snapshot_guard(),
+        # 第七层：消毒器上移到观测端（五路 + 大张量 GPU 侧检测 + dict observations）
+        "sanitize_obs_end": selftest_sanitize_obs_end(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -3702,9 +3859,62 @@ def _nan_probe_param_diff(pre: dict, post: dict) -> dict:
     return {"param_nan_flipped": flipped, "param_nan_flipped_n": len(flipped)}
 
 
-# ------------------------------------------------- advantage/returns/values 消毒器（第五/六层修复）
-def _sanitize_storage_tensor(alg, attr: str) -> dict | None:
-    """对 `alg.storage.<attr>` 消毒：非有限元素置 0；返回写回记录，健康/不可及返回 None。
+# ------------------------------------------------- 存储消毒器（第五/六/七层修复）
+# 第七层：消毒范围从 GAE 链三张量扩到**观测端**两路（critic 重算路径的污染源，见模块
+# docstring 第七层段）。`privileged_observations` 是张量、`observations` 是 dict（policy/critic
+# 两组）——由 `_sanitize_storage_tensor` 按运行期类型分派。
+_SANITIZE_STORAGE_ATTRS = (
+    "advantages", "returns", "values",           # GAE 链（第五/六层）
+    "privileged_observations", "observations",   # 观测端（第七层：ppo.update 内 critic 重算输入）
+)
+
+
+def _sanitize_tensor_gpu(t: torch.Tensor, name: str) -> tuple[dict | None, torch.Tensor]:
+    """GPU 侧检测 + 消毒**单个**张量；返回 `(写回记录 | None, 消毒后张量)`。
+
+    **第七层核心（大张量检测改 GPU 侧）**：检测 = GPU 侧 `isfinite` 归约
+    `bad_n = int((~torch.isfinite(t)).sum())`——**零全量拷贝**，只把 1 个标量同步回 CPU；
+    因此**超阈值张量（obs ≈37M 元素 > NAN_PROBE_MAX_TENSOR_ELEMS）也照常检测，不再跳过**。
+    - `bad_n == 0`（健康）：返回 `(None, t)`——**原张量对象**，调用方零写回、对象引用不变；
+    - `bad_n > 0`：GPU 侧 `nan_to_num` 重赋值（返回**普通 tensor**，绕开 inference-tensor
+      就地限制，第六层口径）+ 统计。`first`/`first_coord` 在 GPU 侧 `nonzero` 找**首个**
+      非有限索引，只回传该索引与单值（**只拷小片**），不回传全量数据。
+
+    为什么不能「copy 前置跳过」：消毒器要保证 update 的输入**无 NaN**，跳过大张量就等于对
+    obs 端（本次污染的真正源头）不设防；检测/消毒都在 GPU 侧做完，只有标量/索引过 CPU。
+    """
+    if not isinstance(t, torch.Tensor) or not t.is_floating_point():
+        return None, t
+    with torch.no_grad():
+        bad_n = int((~torch.isfinite(t)).sum().item())   # GPU 侧归约，单标量同步，零全量拷贝
+        if bad_n == 0:
+            return None, t
+        n_total = int(t.numel())
+        flat = t.reshape(-1)
+        # 首个非有限索引：GPU 侧 nonzero -> 只回传索引（小张量），不拷全量数据
+        idx = int((~torch.isfinite(flat)).nonzero(as_tuple=False)[0].item())
+        first_val = float(flat[idx].item())
+        clean = torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)   # GPU 侧重赋值，零全量拷贝
+        abs_max_before = float(clean.abs().max().item()) if bad_n < n_total else None
+        coords = None
+        if t.dim() > 1:
+            coords = [int(c) for c in torch.unravel_index(torch.tensor(idx, device=t.device), t.shape)]
+        rec = {
+            "name": str(name),
+            "n_nonfinite": bad_n,
+            "n_total": n_total,
+            "n_zeroed": bad_n,
+            "purged_full": bad_n == n_total,   # 全量 NaN -> actor 梯度 0、critic 被拉向 0（非空学习步）
+            "abs_max_before": abs_max_before,
+            "first": first_val,
+            "first_index": idx,
+            "first_coord": coords,
+        }
+        return rec, clean
+
+
+def _sanitize_storage_tensor(alg, attr: str) -> list[dict]:
+    """对 `alg.storage.<attr>` 消毒：非有限元素置 0；返回写回记录列表（健康/不可及 -> 空列表）。
 
     **第六层修复（inference-tensor 写回）**：`storage.advantages` 由 rollout 在
     `torch.inference_mode()` 下产生（on_policy_runner.py:201）⇒ 它是 **inference tensor**，
@@ -3716,72 +3926,67 @@ def _sanitize_storage_tensor(alg, attr: str) -> dict | None:
     `mini_batch_generator` 每次调用**现读** `self.advantages`（服务器 .venv_isaac 源码核对），
     故重赋值对 `update` 可见（就地路径已删除，见下方注释）。
 
-    **只在检测到非有限时才写**（健康路径逐位零改动、零写回，对象引用亦不变）。
+    **第七层（观测端 + 类型分派 + 大张量不跳过）**：
+      - `privileged_observations`（张量）与 `observations`（**dict**：policy/critic 两组）一并
+        消毒——前者正是 `ppo.update()` 内 critic **现算**的输入（第七跑实证污染源），消毒
+        values 管不到重算，必须在上游 obs 端净化；
+      - dict 则**逐 key** 走同一 GPU 侧路径，命中才整 dict 重赋值（未命中零写回）；
+      - 检测/消毒全在 **GPU 侧**（见 `_sanitize_tensor_gpu`），**超阈值大张量不再跳过**。
 
-    口径（见模块 docstring 第五/六层）：单个离群置 0 对归一化统计量偏置可忽略；全量 NaN 置 0
-    ⇒ 权重存活但 actor 梯度 0、critic 被拉向 0（**非空学习步**，见 docstring 口径修正）。
+    **只在检测到非有限时才写**（健康路径逐位零改动、零写回，对象引用亦不变；仅付一次 GPU 侧
+    归约同步 `bad_n` 的必要代价）。
 
-    只处理浮点张量；超大张量（> `NAN_PROBE_MAX_TENSOR_ELEMS`）**copy 前置跳过**（消毒器只覆盖
-    GAE 输出量级，不碰超大 obs）。**永不抛**（探针/消毒器 best-effort）。
+    口径（见模块 docstring 第五/六/七层）：单个离群置 0 对归一化统计量偏置可忽略；全量 NaN
+    置 0 ⇒ 权重存活但 actor 梯度 0、critic 被拉向 0（**非空学习步**，见 docstring 口径修正）。
 
     旧就地路径（已删，仅留说明）：`val.masked_fill_(~finite, 0.0)`——对普通张量可行，但对
     inference tensor 抛异常（第六层实证），故弃用；改用 `nan_to_num` 重赋值。
+    **永不抛**（探针/消毒器 best-effort）。
     """
     storage = getattr(alg, "storage", None)
     if storage is None:
-        return None
+        return []
     val = getattr(storage, attr, None)
-    if not isinstance(val, torch.Tensor) or not val.is_floating_point():
-        return None
-    if val.numel() == 0 or val.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
-        return None   # copy 前置判断：空/超大张量直接跳过
-    with torch.no_grad():
-        finite = torch.isfinite(val)
-        n_bad = int((~finite).sum().item())
-        if n_bad == 0:
-            return None   # 健康路径：不写、不记（发射解锁件只在真出 NaN 时动作）
-        n_total = int(val.numel())
-        cpu = _to_cpu_tensor(val)
-        rec = _first_nonfinite_probe(f"storage.{attr}", cpu) if cpu is not None else None
-        abs_max_before = None
-        if cpu is not None and cpu.numel():
-            fin_mask = torch.isfinite(cpu.reshape(-1))
-            if bool(fin_mask.any()):
-                abs_max_before = float(cpu.reshape(-1)[fin_mask].abs().max().item())
-        # 重赋值路径（第六层）：nan_to_num 返回普通 tensor，绕开 inference-tensor 就地限制；
-        # 每次调用现读 storage.<attr> 的 update 端可见此写回。
-        clean = torch.nan_to_num(val, nan=0.0, posinf=0.0, neginf=0.0)
-        setattr(storage, attr, clean)
-        return {
-            "name": f"storage.{attr}",
-            "n_nonfinite": n_bad,
-            "n_total": n_total,
-            "n_zeroed": n_bad,
-            "purged_full": n_bad == n_total,   # 全量 NaN -> actor 梯度 0、critic 被拉向 0（非空学习步）
-            "abs_max_before": abs_max_before,
-            "first": rec["first"] if rec is not None else None,
-            "first_index": rec["first_index"] if rec is not None else None,
-            "first_coord": rec["first_coord"] if rec is not None else None,
-        }
+    if isinstance(val, dict):
+        # observations 是 dict（policy/critic 两组）：逐 key 消毒，命中才整 dict 重赋值。
+        recs: list[dict] = []
+        new_val = dict(val)
+        changed = False
+        for key, sub in val.items():
+            rec, clean = _sanitize_tensor_gpu(sub, f"storage.{attr}.{key}")
+            if rec is None:
+                continue
+            recs.append(rec)
+            new_val[key] = clean
+            changed = True
+        if changed:
+            setattr(storage, attr, new_val)
+        return recs
+    if not isinstance(val, torch.Tensor) or not val.is_floating_point() or val.numel() == 0:
+        return []
+    rec, clean = _sanitize_tensor_gpu(val, f"storage.{attr}")
+    if rec is None:
+        return []   # 健康路径：不写、不记（发射解锁件只在真出 NaN 时动作）
+    setattr(storage, attr, clean)
+    return [rec]
 
 
-def _sanitize_advantages_returns(alg) -> list[dict]:
-    """消毒 `storage.advantages`/`returns`/**`values`**（orig_update 前调用）；返回写回记录列表。
+def _sanitize_storage_attrs(alg) -> list[dict]:
+    """消毒 `_SANITIZE_STORAGE_ATTRS` 五路（orig_update 前调用）；返回写回记录列表。
 
-    三张量 = GAE 链的输入（values）与输出（advantages/returns），一并消毒（第六层：values 是
-    critic 单点 NaN 的**源头**，同层净化阻断「values NaN → returns NaN → advantage 归一化摊全量」）。
+    `advantages`/`returns`/`values` = GAE 链的输入（values）与输出；`privileged_observations`/
+    `observations` = **观测端**（第七层：`ppo.update()` 内 critic 用 privileged_observations
+    **现算** values，是第七跑坐实的污染源——消毒 values 管不到重算，必须在上游 obs 端净化）。
     各项独立 best-effort：任一项失败不影响其余，也**不影响 update**（异常在此吞掉并警告）。
     返回空列表 = 健康路径（零写回）。
     """
     out: list[dict] = []
-    for attr in ("advantages", "returns", "values"):
+    for attr in _SANITIZE_STORAGE_ATTRS:
         try:
-            rec = _sanitize_storage_tensor(alg, attr)
+            out.extend(_sanitize_storage_tensor(alg, attr))
         except Exception as exc:  # noqa: BLE001（消毒器 best-effort：绝不打断训练）
-            print(f"[WARN] advantage 消毒失败（attr={attr}，忽略）：{type(exc).__name__}: {exc}", flush=True)
+            print(f"[WARN] 存储消毒失败（attr={attr}，忽略）：{type(exc).__name__}: {exc}", flush=True)
             continue
-        if rec is not None:
-            out.append(rec)
     return out
 
 
@@ -3973,6 +4178,16 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
     消毒全失败）⇒ 改用 `nan_to_num` 返回的普通 tensor 重赋值，`update` 每次现读 `storage.<attr>`
     故可见。`values` 一并纳入消毒（GAE 输入/源头）。健康路径仍零写。
 
+    **第七层修复（消毒器上移到观测端）**：消毒范围扩为五路
+    （`_SANITIZE_STORAGE_ATTRS` = advantages/returns/values/**privileged_observations**/
+    **observations**）——`ppo.update()` 内部用 `privileged_observations` **现算** critic
+    （`ppo.py:263`），第七跑实证该 obs 的单个 NaN 就是 value_loss 再 NaN 的源头；消毒 values
+    管不到重算，必须在上游 obs 端净化。**大张量检测改 GPU 侧**：`_sanitize_storage_tensor`
+    对超阈值张量（obs ≈37M 元素 > `NAN_PROBE_MAX_TENSOR_ELEMS`）**不再跳过**，检测 = GPU 侧
+    `isfinite` 归约（单标量同步、零全量拷贝），命中才 GPU 侧 `nan_to_num` 重赋值 + 只拷小片
+    统计（first/first_coord）；`observations` 是 dict 则逐 key 走同一路径。健康路径**零写回**，
+    代价 = 一次 GPU 侧归约同步。探针类 `_collect_*` 的大张量跳过逻辑**保持不变**（日志性能保护）。
+
     返回 {"log": 路径, "wrapped": True, "sanitize": True, "critic_probe": bool}（供身份信封/打印）。
     **update 数值路径唯一改动 = 消毒器对非有限元素的置 0 写回**（健康路径零改动）；critic 探针只读。
     """
@@ -4079,8 +4294,8 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
             print(f"[WARN] nan_probe_sanitize 记录失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
 
     def _sanitize() -> None:
-        """orig_update 前消毒 advantages/returns/values（非有限置 0，重赋值路径）；健康路径零写回。"""
-        for rec in _sanitize_advantages_returns(alg):
+        """orig_update 前消毒五路（advantages/returns/values/privileged_observations/observations，非有限置 0，重赋值路径）；健康路径零写回。"""
+        for rec in _sanitize_storage_attrs(alg):
             _emit_sanitize(rec)
 
     def _critic_probe(critic_obs, values) -> None:
