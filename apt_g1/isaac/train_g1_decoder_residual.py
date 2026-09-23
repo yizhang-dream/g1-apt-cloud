@@ -137,6 +137,29 @@
   `sonic_scale` 与 `sonic_proprio_hist` **同源**：两者都经 `sonic_action_term._sonic_scale_isaac()`
   取（单一事实源），本文件不再复制第二份常量（防漂移）。
 
+Isaac Sim 关闭路径死锁修复 + 打断事件落盘仪器（2026-09-22，faulthandler 栈实证）：
+  实证栈（本地副本 `tmp/_freeze_labts_iter950_PYSTACK.txt`，lab-ts iter 950 ≈ 23.35M 步）：
+    main -> `simulation_app.close()`（原 :2450 finally）-> isaaclab `simulation_context.py:743
+    _app_control_on_stop_handle_fn` -> `while not omni.timeline.get_timeline_interface().
+    is_playing(): self.render()` **无限忙等**（timeline 永不恢复播放；其余线程全 idle）。
+  ⇒ 主循环被未知事件打断后，finally 的裸 close() 把进程卡死在关闭渲染循环里，异常被吞。
+  两层修复（**不改训练/奖励/策略任何路径**）：
+    1. `_safe_close(simulation_app, timeout_s=120, exit_code=0)` 看门狗替代裸 close()：
+       ① 先尝试 `omni.timeline...play()` 把 timeline 设回 playing（失败忽略，延迟 import）；
+       ② `close()` 放子线程执行，主线程 `join(timeout)`；超时则打印警告 + 线程栈
+          （`faulthandler.dump_traceback` 可用时）后 `os._exit(exit_code)` 强退
+          （ckpt 在循环内已周期落盘，强退可接受）；正常关闭成功则由调用方正常退出。
+    2. `_log_main_loop_crash`：主训练循环外套 `try/except BaseException`，把完整 traceback
+       写入 `outputs/<out>/main_loop_crash.log`（时间戳/iter/异常类型）再 raise——
+       下次复现时「谁在 23M 步打断主循环」直接见尸（当前该异常被 finally 的死锁吞了）。
+  退出码语义不变：正常完跑 rc=0；异常时 `_safe_close` 不调用 `os._exit`（exit_code=0），
+  由调用方 `raise` 沿原异常冒泡。
+
+D064 同款裸 close 警示（**只登记不修**，2026-09-22 口径）：
+  `train_g1_decoder.py:1035` 的 finally 仍是裸 `simulation_app.close()`，与本次修复前的
+  本文件同款关闭死锁风险（CVGL 两臂挂死同根因）；本任务只动本文件，该修复随后续批次推广
+  （改 D064 会牵动其历史可比性/复现命令，故不在本批次）。
+
 D065 潜伏缺陷警示（**只登记不修**，owner 2026-09-22 口径）：
   同一缺陷潜伏在 D065 C 臂：`train_g1_decoder_lora.py` 的 C 臂 env 侧走
   `G1SonicLoRAPolicyEnvCfg`，其动作项 = `DirectActionsCfg`（`g1_velocity_decoder_env.py:247-249`
@@ -155,7 +178,9 @@ import math
 import os
 import re
 import sys
+import threading
 import time
+import traceback
 from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
@@ -797,6 +822,133 @@ def build_identity_envelope(
     return env
 
 
+# ------------------------------------------------- 关闭看门狗 + 打断事件落盘仪器
+# faulthandler 栈实证（tmp/_freeze_labts_iter950_PYSTACK.txt）：主循环被未知事件打断后，
+# finally 的裸 simulation_app.close() 卡在 isaaclab simulation_context.py:743 的
+# `while not timeline.is_playing(): self.render()` 忙等，异常被吞、进程永不退出。
+# 下方两件只做「关闭路径」与「异常落盘」，不触碰训练/奖励/策略任何路径。
+SAFE_CLOSE_TIMEOUT_S = 120.0   # close() 子线程 join 超时（秒）
+MAIN_LOOP_CRASH_LOG = "main_loop_crash.log"
+
+
+def _dump_thread_stacks() -> bool:
+    """尽力 dump 全线程 Python 栈（faulthandler 可用时）；不可用/失败返回 False，不抛。"""
+    try:
+        import faulthandler  # noqa: PLC0415
+    except Exception:  # pragma: no cover（标准库恒有；防御性）
+        return False
+    try:
+        faulthandler.dump_traceback()   # 默认写 stderr：强退前留尸
+        return True
+    except Exception:  # pragma: no cover
+        return False
+
+
+def _try_resume_timeline() -> bool:
+    """尽力把 omni timeline 设回 playing（关闭忙等的触发条件）。
+
+    关闭忙等的根因是 `while not is_playing(): render()`——先把 timeline 拉回 playing，
+    多数情况下 close() 即可正常返回。**延迟 import**（本机无 omni）；任何失败都忽略
+    （返回 False），绝不能因为「拉 timeline」失败而让关闭路径更糟。
+    """
+    try:
+        import omni.timeline  # noqa: PLC0415
+    except Exception:
+        return False
+    try:
+        tl = omni.timeline.get_timeline_interface()
+        if not tl.is_playing():
+            tl.play()
+        return bool(tl.is_playing())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[d067] _safe_close: timeline.play() 失败（忽略，继续关闭）：{type(exc).__name__}: {exc}", flush=True)
+        return False
+
+
+def _safe_close(simulation_app, timeout_s: float = SAFE_CLOSE_TIMEOUT_S, exit_code: int = 0) -> dict:
+    """带看门狗的 `simulation_app.close()`（替代裸 close，见模块 docstring）。
+
+    流程：
+      1. 先 `_try_resume_timeline()`（尽力，失败忽略）；
+      2. `close()` 放**子线程**执行（daemon），主线程 `join(timeout_s)`；
+      3. 超时 = Isaac Sim 关闭忙等：打印警告 + dump 线程栈后 `os._exit(exit_code)`
+         强退（ckpt 在循环内已周期落盘，强退可接受）；
+      4. 正常返回：`close()` 成功或抛异常都在此返回报告，由调用方继续正常退出。
+         退出码语义不变——正常完跑 rc=0；异常时调用方 `raise` 沿原异常冒泡。
+
+    返回 {"closed", "timed_out", "elapsed_s", "error"}（`os._exit` 真退时不可达，
+    仅供超时路径被 monkeypatch（单测）时观测）。
+    """
+    _try_resume_timeline()
+    done = threading.Event()
+    box: dict = {}
+
+    def _worker() -> None:
+        try:
+            simulation_app.close()
+        except BaseException as exc:  # noqa: BLE001（close 内部异常也要让主线程解脱）
+            box["error"] = exc
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=_worker, name="d067-safe-close", daemon=True)
+    t0 = time.monotonic()
+    worker.start()
+    finished = done.wait(timeout=float(timeout_s))
+    elapsed = time.monotonic() - t0
+
+    if finished:
+        err = box.get("error")
+        if err is None:
+            print(f"[d067] _safe_close: simulation_app.close() 正常返回（{elapsed:.1f}s）", flush=True)
+        else:
+            print(f"[d067] _safe_close: close() 抛异常但已返回（{type(err).__name__}: {err}）", flush=True)
+        return {
+            "closed": True,
+            "timed_out": False,
+            "elapsed_s": elapsed,
+            "error": None if err is None else repr(err),
+        }
+
+    print(
+        f"[WARN] _safe_close: simulation_app.close() 超时 {timeout_s}s 未返回"
+        f"（Isaac Sim 关闭忙等，栈见 tmp/_freeze_labts_iter950_PYSTACK.txt）——"
+        f"强退 os._exit({exit_code})；ckpt 已在循环内周期落盘",
+        flush=True,
+    )
+    _dump_thread_stacks()
+    os._exit(int(exit_code))
+    # os._exit 真退后不可达；以下仅在单测 monkeypatch 记录器时用于观测超时路径。
+    return {"closed": False, "timed_out": True, "elapsed_s": elapsed, "error": None}
+
+
+def _crash_log_path(out_dir) -> Path:
+    """主循环异常落盘路径：`outputs/<out>/main_loop_crash.log`。"""
+    return Path(out_dir) / MAIN_LOOP_CRASH_LOG
+
+
+def _log_main_loop_crash(out_dir, exc: BaseException, *, iteration=None) -> Path:
+    """把主循环打断异常（完整 traceback + 时间戳/iter/类型）写盘，再由调用方 raise。
+
+    为什么需要：修复前主循环被打断的异常会被 finally 的 close 死锁吞掉，现场只剩「卡在
+    关闭渲染」的栈，看不到「谁在 23M 步打断主循环」。落盘后下次复现直接见尸。
+    """
+    path = _crash_log_path(out_dir)
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    header = (
+        "# D067 main loop crash (BaseException)\n"
+        f"timestamp: {time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n"
+        f"exception: {type(exc).__module__}.{type(exc).__name__}\n"
+        f"message: {exc}\n"
+        f"iteration: {iteration if iteration is not None else 'n/a'}\n"
+        "note: 主循环被该异常打断（修复前被 finally 的 close 死锁吞掉）；完整 traceback 见下\n"
+        "\n"
+    )
+    path.write_text(header + tb, encoding="utf-8")
+    print(f"[d067] 主循环异常已落盘 -> {path}", flush=True)
+    return path
+
+
 # ------------------------------------------------------------- selftest
 def _check(cond: bool, msg: str) -> None:
     """自测断言：不满足即 RuntimeError（带原因，避免裸 assert 被 -O 剥掉）。"""
@@ -1309,6 +1461,91 @@ def selftest_residual_action_scale_shape_source() -> dict:
     }
 
 
+def selftest_safe_close_timeout(monkeypatch_exit=None) -> dict:
+    """新增断言 ①：`_safe_close` 超时路径（mock 永不返回的 close() -> 走 os._exit 分支）。
+
+    mock 一个 `close()` 永不返回的 app（Event 同步阻塞，绝不释放），把 timeout 压到 0.05s；
+    再用 `monkeypatch_exit`（缺省即 monkeypatch 本模块 `os._exit` 为记录器）防真退。
+    断言：超时被判定、os._exit 被以 exit_code 调用、返回报告 timed_out=True。
+    另测正常路径：close() 立即返回 -> 不调 os._exit、closed=True。
+    """
+    recorded: list = []
+
+    def _fake_exit(code):
+        recorded.append(int(code))
+
+    # 延迟把 os._exit 换成记录器（防真退）；若调用方传入自己的记录器则用之。
+    real_exit = os._exit
+    if monkeypatch_exit is None:
+        os._exit = _fake_exit
+    else:
+        monkeypatch_exit(_fake_exit)
+    try:
+        # --- 超时路径：close() 阻塞在 gate 上永不返回 ---
+        gate = threading.Event()
+
+        class _HangingApp:
+            def close(self):  # pragma: no cover - 故意挂住
+                gate.wait()
+
+        rep = _safe_close(_HangingApp(), timeout_s=0.05, exit_code=7)
+        _check(rep["timed_out"] is True, f"超时未被判定（{rep}）")
+        _check(rep["closed"] is False, f"超时路径 closed 应为 False（{rep}）")
+        _check(recorded == [7], f"超时未以 exit_code=7 调 os._exit（记录 {recorded}）")
+
+        # --- 正常路径：close() 立即返回 -> 不调 os._exit ---
+        recorded.clear()
+
+        class _OkApp:
+            def close(self):
+                return None
+
+        rep2 = _safe_close(_OkApp(), timeout_s=5.0, exit_code=0)
+        _check(rep2["closed"] is True and rep2["timed_out"] is False, f"正常路径报告错（{rep2}）")
+        _check(recorded == [], f"正常路径不应调 os._exit（记录 {recorded}）")
+
+        # --- close() 抛异常也要解脱主线程（不真退、不挂） ---
+        class _RaisingApp:
+            def close(self):
+                raise RuntimeError("boom")
+
+        rep3 = _safe_close(_RaisingApp(), timeout_s=5.0, exit_code=0)
+        _check(rep3["closed"] is True and rep3["error"] and "boom" in rep3["error"],
+               f"close() 抛异常路径报告错（{rep3}）")
+        _check(recorded == [], f"close() 抛异常路径不应调 os._exit（记录 {recorded}）")
+    finally:
+        gate.set()  # 释放挂住的 daemon 线程（防其长期占用）
+        os._exit = real_exit
+    return {
+        "timeout_path_exits": True,
+        "timeout_exit_code": 7,
+        "ok_path_no_exit": True,
+        "error_path_returns": True,
+    }
+
+
+def selftest_main_loop_crash_log() -> dict:
+    """新增断言 ②：`_log_main_loop_crash` 落盘路径（raise 后文件存在且含 traceback）。"""
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        try:
+            raise ValueError("synthetic-interrupt-at-23M-steps")
+        except ValueError as exc:
+            path = _log_main_loop_crash(out_dir, exc, iteration=950)
+        _check(path.exists(), f"crash log 未落盘（{path}）")
+        _check(path == _crash_log_path(out_dir), f"crash log 路径非 outputs/<out>/{MAIN_LOOP_CRASH_LOG}")
+        text = path.read_text(encoding="utf-8")
+        _check("Traceback (most recent call last)" in text, "crash log 缺 traceback 头")
+        _check("ValueError" in text and "synthetic-interrupt-at-23M-steps" in text,
+               "crash log 缺异常类型/消息")
+        _check("iteration: 950" in text, "crash log 缺 iteration 字段")
+        _check("timestamp:" in text, "crash log 缺时间戳")
+        _check("selftest_main_loop_crash_log" in text, "crash log traceback 未含抛出点帧")
+    return {"crash_log_written": True, "has_traceback": True, "has_iteration": True}
+
+
 def run_selftest() -> None:
     """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
     torch.manual_seed(0)
@@ -1326,6 +1563,9 @@ def run_selftest() -> None:
         "residual_action_scale_gain_identity": selftest_residual_action_scale_gain_identity(),
         "residual_action_scale_legacy_counterexample": selftest_residual_action_scale_legacy_counterexample(),
         "residual_action_scale_shape_source": selftest_residual_action_scale_shape_source(),
+        # 关闭死锁看门狗 + 打断事件落盘仪器（faulthandler 栈实证修复）
+        "safe_close_timeout": selftest_safe_close_timeout(),
+        "main_loop_crash_log": selftest_main_loop_crash_log(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -2440,14 +2680,26 @@ def main() -> None:
     app_launcher = AppLauncher(launcher_args)
     simulation_app = app_launcher.app
 
+    interrupted = False
     try:
-        _run(cli, out_dir, launcher_args)
+        # 打断事件落盘仪器：主训练循环（含 smoke）外的 BaseException 守卫——把完整
+        # traceback 写 outputs/<out>/main_loop_crash.log 再 raise（修复前该异常会被
+        # finally 的 close 死锁吞掉，见模块 docstring「Isaac Sim 关闭路径死锁修复」）。
+        try:
+            _run(cli, out_dir, launcher_args)
+        except BaseException as exc:  # noqa: BLE001
+            _log_main_loop_crash(out_dir, exc)
+            raise
     except Exception as exc:  # noqa: BLE001
+        interrupted = True  # 超时强退须带非零 rc，防「异常打断+close 挂死」被伪装成成功
         if cli.smoke:
             print(f"SMOKE FAIL: {type(exc).__name__}: {exc}", flush=True)
         raise
     finally:
-        simulation_app.close()
+        # 看门狗替代裸 close()：Isaac Sim 关闭忙等（simulation_context.py:743）时强退，
+        # 不再把进程卡死；正常关闭则由本函数正常返回。interrupted=True 时 exit_code=1
+        # （reviewer should-fix：异常在飞的超时强退不得以 rc=0 掩盖挂死事件）。
+        _safe_close(simulation_app, exit_code=1 if interrupted else 0)
 
 
 if __name__ == "__main__":
