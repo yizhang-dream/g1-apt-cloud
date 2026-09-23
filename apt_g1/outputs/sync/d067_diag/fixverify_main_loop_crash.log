@@ -1,0 +1,21 @@
+# D067 main loop crash (BaseException)
+timestamp: 2026-09-23T18:30:17+0800
+exception: builtins.RuntimeError
+message: normal expects all elements of std >= 0.0
+iteration: n/a
+note: 主循环被该异常打断（修复前被 finally 的 close 死锁吞掉）；完整 traceback 见下
+
+Traceback (most recent call last):
+  File "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/isaac/train_g1_decoder_residual.py", line 2689, in main
+    _run(cli, out_dir, launcher_args)
+  File "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/isaac/train_g1_decoder_residual.py", line 2559, in _run
+    runner.learn(num_learning_iterations=runner_cfg_dict["max_iterations"])
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/rsl_rl/runners/on_policy_runner.py", line 262, in learn
+    loss_dict = self.alg.update()
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/rsl_rl/algorithms/ppo.py", line 260, in update
+    self.policy.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/rsl_rl/modules/actor_critic.py", line 122, in act
+    return self.distribution.sample()
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/torch/distributions/normal.py", line 73, in sample
+    return torch.normal(self.loc.expand(shape), self.scale.expand(shape))
+RuntimeError: normal expects all elements of std >= 0.0

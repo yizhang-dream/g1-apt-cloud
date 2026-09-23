@@ -1,0 +1,46 @@
+# D067 freeze: PYTHON STACK (faulthandler, lab-ts iter 950 = 23.35M steps)
+# main thread (current) = Isaac Sim shutdown render busy-loop, NOT training loop:
+#   main -> simulation_app.close() [trainer:2450, finally] -> sim_context._app_control_on_stop_handle_fn [simulation_context.py:743]
+#   -> while not is_playing(): self.render() [busy loop] -> device -> get_physics_sim_device -> is_gpu_dynamics_enabled
+# all other threads = idle (tensorboard writer, futures workers)
+
+                               ETA: 00:09:57
+
+Thread 0x00007887aa9fe640 (most recent call first):
+  <no Python frame>
+
+Thread 0x00007887ab1ff640 (most recent call first):
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 324 in wait
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/queue.py", line 180 in get
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 269 in _run
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 244 in run
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 973 in _bootstrap
+
+Thread 0x00007888fcff9640 (most recent call first):
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/concurrent/futures/thread.py", line 81 in _worker
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 953 in run
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 973 in _bootstrap
+
+Thread 0x000078893b3ff640 (most recent call first):
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/concurrent/futures/thread.py", line 81 in _worker
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 953 in run
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 973 in _bootstrap
+
+Thread 0x000078893bfff640 (most recent call first):
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/concurrent/futures/thread.py", line 81 in _worker
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 953 in run
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 1016 in _bootstrap_inner
+  File "/home/cvgluser/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/lib/python3.10/threading.py", line 973 in _bootstrap
+
+Current thread 0x0000788ccbab7740 (most recent call first):
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/isaacsim/exts/isaacsim.core.simulation_manager/isaacsim/core/simulation_manager/impl/simulation_manager.py", line 192 in get_physics_sim_device
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/isaacsim/exts/isaacsim.core.api/isaacsim/core/api/simulation_context/simulation_context.py", line 313 in device
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/isaaclab/source/isaaclab/isaaclab/sim/simulation_context.py", line 602 in render
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/isaaclab/source/isaaclab/isaaclab/sim/simulation_context.py", line 743 in _app_control_on_stop_handle_fn
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/isaaclab/source/isaaclab/isaaclab/sim/simulation_context.py", line 219 in <lambda>
+  File "/home/cvgluser/ros2_data/.venv_isaac/lib/python3.10/site-packages/isaacsim/exts/isaacsim.simulation_app/isaacsim/simulation_app/simulation_app.py", line 581 in close
+  File "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/isaac/train_g1_decoder_residual.py", line 2450 in main
+  File "/home/cvgluser/ros2_data/g1-apt-cloud-sync/apt_g1/isaac/train_g1_decoder_residual.py", line 2454 in <module>

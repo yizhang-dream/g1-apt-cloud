@@ -1,0 +1,137 @@
+# D067 lab-ts freeze reproduction
+# 1024env x max_forward direct seed0, froze iter 950 = 23.35M env-steps
+# CVGL freeze points: direct 13.07M (133it@4096), decoder 26.74M (272it@4096)
+# signature: State=R wchan=0 (userspace busy loop), main tid spinning, 126 threads
+
+pid=1752139 state=R wchan=0
+State:	R (running)
+VmRSS:	 4571088 kB
+Threads:	126
+voluntary_ctxt_switches:	87653
+nonvoluntary_ctxt_switches:	16341
+tid=1752139 wchan=0 name=python
+tid=1752162 wchan=futex_wait_queue name=Profiler proces
+tid=1752164 wchan=futex_wait_queue name=carb.tasking0
+tid=1752165 wchan=futex_wait_queue name=carb.tasking1
+tid=1752166 wchan=futex_wait_queue name=carb.tasking2
+tid=1752167 wchan=futex_wait_queue name=carb.tasking3
+tid=1752168 wchan=futex_wait_queue name=carb.tasking4
+tid=1752169 wchan=futex_wait_queue name=carb.tasking5
+tid=1752170 wchan=futex_wait_queue name=carb.tasking6
+tid=1752171 wchan=futex_wait_queue name=carb.tasking7
+tid=1752172 wchan=futex_wait_queue name=carb.tasking8
+tid=1752173 wchan=futex_wait_queue name=carb.tasking9
+tid=1752174 wchan=futex_wait_queue name=carb.tasking10
+tid=1752175 wchan=futex_wait_queue name=carb.tasking11
+tid=1752176 wchan=futex_wait_queue name=carb.tasking12
+tid=1752177 wchan=futex_wait_queue name=carb.tasking13
+tid=1752178 wchan=futex_wait_queue name=carb.tasking14
+tid=1752179 wchan=futex_wait_queue name=carb.tasking15
+tid=1752180 wchan=futex_wait_queue name=carb.task watch
+tid=1752181 wchan=futex_wait_queue name=heartbeat threa
+tid=1752182 wchan=do_poll.constprop.0 name=FileSystemWatch
+tid=1752183 wchan=futex_wait_queue name=structured log 
+tid=1752184 wchan=futex_wait_queue name=OC Print
+tid=1752185 wchan=futex_wait_queue name=OC Tick
+tid=1752195 wchan=futex_wait_queue name=tbb.worker
+tid=1752196 wchan=futex_wait_queue name=tbb.worker
+tid=1752197 wchan=futex_wait_queue name=tbb.worker
+tid=1752198 wchan=futex_wait_queue name=tbb.worker
+tid=1752199 wchan=futex_wait_queue name=tbb.worker
+tid=1752200 wchan=futex_wait_queue name=tbb.worker
+tid=1752201 wchan=futex_wait_queue name=tbb.worker
+tid=1752202 wchan=futex_wait_queue name=tbb.worker
+tid=1752203 wchan=futex_wait_queue name=tbb.worker
+tid=1752204 wchan=futex_wait_queue name=tbb.worker
+tid=1752205 wchan=futex_wait_queue name=tbb.worker
+tid=1752206 wchan=futex_wait_queue name=tbb.worker
+tid=1752207 wchan=futex_wait_queue name=tbb.worker
+tid=1752208 wchan=futex_wait_queue name=tbb.worker
+tid=1752209 wchan=futex_wait_queue name=tbb.worker
+tid=1752210 wchan=hrtimer_nanosleep name=python
+tid=1752211 wchan=futex_wait_queue name=python
+tid=1752212 wchan=hrtimer_nanosleep name=python
+tid=1752213 wchan=hrtimer_nanosleep name=python
+tid=1752214 wchan=do_poll.constprop.0 name=cuda0000bc00037
+tid=1752218 wchan=futex_wait_queue name=python
+tid=1752219 wchan=do_poll.constprop.0 name=cuda-EvtHandlr
+tid=1752220 wchan=do_poll.constprop.0 name=python
+tid=1752240 wchan=futex_wait_queue name=python
+tid=1752246 wchan=do_poll.constprop.0 name=python
+tid=1752248 wchan=futex_wait_queue name=python
+tid=1752249 wchan=futex_wait_queue name=[vkcf] Analysis
+tid=1752251 wchan=futex_wait_queue name=[vkrt] Analysis
+tid=1752252 wchan=futex_wait_queue name=[vkps] Update
+tid=1752259 wchan=do_poll.constprop.0 name=cuda-EvtHandlr
+tid=1752260 wchan=futex_wait_queue name=python
+tid=1752261 wchan=futex_wait_queue name=OC File IO
+tid=1752262 wchan=do_poll.constprop.0 name=OC Directory Wa
+tid=1752263 wchan=hrtimer_nanosleep name=tbb.worker
+tid=1752269 wchan=do_poll.constprop.0 name=python
+tid=1752271 wchan=futex_wait_queue name=[vkcf] Analysis
+tid=1752273 wchan=futex_wait_queue name=[vkrt] Analysis
+tid=1752274 wchan=futex_wait_queue name=[vkps] Update
+tid=1752281 wchan=do_poll.constprop.0 name=cuda-EvtHandlr
+tid=1752282 wchan=do_poll.constprop.0 name=cuda-EvtHandlr
+tid=1752283 wchan=futex_wait_queue name=carb.task timer
+tid=1752284 wchan=futex_wait_queue name=python
+tid=1752285 wchan=futex_wait_queue name=python
+tid=1752286 wchan=futex_wait_queue name=python
+tid=1752287 wchan=futex_wait_queue name=python
+tid=1752288 wchan=futex_wait_queue name=python
+tid=1752289 wchan=futex_wait_queue name=python
+tid=1752290 wchan=futex_wait_queue name=python
+tid=1752291 wchan=futex_wait_queue name=python
+tid=1752292 wchan=futex_wait_queue name=python
+tid=1752293 wchan=futex_wait_queue name=python
+tid=1752294 wchan=futex_wait_queue name=python
+tid=1752295 wchan=futex_wait_queue name=python
+tid=1752296 wchan=futex_wait_queue name=python
+tid=1752297 wchan=futex_wait_queue name=python
+tid=1752298 wchan=futex_wait_queue name=python
+tid=1752299 wchan=futex_wait_queue name=python
+tid=1752300 wchan=futex_wait_queue name=python
+tid=1752301 wchan=futex_wait_queue name=rtx::streaming 
+tid=1752302 wchan=hrtimer_nanosleep name=python
+tid=1752303 wchan=futex_wait_queue name=rtx.shaderdb.Fi
+tid=1752304 wchan=futex_wait_queue name=rtx.shaderdb.Fi
+tid=1752305 wchan=futex_wait_queue name=rtx.shaderdb.Fi
+tid=1752306 wchan=hrtimer_nanosleep name=python
+tid=1752307 wchan=futex_wait_queue name=python
+tid=1752308 wchan=futex_wait_queue name=python
+tid=1752312 wchan=futex_wait_queue name=OC Py CBs
+tid=1752339 wchan=futex_wait_queue name=python
+tid=1752389 wchan=futex_wait_queue name=python
+tid=1752390 wchan=futex_wait_queue name=python
+tid=1752391 wchan=futex_wait_queue name=python
+tid=1752392 wchan=futex_wait_queue name=python
+tid=1752393 wchan=futex_wait_queue name=python
+tid=1752394 wchan=futex_wait_queue name=python
+tid=1752395 wchan=futex_wait_queue name=python
+tid=1752396 wchan=futex_wait_queue name=python
+tid=1752397 wchan=futex_wait_queue name=python
+tid=1752398 wchan=futex_wait_queue name=python
+tid=1752399 wchan=futex_wait_queue name=python
+tid=1752400 wchan=futex_wait_queue name=python
+tid=1752401 wchan=futex_wait_queue name=python
+tid=1752402 wchan=futex_wait_queue name=python
+tid=1752403 wchan=futex_wait_queue name=python
+tid=1752408 wchan=do_poll.constprop.0 name=OC HTTP Client
+tid=1752417 wchan=hrtimer_nanosleep name=present thread
+tid=1752418 wchan=futex_wait_queue name=python
+tid=1752419 wchan=futex_wait_queue name=python
+tid=1752420 wchan=futex_wait_queue name=python
+tid=1752421 wchan=futex_wait_queue name=python
+tid=1752422 wchan=futex_wait_queue name=python
+tid=1752423 wchan=futex_wait_queue name=python
+tid=1752424 wchan=futex_wait_queue name=python
+tid=1752425 wchan=futex_wait_queue name=python
+tid=1752426 wchan=futex_wait_queue name=python
+tid=1752427 wchan=futex_wait_queue name=python
+tid=1752428 wchan=futex_wait_queue name=python
+tid=1752429 wchan=futex_wait_queue name=python
+tid=1752430 wchan=futex_wait_queue name=python
+tid=1752431 wchan=futex_wait_queue name=python
+tid=1752432 wchan=futex_wait_queue name=python
+tid=1752433 wchan=futex_wait_queue name=python
+tid=1752434 wchan=futex_wait_queue name=pt_autograd_0
