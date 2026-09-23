@@ -213,6 +213,34 @@ D065 潜伏缺陷警示（**只登记不修**，owner 2026-09-22 口径）：
        min/max/first/first_index/shape/dtype + stage/update_calls），**只记录不阻断**
        （保命带在，训练继续，让探针在后续崩点自然复现时留下完整现场）。梯度注册钩子未做
        （指令标可选；现有可及点已足够定位「污染在 obs 还是 loss」）。
+
+update 内分步 NaN 溯源探针（2026-09-22，第四层，纯记录仪器）：
+  已定案证据链：iter 950 单次 `alg.update()` 内 σ 参数 29 维中 27-28 维变 NaN（entropy
+  由 +45.66 算术反解坐实）；lr 假说否定（全程 1e-5~3.8e-4 被代码硬夹）；幅值假说否定
+  （崩前速度/奖励/loss 全 <2 正常）；update 用的 obs 缓冲有限（pre 探针）。首 NaN 必在
+  update 内部计算序中：advantage→ratio→surrogate/value loss→backward 梯度→σ 参数更新；
+  最可能单点 = 某中间量 NaN → loss NaN → 反向染全部梯度 → `clip_grad_norm_(1.0)` 对 NaN
+  无效 → 参数全灭。本层**只扩仪器、不改任何训练数值路径**（不改奖励/网络/超参/rsl_rl 本体，
+  延迟 import，best-effort 全兜），把 update 内部按计算序分步落盘：
+    ① `pre_mid` stage（advantage/returns 探针）：orig_update 前从 `alg.storage` 取
+       `advantages`/`returns`/`values`（rsl_rl RolloutStorage 属性名，按服务器 .venv_isaac
+       源码核对；取不到静默跳过）——isfinite + 幅值。
+    ② `post` stage loss 逐 key 幅值升级：不只 isfinite，逐 key 记有限元素的
+       min/max/abs_max/mean；并记 `kl_mean`（见下「kl 口径」）与 `learning_rate`
+       （adaptive 分支唯一可后验观测的量）。
+    ③ 参数快照对比：orig_update 前后快照 `policy.std` 全量 + `actor`/`critic` 各首末
+       `nn.Linear` weight 的 norm/isfinite；post 对比若 actor 权重与 std 同刻变 NaN 则
+       印证「loss NaN 染全部梯度」单点假说。**不做 backward 钩子**（侵入风险）。
+    ④ obs 探针逐 key 幅值：pre 探针在原有「首个非有限」之外，追加每个切分段
+       （official/proprio/token）/整块的 min/max 幅值——量级趋势从此可见。
+  新增行统一 tag=`nan_probe_mag`（幅值趋势行；**与首 NaN 行 `nan_probe` 分 tag**，使
+  `nan_probe` 的「有 NaN 才有一行」语义与既有 20 项断言零回归），字段向后兼容。
+
+  kl 口径（重要，勿误读）：rsl_rl 2.3.3 `PPO.update` 的 `kl`/`kl_mean` 是**函数内局部变量**
+  （仅 adaptive 分支用），**不落 `self`**，update 返回后不可读 ⇒ `kl_mean` 字段 best-effort
+  读 `alg.kl_mean`/`alg.kl`（当前版本恒为 null，`kl_source="absent"`）。adaptive 分支对
+  `self.learning_rate` 的改写**是**可后验的：记 `learning_rate_pre`/`learning_rate` 两值，
+  lr 下调即 kl_mean>2·desired_kl、上调即 kl_mean<desired_kl/2，可反推 KL 是否爆炸。
 """
 
 from __future__ import annotations
@@ -1958,6 +1986,161 @@ def selftest_nan_probe_line_and_trigger(seed: int = 0) -> dict:
     }
 
 
+# ------------------------------------------------- 第四层：update 内分步探针 selftest
+class _MockAlgLayer4:
+    """第四层 selftest 替身 alg：带 storage（advantages/returns/values）+ learning_rate + policy。
+
+    `update()` 可选在内部把 `policy.std` 打成 NaN（模拟「update 内部把 σ 打成 NaN」的崩点），
+    返回 loss_dict（可含 NaN）。storage 用 SimpleNamespace 复刻 rsl_rl RolloutStorage 的属性名。
+    """
+
+    def __init__(self, *, adv=None, ret=None, loss=None, nan_std_in_update: bool = False):
+        self.policy = _MockActorCriticStd(init_noise_std=1.0)
+        self.storage = SimpleNamespace(
+            observations=None,
+            advantages=adv,
+            returns=ret,
+            values=torch.tensor([0.5], dtype=torch.float32),
+        )
+        self.learning_rate = 3.0e-4
+        self._loss = loss
+        self._nan_std = nan_std_in_update
+
+    def update(self):
+        if self._nan_std:
+            with torch.no_grad():
+                self.policy.std.fill_(float("nan"))
+        return {"loss": torch.tensor([self._loss], dtype=torch.float32), "surrogate": torch.tensor(1.0)}
+
+
+def selftest_nan_probe_advantage_pre_mid(seed: int = 0) -> dict:
+    """第四层新增断言 ①：advantage NaN 注入 -> `pre_mid` stage 的 nan_probe 行触发。
+
+    复刻假说「首 NaN 在 advantage（GAE）而非 loss/backward」：storage.advantages 注入 NaN，
+    断言探针在 update **之前**（stage=pre_mid）就报出 `storage.advantages`，且 loss 全有限时
+    **不**误报 loss——即探针能区分「污染在 advantage」还是「污染在 loss」。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([float("nan"), 1.0], dtype=torch.float32), loss=0.7)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        probes = [r for r in rows if r.get("tag") == NAN_PROBE_TAG]
+        _check(len(probes) == 1, f"advantage NaN 应触发恰好 1 条 nan_probe，实为 {len(probes)}")
+        p = probes[0]
+        _check(p["stage"] == "pre_mid", f"advantage NaN 应在 pre_mid 触发，实为 stage={p['stage']!r}")
+        _check(p["name"] == "storage.advantages", f"pre_mid 探针 name 应为 storage.advantages，实为 {p['name']!r}")
+        _check(p["n_nonfinite"] == 1 and p["n_total"] == 2, f"advantage 计数错：{p}")
+        _check(isinstance(p["first"], float) and math.isnan(p["first"]), f"advantage first 非 NaN：{p['first']!r}")
+        _check(p["first_index"] == 0, f"advantage first_index 应为 0，实为 {p['first_index']!r}")
+        # 反例：advantage 全有限 -> 无 pre_mid 行（断言有区分度）
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0, 2.0], dtype=torch.float32), loss=0.7)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        _check(not any(r.get("tag") == NAN_PROBE_TAG and r.get("stage") == "pre_mid" for r in rows),
+               "advantage 全有限时不应产生 pre_mid nan_probe 行")
+    return {"adv_nan_pre_mid": True, "adv_name_ok": True, "finite_adv_no_probe": True}
+
+
+def selftest_nan_probe_mag_loss_fields(seed: int = 0) -> dict:
+    """第四层新增断言 ②：loss 幅值字段格式（`nan_probe_mag` 行，逐 key min/max/abs_max/mean）。
+
+    断言 loss_dict 每个 key 都落一条幅值行，字段齐全且值正确；NaN key 的有限元素统计正确
+    （min/max/abs_max/mean 只算有限元素）；并断言 `update.aux` 行含 kl_mean/kl_source/
+    learning_rate_pre/learning_rate（kl 在当前 rsl_rl 版本恒 absent）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32), loss=0.7)
+        # 让 update 返回含 NaN 与有限元素混合的 loss_dict（便于验证有限元素统计口径）
+        def _upd():
+            return {
+                "loss": torch.tensor([float("nan"), -2.0, 4.0], dtype=torch.float32),
+                "surrogate": torch.tensor([0.5, 1.5], dtype=torch.float32),
+            }
+        alg.update = _upd
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        mags = [r for r in rows if r.get("tag") == NAN_PROBE_MAG_TAG and r.get("stage") == "post"]
+        by_name = {r["name"]: r for r in mags}
+        for key in ("loss.loss", "loss.surrogate"):
+            _check(key in by_name, f"post 幅值行缺 {key}：{[r['name'] for r in mags]}")
+            for field in ("name", "shape", "dtype", "n_total", "n_nonfinite", "min", "max",
+                          "abs_max", "mean", "stage"):
+                _check(field in by_name[key], f"{key} 幅值行缺字段 {field!r}")
+        loss_row = by_name["loss.loss"]
+        _check(loss_row["n_nonfinite"] == 1 and loss_row["n_total"] == 3, f"loss.loss 计数错：{loss_row}")
+        _check(loss_row["min"] == -2.0 and loss_row["max"] == 4.0, f"loss.loss 有限元素 min/max 错：{loss_row}")
+        _check(loss_row["abs_max"] == 4.0, f"loss.loss abs_max 应为 4.0：{loss_row}")
+        _check(abs(loss_row["mean"] - 1.0) < 1e-6, f"loss.loss 有限元素 mean 应为 1.0：{loss_row}")
+        sur_row = by_name["loss.surrogate"]
+        _check(sur_row["n_nonfinite"] == 0 and sur_row["min"] == 0.5 and sur_row["max"] == 1.5,
+               f"surrogate 幅值错：{sur_row}")
+        # update.aux 行（kl_mean/kl_source/lr 前后）
+        aux = [r for r in mags if r.get("name") == "update.aux"]
+        _check(len(aux) == 1, f"update.aux 行应恰好 1 条，实为 {len(aux)}")
+        a = aux[0]
+        for field in ("kl_mean", "kl_source", "learning_rate_pre", "learning_rate"):
+            _check(field in a, f"update.aux 缺字段 {field!r}：{a}")
+        _check(a["kl_source"] == "absent", f"当前 rsl_rl 版本 kl_mean 应 absent，实为 {a['kl_source']!r}")
+        _check(a["learning_rate"] == 3.0e-4, f"update.aux 应记到 learning_rate，实为 {a['learning_rate']!r}")
+    return {"mag_loss_fields_ok": True, "finite_elems_stats_ok": True, "update_aux_ok": True}
+
+
+def selftest_nan_probe_param_snapshot_flip(seed: int = 0) -> dict:
+    """第四层新增断言 ③：参数快照对比（模拟 update 内 std 变 NaN -> post 快照捕获翻转）。
+
+    复刻假说「某中间量 NaN -> loss NaN -> 反向染全部梯度 -> 参数全灭」：mock update 内部把
+    `policy.std` 打成 NaN，断言 `param_snapshot` 行的 pre/post 快照捕获 `std` 从有限翻转为
+    非有限（`param_nan_flipped` 含 "std"），且 pre 快照有限、post 快照 n_nonfinite 正确。
+    另断言健康 update（std 不变 NaN）时 `param_nan_flipped` 为空（断言有区分度）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32), loss=0.7,
+                             nan_std_in_update=True)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        snaps = [r for r in rows if r.get("name") == "param_snapshot"]
+        _check(len(snaps) == 1, f"param_snapshot 行应恰好 1 条，实为 {len(snaps)}")
+        s = snaps[0]
+        _check("param_pre" in s and "param_post" in s, f"param_snapshot 缺 pre/post：{list(s)}")
+        _check("std" in s["param_pre"] and "std" in s["param_post"], f"快照缺 std key：{s}")
+        _check(s["param_pre"]["std"]["isfinite"] is True, f"pre std 应有限：{s['param_pre']['std']}")
+        _check(s["param_post"]["std"]["isfinite"] is False, f"post std 应变非有限：{s['param_post']['std']}")
+        _check(s["param_post"]["std"]["n_nonfinite"] == ACTION_DIM,
+               f"post std 非有限个数应 == {ACTION_DIM}：{s['param_post']['std']}")
+        _check("std" in s["param_nan_flipped"], f"param_nan_flipped 应含 std：{s['param_nan_flipped']}")
+        _check(s["param_nan_flipped_n"] >= 1, f"param_nan_flipped_n 应 >=1：{s['param_nan_flipped_n']}")
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32), loss=0.7,
+                             nan_std_in_update=False)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        s = [r for r in rows if r.get("name") == "param_snapshot"][0]
+        _check(s["param_nan_flipped_n"] == 0, f"健康 update 不应有参数翻转：{s['param_nan_flipped']}")
+    return {"param_snapshot_flip_captured": True, "pre_finite_post_nan": True, "healthy_no_flip": True}
+
+
 def run_selftest() -> None:
     """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
     torch.manual_seed(0)
@@ -1986,6 +2169,10 @@ def run_selftest() -> None:
         "std_clamp_nan_purified": selftest_std_clamp_nan_purified(),
         "std_clamp_finite_bitwise_vs_legacy": selftest_std_clamp_finite_bitwise_vs_legacy(),
         "nan_probe_line_and_trigger": selftest_nan_probe_line_and_trigger(),
+        # 第四层：update 内分步 NaN 溯源探针（advantage/幅值/参数快照）
+        "nan_probe_advantage_pre_mid": selftest_nan_probe_advantage_pre_mid(),
+        "nan_probe_mag_loss_fields": selftest_nan_probe_mag_loss_fields(),
+        "nan_probe_param_snapshot_flip": selftest_nan_probe_param_snapshot_flip(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -2832,6 +3019,10 @@ def _resolve_ppo_and_policy(runner) -> tuple[object, object, object]:
 # ⇒ 需要「update 内部」的观测点，而非只有 pre/post 两行。探针**只记录不阻断**（保命带在，
 # 训练继续），让后续崩点自然复现时留下完整现场（哪个 stage/哪个量先出非有限值）。
 NAN_PROBE_TAG = "nan_probe"
+# 第四层：幅值趋势行（逐 key/逐段 min/max/abs_max/mean + 参数快照）。**与首 NaN 行分 tag**：
+# 首 NaN 行的语义是「有非有限量才落一行」，幅值行是「每次都落」的趋势量，混在一起会破坏
+# 既有 `nan_probe` 断言（全有限时不应有 nan_probe 行）与 reviewer 核对口径。
+NAN_PROBE_MAG_TAG = "nan_probe_mag"
 # probe 张量时跳过的超大 obs key（防把整段 height_scan（4096×187）反复 copy 到 CPU 造成 OOM/慢）。
 NAN_PROBE_MAX_TENSOR_ELEMS = 1 << 24
 
@@ -2889,11 +3080,16 @@ def _collect_nan_probe_candidates(alg, stage: str, result=None) -> list[tuple[st
 
     探测点（尽量覆盖「污染从哪来」）：
       - `pre`：`alg.storage.observations` 逐 key（policy 段按 `_nan_probe_obs_slices` 切分）；
+      - `pre_mid`：`alg.storage.advantages/returns/values`（GAE 输出，update 的输入）——
+        首 NaN 落在 advantage 计算还是 loss/backward 的分界点；
       - `post`：返回的 loss_dict 逐 key + `alg.policy.std` 参数本体 + 策略输出
         （`policy.mu(...)` 优先、否则 `policy.actor(...)`，可及才跑；仅对 policy 段 obs）。
     """
     cands: list[tuple[str, object]] = []
     policy = getattr(alg, "policy", None)
+
+    if stage == "pre_mid":
+        return _collect_advantage_candidates(alg)
 
     if stage == "pre":
         storage = getattr(alg, "storage", None)
@@ -2963,6 +3159,87 @@ def _collect_nan_probe_candidates(alg, stage: str, result=None) -> list[tuple[st
     return cands
 
 
+def _collect_advantage_candidates(alg) -> list[tuple[str, object]]:
+    """advantage/returns 探针候选（第四层 stage=`pre_mid`）：从 `alg.storage` 取 update 的输入量。
+
+    rsl_rl 2.3.3 `RolloutStorage`（服务器 .venv_isaac 源码核对）属性名：
+      `advantages` / `returns` / `values`（rl 训练类型下均为 (T, N, 1) 张量）；
+      `action_mean`(mu) / `action_sigma`(sigma) 亦有，但 sigma 已在 post 快照覆盖，此处不重复。
+    取不到（属性缺位 / 非张量）静默跳过该 key；**永不抛**。大张量按同一阈值跳过（copy 前置判断）。
+    这些量是 `compute_returns` 的输出、update 内 `advantages_batch`/`returns_batch` 的来源——
+    若在此处即非有限，则首 NaN 在 advantage 计算（GAE）而非 loss/backward。
+    """
+    cands: list[tuple[str, object]] = []
+    storage = getattr(alg, "storage", None)
+    if storage is None:
+        return cands
+    for attr in ("advantages", "returns", "values"):
+        val = getattr(storage, attr, None)
+        if not isinstance(val, torch.Tensor):
+            continue
+        if val.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+            continue   # copy 前置判断：超阈值先跳，不做 GPU→CPU 全量 copy
+        t = _to_cpu_tensor(val)
+        if t is None:
+            continue
+        cands.append((f"storage.{attr}", t))
+    return cands
+
+
+def _collect_mag_candidates(alg, stage: str, result=None) -> list[tuple[str, object]]:
+    """幅值趋势行的候选（第四层）：逐 key/逐段的可及量，**含全有限量**（与首 NaN 探针互补）。
+
+    - `pre`：`alg.storage.observations` 逐 key；policy 段按 official/proprio/token 切片**逐段**
+      记幅值（量级趋势从此可见）。
+    - `pre_mid`：advantages/returns/values（见 `_collect_advantage_candidates`）。
+    - `post`：返回的 loss_dict 逐 key + `policy.std` 本体 + 策略输出（mu/actor）。
+    复用 `_to_cpu_tensor` 与大张量跳过口径；**永不抛**（best-effort）。
+    """
+    if stage == "pre_mid":
+        return _collect_advantage_candidates(alg)
+
+    policy = getattr(alg, "policy", None)
+    cands: list[tuple[str, object]] = []
+
+    if stage == "pre":
+        storage = getattr(alg, "storage", None)
+        obs = getattr(storage, "observations", None) if storage is not None else None
+        if isinstance(obs, dict):
+            for key, val in obs.items():
+                if isinstance(val, torch.Tensor) and \
+                        val.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                    continue   # copy 前置判断
+                t = _to_cpu_tensor(val)
+                if t is None or t.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                    continue
+                if key == "policy" and t.dim() == 2:
+                    width = int(t.shape[-1])
+                    for part, (start, w) in _nan_probe_obs_slices(policy).items():
+                        end = width if w is None else min(int(start) + int(w), width)
+                        if 0 <= int(start) < end:
+                            cands.append((f"obs.policy[{part}]", t[:, int(start):end]))
+                cands.append((f"obs.{key}", t))
+        else:
+            t = _to_cpu_tensor(obs)
+            if t is not None:
+                cands.append(("obs", t))
+
+    if stage == "post":
+        if isinstance(result, dict):
+            for key, val in result.items():
+                t = _to_cpu_tensor(val)
+                if t is not None:
+                    cands.append((f"loss.{key}", t))
+        elif result is not None:
+            t = _to_cpu_tensor(result)
+            if t is not None:
+                cands.append(("result", t))
+        t_std = _to_cpu_tensor(getattr(policy, "std", None))
+        if t_std is not None:
+            cands.append(("policy.std", t_std))
+    return cands
+
+
 def _first_nonfinite_probe(name: str, t: torch.Tensor) -> dict | None:
     """首个非有限量的探针记录（全有限 -> None）。
 
@@ -2998,7 +3275,173 @@ def _first_nonfinite_probe(name: str, t: torch.Tensor) -> dict | None:
     }
 
 
+def _finite_mag_stats(name: str, t: torch.Tensor) -> dict:
+    """张量幅值统计（**只记录不抛**，第四层幅值趋势行用）。
+
+    字段：name / shape / dtype / n_total / n_nonfinite / min / max / abs_max / mean
+    （min/max/abs_max/mean 只对**有限元素**算；全 NaN/inf 时置 None）。与
+    `_first_nonfinite_probe` 的 min/max 口径一致（都用有限元素），但**全有限时也返回记录**
+    （首 NaN 探针只记非有限量），故用于「量级趋势」而非「崩点定位」。
+    """
+    if t.numel() == 0:
+        return {
+            "name": str(name), "shape": list(t.shape), "dtype": str(t.dtype),
+            "n_total": 0, "n_nonfinite": 0,
+            "min": None, "max": None, "abs_max": None, "mean": None,
+        }
+    flat = t.reshape(-1)
+    finite = torch.isfinite(flat)
+    n_bad = int((~finite).sum().item())
+    fin = flat[finite]
+    if bool(fin.numel()):
+        t_min = float(fin.min().item())
+        t_max = float(fin.max().item())
+        t_absmax = float(fin.abs().max().item())
+        t_mean = float(fin.mean().item())
+    else:
+        t_min = t_max = t_absmax = t_mean = None
+    return {
+        "name": str(name),
+        "shape": list(t.shape),
+        "dtype": str(t.dtype),
+        "n_total": int(flat.numel()),
+        "n_nonfinite": n_bad,
+        "min": t_min,
+        "max": t_max,
+        "abs_max": t_absmax,
+        "mean": t_mean,
+    }
+
+
+# 参数快照只取各首末 nn.Linear 的 weight（actor/critic 各 3 层 MLP，取首末即可看「权重是否
+# 同刻全灭」；全量 29 维 std + 6 个 weight 足够印证「loss NaN 染全部梯度」单点假说，且开销可控）。
+_NAN_PROBE_PARAM_SNAP_KEYS = ("std", "actor_first_weight", "actor_last_weight",
+                              "critic_first_weight", "critic_last_weight")
+
+
+def _linear_ends(module) -> dict:
+    """从 nn.Sequential（或任意 module）里取**首个/末个** `nn.Linear` 的 weight（可及才给）。
+
+    返回 {"first_weight": Tensor|None, "last_weight": Tensor|None}；找不到返回全 None。
+    只取 weight 本体（detach），不做前向，不建图。
+    """
+    linears: list[nn.Module] = []
+    try:
+        for m in module.modules():
+            if isinstance(m, nn.Linear):
+                linears.append(m)
+    except Exception:  # noqa: BLE001（探针 best-effort）
+        return {"first_weight": None, "last_weight": None}
+    if not linears:
+        return {"first_weight": None, "last_weight": None}
+    return {"first_weight": linears[0].weight, "last_weight": linears[-1].weight}
+
+
+def _nan_probe_param_snapshot(policy) -> dict:
+    """参数快照：`policy.std` 全量 + actor/critic 各首末 weight 的 isfinite/范数（**只读不抛**）。
+
+    为什么用「快照对比」而非 backward 钩子（指令明令不做钩子，侵入风险）：update 内部不可
+    侵入，但 orig_update 前后各拍一张参数快照即可回答「梯度把哪些参数打成了 NaN」——若 std
+    与 actor/critic 权重**同刻**变 NaN，则印证「某中间量 NaN → loss NaN → 反向染全部梯度」
+    的单点假说（clip_grad_norm_(1.0) 对 NaN 无效，故参数全灭）。
+
+    返回 {key: {isfinite: bool, n_nonfinite: int, norm: float|None, n_total: int}}；某 key
+    取不到（非 scalar σ / 无 actor/critic 属性）则整体静默跳过该 key（不写 null 占位，
+    保持记录简洁）。**纯只读**（detach + 范数），不改任何参数。
+    """
+    out: dict = {}
+    std = getattr(policy, "std", None)
+    if isinstance(std, torch.Tensor):
+        out["std"] = _param_snap_entry(std)
+    actor = getattr(policy, "actor", None)
+    if actor is not None:
+        ends = _linear_ends(actor)
+        if ends["first_weight"] is not None:
+            out["actor_first_weight"] = _param_snap_entry(ends["first_weight"])
+        if ends["last_weight"] is not None:
+            out["actor_last_weight"] = _param_snap_entry(ends["last_weight"])
+    critic = getattr(policy, "critic", None)
+    if critic is not None:
+        ends = _linear_ends(critic)
+        if ends["first_weight"] is not None:
+            out["critic_first_weight"] = _param_snap_entry(ends["first_weight"])
+        if ends["last_weight"] is not None:
+            out["critic_last_weight"] = _param_snap_entry(ends["last_weight"])
+    return out
+
+
+def _param_snap_entry(param: torch.Tensor) -> dict:
+    """单个参数的快照项（isfinite / n_nonfinite / 有限元素 L2 范数 / 元素数）；**只读**。"""
+    with torch.no_grad():
+        t = param.detach().reshape(-1).to(torch.float32)
+        finite = torch.isfinite(t)
+        n_bad = int((~finite).sum().item())
+        fin = t[finite]
+        norm = float(torch.linalg.vector_norm(fin).item()) if bool(fin.numel()) else None
+        return {
+            "isfinite": n_bad == 0,
+            "n_nonfinite": n_bad,
+            "norm": norm,
+            "n_total": int(t.numel()),
+        }
+
+
+def _nan_probe_param_diff(pre: dict, post: dict) -> dict:
+    """参数快照 diff：给出「pre 有限 -> post 非有限」的 key（同刻变 NaN 的印证）；只记录。"""
+    flipped = []
+    for key, post_entry in post.items():
+        pre_entry = pre.get(key)
+        if pre_entry is None:
+            continue
+        if pre_entry.get("isfinite") and not post_entry.get("isfinite"):
+            flipped.append(key)
+    return {"param_nan_flipped": flipped, "param_nan_flipped_n": len(flipped)}
+
+
 # ------------------------------------------------- σ 漂移仪器（update 前后各记一行）
+def _read_alg_scalar(alg, names: Sequence[str]) -> float | None:
+    """按 `names` 顺序在 `alg` 上取首个可及的标量（float/int/0维张量），取不到返回 None。
+
+    用途：`kl_mean`（rsl_rl 2.3.3 里是 `update` 的**局部变量**，不落 `self`，故此处恒取不到——
+    见模块 docstring 的 kl 口径）与 `learning_rate`（adaptive 分支会改写 `self.learning_rate`，
+    可后验反映 KL 是否爆炸）。**只读不抛**（best-effort）。
+    """
+    for name in names:
+        try:
+            val = getattr(alg, name, None)
+        except Exception:  # noqa: BLE001（属性访问器可能抛，探针不打断）
+            continue
+        if val is None:
+            continue
+        if isinstance(val, torch.Tensor):
+            if val.numel() != 1:
+                continue
+            return float(val.detach().to(torch.float32).item())
+        if isinstance(val, (int, float)):
+            return float(val)
+    return None
+
+
+def _read_alg_scalar_with_source(alg, names: Sequence[str]) -> tuple[float | None, str]:
+    """同 `_read_alg_scalar`，但返回 (值, 来源名)；取不到返回 (None, "absent")。
+
+    用于 `update.aux` 行的 `kl_source`：`"absent"` 表示当前 rsl_rl 版本无此属性（kl 是局部
+    变量），`"kl_mean"`/`"kl"` 表示真读到了（未来 rsl_rl 版本若落盘即可自动接入）。
+    """
+    for name in names:
+        try:
+            val = getattr(alg, name, None)
+        except Exception:  # noqa: BLE001
+            continue
+        if val is None:
+            continue
+        if isinstance(val, torch.Tensor) and val.numel() == 1:
+            return float(val.detach().to(torch.float32).item()), name
+        if isinstance(val, (int, float)):
+            return float(val), name
+    return None, "absent"
+
+
 def _policy_std_stats(policy) -> dict | None:
     """读 policy 的 σ（`self.std`，可能为 None/非 Parameter）统计：min/mean/max/负值个数。
 
@@ -3032,10 +3475,20 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
     参数本体 + 策略输出（mu/actor，可及才跑）；首个非有限量以 `tag=nan_probe` 行落同一日志
     （字段 name/n_nonfinite/min/max/first/first_index/shape/dtype + stage），**只记录不阻断**。
 
-    返回 {"log": 路径, "wrapped": True}（供身份信封/打印）。**只读 σ/obs/loss，不改训练。**
+    **第四层追加（update 内分步溯源）**：同一 wrapper 再挂三类**幅值趋势**行
+    （`tag=nan_probe_mag`，与首 NaN 行分 tag）：
+      ① `stage=pre_mid`：advantage/returns/values（`alg.storage.*`）——首 NaN 在 GAE 还是
+         loss/backward 的分界点；
+      ② `stage=post`：loss_dict 逐 key 的 min/max/abs_max/mean + 一行 `update.aux`
+         （`kl_mean`/`kl_source`/`learning_rate_pre`/`learning_rate`，见模块 docstring 的 kl 口径）；
+      ③ `stage=post` 参数快照对比：`param_snapshot` 行（`policy.std` 全量 + actor/critic
+         首末 weight 的 isfinite/norm，pre/post 两拍 + `param_nan_flipped`）。
+    另在 `stage=pre` 追加 obs 逐 key/逐段（official/proprio/token）幅值行。**全部只读**。
+
+    返回 {"log": 路径, "wrapped": True}（供身份信封/打印）。**只读 σ/obs/loss/参数，不改训练。**
     """
     log_path = Path(out_dir) / STD_TRAJECTORY_LOG
-    state = {"calls": 0, "nan_probes": 0}
+    state = {"calls": 0, "nan_probes": 0, "nan_probe_mags": 0}
     orig_update = alg.update
 
     def _emit(tag: str, stats: dict | None, **extra) -> None:
@@ -3080,12 +3533,61 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
         except Exception as exc:  # noqa: BLE001（探针绝不打断训练）
             print(f"[WARN] nan_probe 探测失败（stage={stage}，忽略）：{type(exc).__name__}: {exc}", flush=True)
 
+    def _probe_mag(stage: str, result=None) -> None:
+        """幅值趋势行（第四层）：逐 key/逐段 min/max/abs_max/mean（含全有限量），只记录不阻断。"""
+        try:
+            for name, tensor in _collect_mag_candidates(alg, stage, result):
+                rec = _finite_mag_stats(name, tensor)
+                state["nan_probe_mags"] += 1
+                _emit(NAN_PROBE_MAG_TAG, rec, stage=stage)
+        except Exception as exc:  # noqa: BLE001（探针绝不打断训练）
+            print(f"[WARN] nan_probe_mag 探测失败（stage={stage}，忽略）：{type(exc).__name__}: {exc}", flush=True)
+
+    def _emit_update_aux(pre_lr) -> None:
+        """`update.aux` 行：kl_mean（可及才记）+ learning_rate 前后值（adaptive 分支可后验量）。"""
+        try:
+            kl_val, kl_src = _read_alg_scalar_with_source(alg, ("kl_mean", "kl"))
+            post_lr = _read_alg_scalar(alg, ("learning_rate", "lr"))
+            state["nan_probe_mags"] += 1
+            _emit(
+                NAN_PROBE_MAG_TAG,
+                {
+                    "name": "update.aux",
+                    "kl_mean": kl_val,
+                    "kl_source": kl_src,
+                    "learning_rate_pre": pre_lr,
+                    "learning_rate": post_lr,
+                },
+                stage="post",
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] nan_probe_mag update.aux 失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+
+    def _emit_param_snapshot(pre_snap: dict, post_snap: dict) -> None:
+        """`param_snapshot` 行：pre/post 参数快照 + 「有限→非有限」翻转 key 列表（第四层 ③）。"""
+        try:
+            diff = _nan_probe_param_diff(pre_snap, post_snap)
+            state["nan_probe_mags"] += 1
+            _emit(
+                NAN_PROBE_MAG_TAG,
+                {"name": "param_snapshot", "param_pre": pre_snap, "param_post": post_snap, **diff},
+                stage="post",
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] nan_probe_mag param_snapshot 失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+
     def _wrapped_update(*args, **kwargs):
         state["calls"] += 1
         record = (state["calls"] % max(1, int(every)) == 0)
         if record:
             _emit("pre", _policy_std_stats(alg.policy))
-        _probe("pre")   # ① update 前的 obs_batch（逐 key + policy 段切片）
+        _probe("pre")        # ① update 前的 obs_batch（逐 key + policy 段切片）
+        _probe_mag("pre")    # ④ obs 逐 key/逐段幅值趋势
+        # 第四层：update 前拍参数快照 + 读 lr + 探 advantage/returns（GAE 输出，update 的输入）
+        pre_lr = _read_alg_scalar(alg, ("learning_rate", "lr"))
+        pre_snap = _nan_probe_param_snapshot(getattr(alg, "policy", None))
+        _probe("pre_mid")        # ①' advantage/returns/values（首 NaN 在 GAE 还是 loss/backward 的分界）
+        _probe_mag("pre_mid")
         try:
             result = orig_update(*args, **kwargs)
         except BaseException:  # noqa: BLE001（crash 行必记；异常原样冒泡，不吞）
@@ -3094,7 +3596,12 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
             raise
         if record:
             _emit("post", _policy_std_stats(alg.policy))
-        _probe("post", result)   # ② loss_dict 逐 key ③ update 后 policy.std / 策略输出
+        _probe("post", result)        # ② loss_dict 逐 key ③ update 后 policy.std / 策略输出
+        _probe_mag("post", result)    # ② loss 逐 key 幅值升级
+        _emit_update_aux(pre_lr)      # ②' kl_mean（可及才记）+ lr 前后
+        # ③ 参数快照对比：std + actor/critic 首末 weight（同刻变 NaN -> 印证 loss NaN 染全部梯度）
+        post_snap = _nan_probe_param_snapshot(getattr(alg, "policy", None))
+        _emit_param_snapshot(pre_snap, post_snap)
         return result
 
     alg.update = _wrapped_update
