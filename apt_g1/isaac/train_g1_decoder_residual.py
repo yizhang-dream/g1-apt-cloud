@@ -192,6 +192,27 @@ D065 潜伏缺陷警示（**只登记不修**，owner 2026-09-22 口径）：
        `outputs/<out>/std_trajectory.log`（pre/post/crash 三段；crash 段记录 update 抛异常
        瞬间的 σ，正好是本次崩溃的负值）。下次长跑即可看到 σ 从健康滑向负值的时间与速率。
   退出码语义/身份信封/复现命令均不变。
+
+σ NaN 净化 + update 内首 NaN 溯源探针（2026-09-23，第三层修复，crash 日志实证）：
+  实证（lab-ts `~/ros2_data/d067_verify/freeze_sigmafix_iter950_crash.txt`）：σ 轨迹 1902 行
+  **全程健康**（n_negative=0、min=0.51 从未贴地板），iter 951 pre 正常、post=NaN ——
+  **一次 update 内部把 σ 参数打成 NaN**；`torch.normal` 对 NaN 同样抛 `std >= 0.0`，而第二层
+  的 `clamp(min=1e-4)` 对 NaN 恒等（`NaN.clamp = NaN`）⇒ 保命带对 NaN 失效。三次崩点全部
+  确定性落在 ~23.35M 环境步。首要嫌疑（**未实证**）：max_forward 奖励无上限 -> 某 env 物理
+  速度爆炸 -> obs 出 inf/NaN -> 前向/梯度回传污染 σ。
+  两层修复（**不改奖励/网络/超参，不动 rsl_rl 本体**，延迟 import）：
+    1. **σ NaN 净化（保命带）**：`_clamp_std_param` 改为
+       `where(isfinite, clamp(min=STD_CLAMP_MIN), STD_CLAMP_MIN)` 等价式（NaN/±inf -> 1e-4；
+       有限值路径与旧 clamp **逐位一致**）。docstring 注明「NaN 溯源探针在记录真相，净化只保
+       进程不崩」——**参数本体不被改写**，NaN 仍留在 `self.std`，故仪器/探针能看到污染真相。
+    2. **update 内首 NaN 溯源探针（治本仪器）**：`install_std_trajectory_instrument` 的
+       `_wrapped_update` 在 orig_update 前后与内部可及点探测：① obs_batch（`alg.storage.
+       observations` 逐 key；policy 段按 `official/proprio/token` 切片**能分就分**）② 返回的
+       loss_dict 逐 key ③ update 后 `policy.std` 与策略输出（`mu`/`actor`，可及才跑）。
+       首个非有限量以 `tag=nan_probe` 行落 `std_trajectory.log`（字段 name/n_nonfinite/
+       min/max/first/first_index/shape/dtype + stage/update_calls），**只记录不阻断**
+       （保命带在，训练继续，让探针在后续崩点自然复现时留下完整现场）。梯度注册钩子未做
+       （指令标可选；现有可及点已足够定位「污染在 obs 还是 loss」）。
 """
 
 from __future__ import annotations
@@ -983,12 +1004,23 @@ STD_TRAJECTORY_LOG = "std_trajectory.log"   # σ 漂移仪器落点（outputs/<o
 
 
 def _clamp_std_param(std: torch.Tensor) -> torch.Tensor:
-    """σ 下夹（只下夹不上夹）：min(std, STD_CLAMP_MIN) 的等价 clamp(min=...)。
+    """σ 病态区净化：NaN/±inf -> STD_CLAMP_MIN，其余 min(std, STD_CLAMP_MIN)（只下夹不上夹）。
 
     为什么只下夹：上界夹紧会改写健康轨迹的探索强度（σ>1 是正常早训状态），破坏 D064 可比性；
     下夹在健康区（σ≥STD_CLAMP_MIN）是**恒等映射**，逐位不改 loc/scale 与反传梯度。
+
+    为什么还要管 NaN/±inf（第三层修复）：`NaN.clamp(min=1e-4) = NaN` —— 旧 `clamp(min=...)`
+    对 NaN 是恒等映射，故 σ 参数被 update 打成 NaN 后，第二层保命带形同虚设，`torch.normal`
+    照样抛 `std >= 0.0`（实证：`tmp/_d067_verify/freeze_sigmafix_iter950_crash.txt`，σ 轨迹
+    全程健康却在 iter 951 的 update 内部变 NaN）。`torch.where(isfinite, clamp, STD_CLAMP_MIN)`
+    把非有限量一律映射到 STD_CLAMP_MIN（保命带），**有限值路径与旧 clamp 逐位一致**。
+
+    **NaN 溯源探针在记录真相，净化只保进程不崩**：本函数只作用于「构造 Normal 用的 σ 张量」，
+    不改写 `self.std` 参数本体（见 ClampedStdPolicyMixin）——NaN 仍留在参数里，漂移仪器与
+    nan_probe 探针才能观测到污染真相。
     """
-    return std.clamp(min=STD_CLAMP_MIN)
+    finite = torch.isfinite(std)
+    return torch.where(finite, std.clamp(min=STD_CLAMP_MIN), torch.full_like(std, STD_CLAMP_MIN))
 
 
 class ClampedStdPolicyMixin:
@@ -1006,7 +1038,8 @@ class ClampedStdPolicyMixin:
         **完全不变**（夹紧 tensor 的梯度经 clamp 恒等回到原 Parameter）；
       - σ 漂移仪器仍能读到**未夹紧**的原始 σ（滑向负值的全过程不被掩盖）。
 
-    **声明：夹紧仅在 σ≤STD_CLAMP_MIN 的病态区生效，健康轨迹零改动（逐位）。**
+    **声明：夹紧仅在 σ≤STD_CLAMP_MIN 的病态区生效，健康轨迹零改动（逐位）；NaN/±inf 亦
+    归入病态区净化到 STD_CLAMP_MIN（见 `_clamp_std_param` 第三层修复）。**
     """
 
     @contextlib.contextmanager
@@ -1767,6 +1800,164 @@ def selftest_std_clamp_all_arms() -> dict:
     }
 
 
+# ------------------------------------------------- σ NaN 净化 + nan_probe selftest（第三层修复）
+def selftest_std_clamp_nan_purified(seed: int = 0) -> dict:
+    """新增断言 ①：NaN σ 经净化后 scale==STD_CLAMP_MIN 且 sample 不抛。
+
+    复现第三层 crash：σ 轨迹全程健康却在 update 内部被写成 NaN
+    （tmp/_d067_verify/freeze_sigmafix_iter950_crash.txt），旧 `clamp(min=1e-4)` 对 NaN 恒等
+    （`NaN.clamp = NaN`）⇒ 保命带失效、`torch.normal` 抛 `std >= 0.0`。
+    先断言**裸替身 NaN σ 采样必抛**（防断言因平凡原因通过），再断言**净化替身不抛且 scale
+    逐位 == STD_CLAMP_MIN**，最后断言 σ 参数本体仍是 NaN（净化只作用于采样分布，不改写参数——
+    溯源探针/仪器才能看到污染真相）。
+    """
+    torch.manual_seed(seed)
+    n, dim = 5, ACTION_DIM
+    obs = torch.zeros(n, dim)
+    bad = float("nan")
+
+    # (a) 裸替身：NaN σ 采样必抛（复现第三层崩溃）
+    raw = _MockActorCriticStd(init_noise_std=bad)
+    raised = False
+    try:
+        raw.update_distribution(obs)
+        raw.distribution.sample()
+    except (RuntimeError, ValueError):
+        raised = True
+    _check(raised, "裸替身 NaN σ 采样未抛（crash 根因未复现，断言失去区分度）")
+
+    # (b) 净化替身：不抛，scale 逐位 == STD_CLAMP_MIN（全 NaN -> 全 STD_CLAMP_MIN）
+    clamped = _MockClampedActorCritic(init_noise_std=bad)
+    clamped.update_distribution(obs)
+    scale = clamped.distribution.scale
+    _check(bool(torch.isfinite(scale).all()), f"净化后 scale 仍含非有限值：{scale.reshape(-1)[:3].tolist()}")
+    _check(bool((scale == STD_CLAMP_MIN).all()),
+           f"净化后 scale 非 STD_CLAMP_MIN：{scale.reshape(-1)[:3].tolist()}")
+    sample = clamped.distribution.sample()
+    _check(sample.shape == (n, dim) and bool(torch.isfinite(sample).all()), "净化后 sample 形状/有限性异常")
+    # (c) 参数本体仍是 NaN（净化不改写 σ 参数——仪器/探针可见污染真相）
+    _check(isinstance(clamped.std, nn.Parameter), "净化后 std 不再是 nn.Parameter")
+    _check(bool(torch.isnan(clamped.std).all()), "净化改写了 NaN σ 参数本体（应只作用于采样分布）")
+    _check("std" in clamped.state_dict(), "净化后 state_dict 缺 std（ckpt 结构被破坏）")
+
+    # (d) ±inf 同样被净化（旧 clamp 对 +inf 恒等、对 -inf 也保不住下限）
+    for val in (float("inf"), float("-inf")):
+        m = _MockClampedActorCritic(init_noise_std=val)
+        m.update_distribution(obs)
+        _check(bool((m.distribution.scale == STD_CLAMP_MIN).all()),
+               f"σ={val} 未被净化到 STD_CLAMP_MIN：{m.distribution.scale.reshape(-1)[:3].tolist()}")
+    return {
+        "raw_nan_std_raises": True,
+        "purified_scale": STD_CLAMP_MIN,
+        "purified_sample_ok": True,
+        "param_untouched_nan": True,
+        "inf_purified": True,
+    }
+
+
+def selftest_std_clamp_finite_bitwise_vs_legacy(seed: int = 0) -> dict:
+    """新增断言 ②：有限值路径与旧 `clamp(min=...)` 逐位一致（净化不改健康/负值路径）。
+
+    覆盖三点：(1) `_clamp_std_param` 与 `x.clamp(min=STD_CLAMP_MIN)` 在含负值/零/健康值的
+    张量上逐位相等；(2) 经 mixin 的分布 scale 与旧 clamp 逐位相等；(3) 健康 σ=1.0 时分布
+    scale 逐位 == 原始 σ（旧语义不变）。
+    """
+    torch.manual_seed(seed)
+    n = 6
+    obs = torch.zeros(n, ACTION_DIM)
+    x = torch.tensor([-0.5, 0.0, 1.0e-9, STD_CLAMP_MIN, 0.51, 3.7], dtype=torch.float32)
+    x = x.repeat((ACTION_DIM + x.numel() - 1) // x.numel())[:ACTION_DIM].contiguous()  # 铺满 29 维
+
+    new = _clamp_std_param(x)
+    legacy = x.clamp(min=STD_CLAMP_MIN)
+    _check(torch.equal(new, legacy), f"有限值路径与旧 clamp 非逐位一致：{new.tolist()} vs {legacy.tolist()}")
+    _check(bool((new >= STD_CLAMP_MIN).all()), "净化后出现 < STD_CLAMP_MIN 的值")
+
+    # 经 mixin：健康 σ 下分布 scale 逐位不变
+    m = _MockClampedActorCritic(init_noise_std=1.0)
+    m.update_distribution(obs)
+    _check(torch.equal(m.distribution.scale, torch.ones(n, ACTION_DIM)), "健康 σ=1.0 经净化后 scale 非全 1")
+
+    # 经 mixin：含负值的 σ 参数 -> scale 逐位 == 旧 clamp 结果
+    m2 = _MockClampedActorCritic(init_noise_std=0.0)
+    with torch.no_grad():
+        m2.std.copy_(x)
+    m2.update_distribution(obs)
+    _check(torch.equal(m2.distribution.scale, x.clamp(min=STD_CLAMP_MIN).expand(n, ACTION_DIM)),
+           "负值 σ 经净化后的 scale 与旧 clamp 非逐位一致")
+    return {
+        "finite_path_bitwise_legacy": True,
+        "healthy_scale_unchanged": True,
+        "negative_scale_bitwise_legacy": True,
+    }
+
+
+def selftest_nan_probe_line_and_trigger(seed: int = 0) -> dict:
+    """新增断言 ③：nan_probe 行格式与触发（mock 一个含 NaN 的 loss_dict）。
+
+    用最小 mock alg（`update` 返回含 NaN 的 loss_dict；policy 带 `std`）装仪器，断言：
+      - 日志里出现 `tag == "nan_probe"` 行，字段齐全（name/n_nonfinite/min/max/first/
+        first_index/shape/dtype/stage/update_calls）；
+      - `first` 确为 NaN、`n_nonfinite` 计数正确、`name == "loss.<key>"`；
+      - 探针**不阻断**：`update` 返回值原样返回、训练继续（不抛）；
+      - 反例：全有限 loss_dict 时不产生 nan_probe 行（断言有区分度）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    class _MockAlg:
+        def __init__(self, loss_value):
+            self.policy = _MockActorCriticStd(init_noise_std=1.0)
+            self.storage = SimpleNamespace(observations=None)
+            self._loss = loss_value
+
+        def update(self):
+            return {"loss": torch.tensor([self._loss], dtype=torch.float32), "surrogate": torch.tensor(1.0)}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        # --- 触发路径：loss 含 NaN ---
+        alg = _MockAlg(float("nan"))
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        ret = alg.update()
+        _check(isinstance(ret, dict) and "loss" in ret, "探针改写了 update 返回值（应原样返回）")
+        _check(bool(torch.isnan(ret["loss"]).all()), "mock update 返回值被改写")
+
+        lines = (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()
+        rows = [json.loads(ln) for ln in lines]
+        probes = [r for r in rows if r.get("tag") == NAN_PROBE_TAG]
+        _check(len(probes) == 1, f"nan_probe 行数应为 1，实为 {len(probes)}（rows={[r.get('tag') for r in rows]}）")
+        p = probes[0]
+        for field in ("name", "n_nonfinite", "n_total", "min", "max", "first", "first_index",
+                      "shape", "dtype", "stage", "update_calls"):
+            _check(field in p, f"nan_probe 行缺字段 {field!r}：{p}")
+        _check(p["name"] == "loss.loss", f"nan_probe name 应为 loss.loss，实为 {p['name']!r}")
+        _check(p["stage"] == "post", f"nan_probe stage 应为 post，实为 {p['stage']!r}")
+        _check(p["n_nonfinite"] == 1 and p["n_total"] == 1, f"nan_probe 计数错：{p}")
+        _check(isinstance(p["first"], float) and math.isnan(p["first"]), f"nan_probe first 非 NaN：{p['first']!r}")
+        _check(p["first_index"] == 0, f"nan_probe first_index 应为 0，实为 {p['first_index']!r}")
+        _check(p["min"] is None and p["max"] is None, f"全 NaN 张量的 min/max 应为 None：{p}")
+        _check(p["shape"] == [1] and p["dtype"] == "torch.float32", f"nan_probe shape/dtype 错：{p}")
+        # 其它 tag 仍在（pre/post σ 轨迹行未被破坏）
+        _check(any(r.get("tag") == "pre" for r in rows) and any(r.get("tag") == "post" for r in rows),
+               "σ 轨迹 pre/post 行缺失（仪器回归）")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # --- 反例：全有限 loss_dict -> 无 nan_probe 行 ---
+        out_dir = Path(tmp)
+        alg = _MockAlg(1.0)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        rows = [json.loads(ln) for ln in (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        _check(not any(r.get("tag") == NAN_PROBE_TAG for r in rows),
+               f"全有限 loss 下不应产生 nan_probe 行：{[r.get('tag') for r in rows]}")
+    return {
+        "nan_probe_line_written": True,
+        "fields_ok": True,
+        "nonblocking": True,
+        "finite_case_no_probe": True,
+    }
+
+
 def run_selftest() -> None:
     """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
     torch.manual_seed(0)
@@ -1791,6 +1982,10 @@ def run_selftest() -> None:
         "std_clamp_negative_std": selftest_std_clamp_negative_std(),
         "std_clamp_healthy_bitwise": selftest_std_clamp_healthy_bitwise(),
         "std_clamp_all_arms": selftest_std_clamp_all_arms(),
+        # σ NaN 净化 + update 内首 NaN 溯源探针（第三层修复：update 内部把 σ 打成 NaN）
+        "std_clamp_nan_purified": selftest_std_clamp_nan_purified(),
+        "std_clamp_finite_bitwise_vs_legacy": selftest_std_clamp_finite_bitwise_vs_legacy(),
+        "nan_probe_line_and_trigger": selftest_nan_probe_line_and_trigger(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -2632,6 +2827,177 @@ def _resolve_ppo_and_policy(runner) -> tuple[object, object, object]:
     return alg, optimizer, policy
 
 
+# ------------------------------------------------- update 内首 NaN 溯源探针（第三层修复）
+# 实证：σ 轨迹全程健康却在某次 update 内部变 NaN（tmp/_d067_verify/freeze_sigmafix_iter950_crash.txt）
+# ⇒ 需要「update 内部」的观测点，而非只有 pre/post 两行。探针**只记录不阻断**（保命带在，
+# 训练继续），让后续崩点自然复现时留下完整现场（哪个 stage/哪个量先出非有限值）。
+NAN_PROBE_TAG = "nan_probe"
+# probe 张量时跳过的超大 obs key（防把整段 height_scan（4096×187）反复 copy 到 CPU 造成 OOM/慢）。
+NAN_PROBE_MAX_TENSOR_ELEMS = 1 << 24
+
+
+def _to_cpu_tensor(obj) -> torch.Tensor | None:
+    """尽力把 obj 转成 CPU float32 张量；非张量/无张量元素返回 None（探针 best-effort，不抛）。"""
+    if isinstance(obj, torch.Tensor):
+        return obj.detach().to("cpu", torch.float32)
+    if isinstance(obj, (tuple, list)):
+        tensors = [t for t in obj if isinstance(t, torch.Tensor)]
+        if not tensors:
+            return None
+        try:
+            return torch.cat([t.detach().to("cpu", torch.float32).reshape(-1) for t in tensors])
+        except Exception:  # noqa: BLE001（形状不一/空张量 -> 跳过）
+            return None
+    return None
+
+
+def _nan_probe_obs_slices(policy) -> dict:
+    """policy 段的切片方案（按 policy 类可及属性推；推不出则整体当一段）。
+
+    - residual 臂（`ResidualDecoderPolicy`）：official = `[:, :official_obs_dim]`；
+      proprio = `[:, proprio_start:proprio_start+930]`；token = `[:, token_start:token_start+64]`
+      （三者由 policy 构造期按运行期 term 序算出，见 `_build_residual_policy_kwargs`）。
+    - 其它臂 / 属性缺位：`official_obs_slice` 推不出 ⇒ 只记整体 `policy`（整体已能定位污染）。
+    返回 `{name: (start, width)}`（width=None 表示到末尾）。
+    """
+    out: dict[str, tuple[int, int | None]] = {}
+    official = getattr(policy, "official_obs_dim", None)
+    if official is not None:
+        try:
+            out["official"] = (0, int(official))
+        except (TypeError, ValueError):  # pragma: no cover（防御：非整数宽度）
+            pass
+    p_start = getattr(policy, "proprio_start", None)
+    p_width = getattr(policy, "proprio_width", None)
+    if p_start is not None and p_width is not None:
+        try:
+            out["proprio"] = (int(p_start), int(p_width))
+        except (TypeError, ValueError):  # pragma: no cover
+            pass
+    t_start = getattr(policy, "token_start", None)
+    t_width = getattr(policy, "token_width", None)
+    if t_start is not None and t_width is not None:
+        try:
+            out["token"] = (int(t_start), int(t_width))
+        except (TypeError, ValueError):  # pragma: no cover
+            pass
+    return out
+
+
+def _collect_nan_probe_candidates(alg, stage: str, result=None) -> list[tuple[str, object]]:
+    """收集该 stage 可及的非有限量候选（name, tensor）；**永不抛**（探针 best-effort）。
+
+    探测点（尽量覆盖「污染从哪来」）：
+      - `pre`：`alg.storage.observations` 逐 key（policy 段按 `_nan_probe_obs_slices` 切分）；
+      - `post`：返回的 loss_dict 逐 key + `alg.policy.std` 参数本体 + 策略输出
+        （`policy.mu(...)` 优先、否则 `policy.actor(...)`，可及才跑；仅对 policy 段 obs）。
+    """
+    cands: list[tuple[str, object]] = []
+    policy = getattr(alg, "policy", None)
+
+    if stage == "pre":
+        storage = getattr(alg, "storage", None)
+        obs = getattr(storage, "observations", None) if storage is not None else None
+        if isinstance(obs, dict):
+            for key, val in obs.items():
+                # 大张量跳过判断必须在 _to_cpu_tensor **之前**——否则超大 obs
+                # 先被 GPU→CPU 全量 copy 后才跳过，白付一次拷贝+同步（reviewer 实测抓出）。
+                if isinstance(val, torch.Tensor) and \
+                        val.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                    continue
+                t = _to_cpu_tensor(val)
+                if t is None:
+                    continue
+                if t.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                    # 非张量入参（如 list/numpy）转 CPU 后仍超阈值则跳过，防拖慢/OOM；
+                    # policy 段（含 930 proprio）远小于阈值，不受影响。
+                    continue
+                # policy 段先按切片探（official/proprio/token，定位到段），再退整体兜底；
+                # 其它 key 无切片口径，直接整体探。
+                if key == "policy" and t.dim() == 2:
+                    width = int(t.shape[-1])
+                    for part, (start, w) in _nan_probe_obs_slices(policy).items():
+                        end = width if w is None else min(int(start) + int(w), width)
+                        if 0 <= int(start) < end:
+                            cands.append((f"obs.policy[{part}]", t[:, int(start) : end]))
+                cands.append((f"obs.{key}", t))
+        else:
+            t = _to_cpu_tensor(obs)
+            if t is not None:
+                cands.append(("obs", t))
+
+    if stage == "post":
+        if isinstance(result, dict):
+            for key, val in result.items():
+                t = _to_cpu_tensor(val)
+                if t is not None:
+                    cands.append((f"loss.{key}", t))
+        elif result is not None:
+            t = _to_cpu_tensor(result)
+            if t is not None:
+                cands.append(("result", t))
+        std = getattr(policy, "std", None)
+        t_std = _to_cpu_tensor(std)
+        if t_std is not None:
+            cands.append(("policy.std", t_std))
+        # 策略输出：mu 优先（residual 臂 μ 路径），否则 actor 干（direct/decoder 臂）
+        obs_policy = None
+        storage = getattr(alg, "storage", None)
+        raw_obs = getattr(storage, "observations", None) if storage is not None else None
+        if isinstance(raw_obs, dict) and isinstance(raw_obs.get("policy"), torch.Tensor):
+            obs_policy = raw_obs["policy"]
+        if obs_policy is not None and policy is not None:
+            with torch.no_grad():
+                for attr, name in (("mu", "policy.mu"), ("actor", "policy.actor")):
+                    fn = getattr(policy, attr, None)
+                    if not callable(fn):
+                        continue
+                    try:
+                        out = fn(obs_policy)
+                    except Exception:  # noqa: BLE001（探针 best-effort：前向失败不影响训练）
+                        continue
+                    t = _to_cpu_tensor(out)
+                    if t is not None:
+                        cands.append((name, t))
+                    break
+    return cands
+
+
+def _first_nonfinite_probe(name: str, t: torch.Tensor) -> dict | None:
+    """首个非有限量的探针记录（全有限 -> None）。
+
+    字段：name / shape / dtype / n_nonfinite / min / max / first（首个非有限值）/ first_index
+    （扁平下标 + 多维坐标，便于回查是哪个 env/哪个通道先炸）。min/max 用 `nanmin/nanmax`
+    （全 NaN 时退回 None）。**只读**，不改张量。
+    """
+    if t.numel() == 0:
+        return None
+    finite = torch.isfinite(t)
+    n_bad = int((~finite).sum().item())
+    if n_bad == 0:
+        return None
+    flat = t.reshape(-1)
+    idx = int((~torch.isfinite(flat)).nonzero(as_tuple=False)[0].item())
+    fin_mask = torch.isfinite(flat)
+    t_min = float(flat[fin_mask].min().item()) if bool(fin_mask.any()) else None
+    t_max = float(flat[fin_mask].max().item()) if bool(fin_mask.any()) else None
+    coords = None
+    if t.dim() > 1:
+        coords = [int(c) for c in torch.unravel_index(torch.tensor(idx), t.shape)]
+    return {
+        "name": str(name),
+        "shape": list(t.shape),
+        "dtype": str(t.dtype),
+        "n_nonfinite": n_bad,
+        "n_total": int(flat.numel()),
+        "min": t_min,
+        "max": t_max,
+        "first": float(flat[idx].item()),
+        "first_index": idx,
+        "first_coord": coords,
+    }
+
+
 # ------------------------------------------------- σ 漂移仪器（update 前后各记一行）
 def _policy_std_stats(policy) -> dict | None:
     """读 policy 的 σ（`self.std`，可能为 None/非 Parameter）统计：min/mean/max/负值个数。
@@ -2661,21 +3027,26 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
     crash 行再原样 re-raise（不吞异常）——crash 行正好是 σ 变负被夹紧兜住的那一瞬。
     `every` 控制抽样（默认每 iter；设 N 则每 N 个 update 记一次，但 crash 行始终记）。
 
-    返回 {"log": 路径, "wrapped": True}（供身份信封/打印）。**只读 σ 参数，不改训练。**
+    **第三层修复追加**：同一 wrapper 内挂「首 NaN 溯源探针」——orig_update 前探 obs_batch
+    （逐 key + policy 段按 official/proprio/token 切片），后探 loss_dict 逐 key + `policy.std`
+    参数本体 + 策略输出（mu/actor，可及才跑）；首个非有限量以 `tag=nan_probe` 行落同一日志
+    （字段 name/n_nonfinite/min/max/first/first_index/shape/dtype + stage），**只记录不阻断**。
+
+    返回 {"log": 路径, "wrapped": True}（供身份信封/打印）。**只读 σ/obs/loss，不改训练。**
     """
     log_path = Path(out_dir) / STD_TRAJECTORY_LOG
-    state = {"calls": 0}
+    state = {"calls": 0, "nan_probes": 0}
     orig_update = alg.update
 
-    def _emit(tag: str, stats: dict | None) -> None:
+    def _emit(tag: str, stats: dict | None, **extra) -> None:
         if stats is None:
             return
         try:
-            _emit_line(tag, stats)
+            _emit_line(tag, stats, **extra)
         except OSError as exc:  # 仪器 best-effort：写日志失败只警告，不阻断训练、不吞真异常
             print(f"[WARN] std_trajectory 写日志失败（tag={tag}）: {exc}", flush=True)
 
-    def _emit_line(tag: str, stats: dict) -> None:
+    def _emit_line(tag: str, stats: dict, **extra) -> None:
         line = json.dumps(
             {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -2683,24 +3054,47 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
                 "tag": tag,
                 "update_calls": state["calls"],
                 **stats,
+                **extra,
             },
             ensure_ascii=False,
         )
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
 
+    def _probe(stage: str, result=None) -> None:
+        """首个非有限量落 nan_probe 行（每 update 每 stage 最多一条；只记录不阻断）。"""
+        try:
+            for name, tensor in _collect_nan_probe_candidates(alg, stage, result):
+                rec = _first_nonfinite_probe(name, tensor)
+                if rec is None:
+                    continue
+                state["nan_probes"] += 1
+                _emit(NAN_PROBE_TAG, rec, stage=stage)
+                print(
+                    f"[WARN] nan_probe: 首个非有限量 stage={stage} name={name} "
+                    f"n_nonfinite={rec['n_nonfinite']}/{rec['n_total']} first={rec['first']} "
+                    f"idx={rec['first_index']}（σ 净化保命带已兜底，训练继续）",
+                    flush=True,
+                )
+                return
+        except Exception as exc:  # noqa: BLE001（探针绝不打断训练）
+            print(f"[WARN] nan_probe 探测失败（stage={stage}，忽略）：{type(exc).__name__}: {exc}", flush=True)
+
     def _wrapped_update(*args, **kwargs):
         state["calls"] += 1
         record = (state["calls"] % max(1, int(every)) == 0)
         if record:
             _emit("pre", _policy_std_stats(alg.policy))
+        _probe("pre")   # ① update 前的 obs_batch（逐 key + policy 段切片）
         try:
             result = orig_update(*args, **kwargs)
         except BaseException:  # noqa: BLE001（crash 行必记；异常原样冒泡，不吞）
             _emit("crash", _policy_std_stats(alg.policy))
+            _probe("post")   # 崩点现场：σ 参数本体 + 策略输出（可及才跑）
             raise
         if record:
             _emit("post", _policy_std_stats(alg.policy))
+        _probe("post", result)   # ② loss_dict 逐 key ③ update 后 policy.std / 策略输出
         return result
 
     alg.update = _wrapped_update
