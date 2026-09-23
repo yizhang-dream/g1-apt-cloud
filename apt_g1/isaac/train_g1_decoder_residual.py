@@ -168,11 +168,36 @@ D065 潜伏缺陷警示（**只登记不修**，owner 2026-09-22 口径）：
   仿射不一致（增益 0.5/sonic_scale）。本文件**不修** C 臂：D065 已产出的结论与 ckpt 身份绑定
   于旧口径，就地改动会让历史可比性失真；如需修，应在 `train_g1_decoder_lora.py` 侧以新实验号
   单独立项（改动范围、重训与结论修订均超出本次任务）。
+
+σ 病态区夹紧 + σ 漂移仪器（2026-09-23，第二层修复，crash 日志实证）：
+  实证（`tmp/_fixverify_main_loop_crash.log`；1024env×1250it direct max_forward seed0 确定性
+  崩于 iter 950 ≈ 23.35M 步）：rsl_rl `ppo.py:260` `self.policy.act(...)` ->
+  `actor_critic.py:122` `self.distribution.sample()` -> torch `normal.py:73`
+  `torch.normal(loc, scale)` -> `RuntimeError: normal expects all elements of std >= 0.0`。
+  机制 = rsl_rl ActorCritic 的可训 σ（`self.std`，init_noise_std 路径）是**裸 nn.Parameter、
+  无任何下界约束**，PPO 梯度更新可把它推成负值；负 σ 构造出的 Normal 在 sample 时抛异常
+  （构造期因 `Normal.set_default_validate_args(False)` 不校验，只在采样/log_prob 处炸）。
+  track 奖励下 D064 曾完整跑完未触发，max_forward 下确定性触发（训练动力学不同）。
+  两层修复（**不改奖励/网络结构/超参，不动 rsl_rl 库本体**，只在本文件内 subclass）：
+    1. σ 采样夹紧 `ClampedStdPolicyMixin`：覆写 `update_distribution`，在**构造 `Normal` 前**
+       对 σ 做 `std.clamp(min=STD_CLAMP_MIN=1e-4)`（**只下夹不上夹**）。三臂统一经该 mixin：
+       direct/decoder 臂用 `ClampedStdActorCritic`（继承 rsl_rl ActorCritic + mixin，`__init__`
+       逐字继承 ⇒ 与 D064 ActorCritic 同初始化）；residual 臂的 `ResidualDecoderPolicy` 同样
+       继承 mixin（μ 路径不变）。**夹紧仅在 σ≤1e-4 的病态区生效：健康轨迹（σ≥1e-4）下 clamp
+       是恒等映射，Normal 的 loc/scale 与反传梯度逐位不变 ⇒ D064 可比性与健康训练零改动。**
+       夹紧只作用于**采样/求 log_prob 用的分布**，不改写 `self.std` 参数本体（漂移仪器仍能观测
+       原始 σ 滑向负值的全过程）。
+    2. σ 漂移仪器 `install_std_trajectory_instrument`：包住 `alg.update`（rsl_rl 主循环每 iter
+       调一次），每次（默认每 iter）把 `policy.std` 的 min/mean/max/负值个数追加到
+       `outputs/<out>/std_trajectory.log`（pre/post/crash 三段；crash 段记录 update 抛异常
+       瞬间的 σ，正好是本次崩溃的负值）。下次长跑即可看到 σ 从健康滑向负值的时间与速率。
+  退出码语义/身份信封/复现命令均不变。
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -949,6 +974,60 @@ def _log_main_loop_crash(out_dir, exc: BaseException, *, iteration=None) -> Path
     return path
 
 
+# ------------------------------------------------- σ 病态区夹紧（三臂统一）
+# 实证：rsl_rl ActorCritic 的可训 σ（self.std，裸 nn.Parameter 无下界）被 PPO 推负后，
+# Normal.sample 抛 `normal expects all elements of std >= 0.0`（tmp/_fixverify_main_loop_crash.log）。
+# 夹紧只下夹不上夹，且只在构造 Normal 前生效 ⇒ 健康区（σ≥STD_CLAMP_MIN）逐位恒等。
+STD_CLAMP_MIN = 1.0e-4        # σ 下界（= token std floor 同量级；病态区才生效）
+STD_TRAJECTORY_LOG = "std_trajectory.log"   # σ 漂移仪器落点（outputs/<out>/ 下）
+
+
+def _clamp_std_param(std: torch.Tensor) -> torch.Tensor:
+    """σ 下夹（只下夹不上夹）：min(std, STD_CLAMP_MIN) 的等价 clamp(min=...)。
+
+    为什么只下夹：上界夹紧会改写健康轨迹的探索强度（σ>1 是正常早训状态），破坏 D064 可比性；
+    下夹在健康区（σ≥STD_CLAMP_MIN）是**恒等映射**，逐位不改 loc/scale 与反传梯度。
+    """
+    return std.clamp(min=STD_CLAMP_MIN)
+
+
+class ClampedStdPolicyMixin:
+    """在构造 `Normal` 前把 σ 夹到 ≥STD_CLAMP_MIN 的混入（三臂统一经此）。
+
+    用法（MRO 必须混入在前，见 `ClampedStdActorCritic` / `ResidualDecoderPolicy`）：
+        class ClampedStdActorCritic(ClampedStdPolicyMixin, _ActorCriticBase): ...
+    覆写点 = `update_distribution`（rsl_rl `act` / `evaluate` 都经它填充 `self.distribution`）。
+
+    实现手法：**临时把 `self.std` 从 `_parameters` 挪到实例 `__dict__` 并换成 clamp 后的普通
+    tensor**（nn.Module `__setattr__` 不允许把 Parameter 属性直接赋成 Tensor，故走底层字典），
+    调用 `super().update_distribution` 后用 `finally` 逐位还原 Parameter——保证：
+      - 采样/log_prob 用夹紧后的 σ（病态区不抛）；
+      - `self.std` 参数本体、`state_dict`、ckpt 结构、optimizer 引用、反传梯度在健康区
+        **完全不变**（夹紧 tensor 的梯度经 clamp 恒等回到原 Parameter）；
+      - σ 漂移仪器仍能读到**未夹紧**的原始 σ（滑向负值的全过程不被掩盖）。
+
+    **声明：夹紧仅在 σ≤STD_CLAMP_MIN 的病态区生效，健康轨迹零改动（逐位）。**
+    """
+
+    @contextlib.contextmanager
+    def _std_clamped(self):
+        std = self._parameters.get("std", None)
+        if std is None:   # 非 "scalar" σ 变体（如 log_std）不走此路径，保持原样
+            yield
+            return
+        del self._parameters["std"]
+        self.__dict__["std"] = _clamp_std_param(std)
+        try:
+            yield
+        finally:
+            del self.__dict__["std"]
+            self._parameters["std"] = std
+
+    def update_distribution(self, observations) -> None:
+        with self._std_clamped():
+            super().update_distribution(observations)
+
+
 # ------------------------------------------------------------- selftest
 def _check(cond: bool, msg: str) -> None:
     """自测断言：不满足即 RuntimeError（带原因，避免裸 assert 被 -O 剥掉）。"""
@@ -969,6 +1048,35 @@ class _MockDecoder(nn.Module):
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         return self.lin(obs)
+
+
+class _MockActorCriticStd(nn.Module):
+    """本机替身 rsl_rl ActorCritic（**只复刻 σ 路径**：`self.std` + `update_distribution`）。
+
+    生产环境（服务器）用真实 `rsl_rl.modules.ActorCritic`；本机（无训练 venv，`_ActorCriticBase
+    = nn.Module`）用它验证 `ClampedStdPolicyMixin` 的夹紧行为：σ 采样、负 σ 抛异常、健康区逐位。
+    复刻口径与 rsl_rl actor_critic.py 一致（`std = self.std.expand_as(mean)` -> `Normal(mean, std)`）。
+    """
+
+    def __init__(self, init_noise_std: float = 1.0, num_actions: int = ACTION_DIM) -> None:
+        super().__init__()
+        self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
+        self.distribution = None
+
+    def update_distribution(self, observations) -> None:
+        std = self.std.expand_as(observations)
+        self.distribution = torch.distributions.Normal(observations, std)
+
+    def act(self, observations, **kwargs) -> torch.Tensor:
+        self.update_distribution(observations)
+        return self.distribution.sample()
+
+    def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        return self.distribution.log_prob(actions).sum(dim=-1)
+
+
+class _MockClampedActorCritic(ClampedStdPolicyMixin, _MockActorCriticStd):
+    """替身 base + σ 夹紧混入（生产对应 `ClampedStdActorCritic`）。"""
 
 
 def selftest_zero_init_identity(seed: int = 0) -> dict:
@@ -1546,6 +1654,119 @@ def selftest_main_loop_crash_log() -> dict:
     return {"crash_log_written": True, "has_traceback": True, "has_iteration": True}
 
 
+# ------------------------------------------------- σ 病态区夹紧 selftest（第二层修复）
+def selftest_std_clamp_negative_std(seed: int = 0) -> dict:
+    """新增断言 ①：负 σ（构造 -0.5）经夹紧层后 sample 不抛且 scale==STD_CLAMP_MIN。
+
+    复现 crash 根因：rsl_rl ActorCritic 的裸 σ 被 PPO 推负 -> `Normal.sample` 抛
+    `normal expects all elements of std >= 0.0`（tmp/_fixverify_main_loop_crash.log）。
+    先断言**裸替身确实抛**（防「夹紧断言因平凡原因通过」——若裸替身都不抛，本测试失去区分度），
+    再断言**夹紧替身不抛且分布 scale 逐位 == STD_CLAMP_MIN**，最后断言参数本体仍是原始负值
+    （夹紧只作用于采样分布，不改写 σ 参数——漂移仪器才能观测原始漂移）。
+    """
+    torch.manual_seed(seed)
+    n, dim = 5, ACTION_DIM
+    obs = torch.zeros(n, dim)
+
+    # (a) 裸替身：负 σ 采样必抛（复现崩溃）
+    raw = _MockActorCriticStd(init_noise_std=-0.5)
+    raised = False
+    try:
+        raw.update_distribution(obs)
+        raw.distribution.sample()
+    except (RuntimeError, ValueError):
+        raised = True
+    _check(raised, "裸替身负 σ 采样未抛（crash 根因未复现，断言失去区分度）")
+
+    # (b) 夹紧替身：不抛，scale 逐位 == STD_CLAMP_MIN
+    clamped = _MockClampedActorCritic(init_noise_std=-0.5)
+    clamped.update_distribution(obs)
+    scale = clamped.distribution.scale
+    _check(bool((scale == STD_CLAMP_MIN).all()),
+           f"夹紧后 scale 非 STD_CLAMP_MIN：{scale.reshape(-1)[:3].tolist()}")
+    sample = clamped.distribution.sample()
+    _check(sample.shape == (n, dim) and bool(torch.isfinite(sample).all()), "夹紧后 sample 形状/有限性异常")
+    # (c) 参数本体未被改写（仍是原始 -0.5，漂移仪器可观测）
+    _check(isinstance(clamped.std, nn.Parameter), "夹紧后 std 不再是 nn.Parameter")
+    _check(float(clamped.std.reshape(-1)[0].item()) == -0.5, "夹紧改写了 σ 参数本体（应只作用于分布）")
+    _check("std" in clamped.state_dict(), "夹紧后 state_dict 缺 std（ckpt 结构被破坏）")
+    return {
+        "raw_negative_std_raises": True,
+        "clamped_scale": STD_CLAMP_MIN,
+        "clamped_sample_ok": True,
+        "param_untouched": True,
+    }
+
+
+def selftest_std_clamp_healthy_bitwise(seed: int = 0) -> dict:
+    """新增断言 ②：健康 σ（1.0）经夹紧层后逐位不变（scale 与 log_prob 梯度均逐位）。
+
+    「只下夹不上夹」的可比性保证：σ=1.0 ≥ STD_CLAMP_MIN 时 clamp 是恒等映射 ⇒ 分布 scale、
+    `log_prob` 及其对 σ 的反传梯度都必须与**裸替身**逐位相同（不是「近似相等」）。
+    """
+    torch.manual_seed(seed)
+    n, dim = 5, ACTION_DIM
+    obs = torch.zeros(n, dim)
+    actions = torch.randn(n, dim)
+
+    def _scale_and_grad(cls):
+        m = cls(init_noise_std=1.0)
+        m.update_distribution(obs)
+        lp = m.get_actions_log_prob(actions).sum()   # 标量化以便对 σ 求导
+        g, = torch.autograd.grad(lp, m.std)
+        return m.distribution.scale.detach().clone(), g.detach().clone()
+
+    s_clamped, g_clamped = _scale_and_grad(_MockClampedActorCritic)
+    s_raw, g_raw = _scale_and_grad(_MockActorCriticStd)
+
+    _check(torch.equal(s_clamped, s_raw), "健康 σ 下夹紧层改动了 scale（非逐位）")
+    _check(torch.equal(s_clamped, torch.ones(n, dim)), "健康 σ=1.0 的 scale 非全 1")
+    _check(torch.equal(g_clamped, g_raw), "健康 σ 下夹紧层改动了 log_prob 对 σ 的梯度（非逐位）")
+    return {
+        "scale_bitwise_equal_raw": True,
+        "scale_all_ones": True,
+        "grad_bitwise_equal_raw": True,
+    }
+
+
+def selftest_std_clamp_all_arms() -> dict:
+    """新增断言 ③：三臂策略类都挂了 σ 夹紧（配置/构造断言，防漏挂一臂）。
+
+    两条独立检查：
+      1. **类层**：direct/decoder 臂类（`ClampedStdActorCritic`）与 residual 臂类
+         （`ResidualDecoderPolicy`）都继承 `ClampedStdPolicyMixin`，且
+         `ClampedStdActorCritic` 继承 rsl_rl `ActorCritic`（非夹紧版不复用，防误配回裸基类）；
+      2. **实例层**（本机替身，不依赖 rsl_rl）：负 σ 的夹紧替身 `act()` 不抛 —— 覆盖真实训练
+         采样路径（ppo.py:260 `policy.act` -> sample）。
+    """
+    # (1) 三臂策略类都挂了夹紧混入
+    _check(issubclass(ClampedStdActorCritic, ClampedStdPolicyMixin), "ClampedStdActorCritic 未挂夹紧混入")
+    _check(issubclass(ResidualDecoderPolicy, ClampedStdPolicyMixin), "ResidualDecoderPolicy 未挂夹紧混入")
+    _check(ClampedStdActorCritic is not _ActorCriticBase, "ClampedStdActorCritic 不应等于裸基类")
+    if HAS_RSL_RL:  # pragma: no cover - 服务器
+        _check(issubclass(ClampedStdActorCritic, _ActorCriticBase), "ClampedStdActorCritic 未继承 rsl_rl ActorCritic")
+    else:  # 本机：_ActorCriticBase 降级为 nn.Module，仅断言是 nn.Module 子类
+        _check(issubclass(ClampedStdActorCritic, nn.Module), "ClampedStdActorCritic 非 nn.Module 子类")
+    # direct/decoder 两臂同用 ClampedStdActorCritic；residual 用 ResidualDecoderPolicy
+    arm_classes = {
+        "direct": ClampedStdActorCritic,
+        "decoder": ClampedStdActorCritic,
+        "residual": ResidualDecoderPolicy,
+    }
+    _check(set(arm_classes) == set(ARMS), f"三臂类表键 {set(arm_classes)} != {set(ARMS)}")
+    for arm, cls in arm_classes.items():
+        _check(issubclass(cls, ClampedStdPolicyMixin), f"{arm} 臂策略类未挂夹紧混入")
+    # (2) 实例层：负 σ 经 act() 采样不抛（真实训练采样路径）
+    m = _MockClampedActorCritic(init_noise_std=-0.5)
+    a = m.act(torch.zeros(4, ACTION_DIM))
+    _check(a.shape == (4, ACTION_DIM) and bool(torch.isfinite(a).all()), "夹紧替身 act() 输出异常")
+    return {
+        "arms_clamped": sorted(arm_classes),
+        "clamped_class_subclasses_mixin": True,
+        "clamped_act_ok_on_negative_std": True,
+    }
+
+
 def run_selftest() -> None:
     """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
     torch.manual_seed(0)
@@ -1566,6 +1787,10 @@ def run_selftest() -> None:
         # 关闭死锁看门狗 + 打断事件落盘仪器（faulthandler 栈实证修复）
         "safe_close_timeout": selftest_safe_close_timeout(),
         "main_loop_crash_log": selftest_main_loop_crash_log(),
+        # σ 病态区夹紧（第二层修复：负 σ 导致 Normal.sample 抛异常）
+        "std_clamp_negative_std": selftest_std_clamp_negative_std(),
+        "std_clamp_healthy_bitwise": selftest_std_clamp_healthy_bitwise(),
+        "std_clamp_all_arms": selftest_std_clamp_all_arms(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -1946,9 +2171,22 @@ except ImportError:  # pragma: no cover - 本机（无训练 venv）
     HAS_RSL_RL = False
 
 RESIDUAL_POLICY_CLASS_NAME = "ResidualDecoderPolicy"
+# direct/decoder 两臂的策略类名：rsl_rl ActorCritic + σ 夹紧混入（见上方 ClampedStdPolicyMixin）。
+# 注册进 rsl_rl 命名空间后由 runner `eval(class_name)` 解析；`__init__` 逐字继承 ActorCritic
+# ⇒ 网络/初始化/超参全同 D064，仅 `update_distribution` 多一层病态区 σ 下夹。
+CLAMPED_ACTOR_CRITIC_CLASS_NAME = "ClampedStdActorCritic"
 
 
-class ResidualDecoderPolicy(_ActorCriticBase):  # type: ignore[misc]
+class ClampedStdActorCritic(ClampedStdPolicyMixin, _ActorCriticBase):  # type: ignore[misc]
+    """rsl_rl `ActorCritic` + σ 下夹（direct/decoder 臂，D064 逐字网络 + 病态区夹紧）。
+
+    除 `update_distribution`（经 `ClampedStdPolicyMixin`）外不覆写任何东西：构造、actor/critic
+    MLP、init_noise_std 语义、参数量与初始化分布均与 rsl_rl ActorCritic 逐字一致。健康轨迹
+    （σ≥STD_CLAMP_MIN）下夹紧是恒等映射，行为与 D064 ActorCritic 逐位相同。
+    """
+
+
+class ResidualDecoderPolicy(ClampedStdPolicyMixin, _ActorCriticBase):  # type: ignore[misc]
     """rsl_rl ActorCritic 变体：μ = 冻结 decoder(cat[token, proprio]) + r(官方 obs)。
 
     - 动作分布 N(μ, σ)，动作维 29（= 关节目标，与 direct 臂同口径）。
@@ -1961,6 +2199,8 @@ class ResidualDecoderPolicy(_ActorCriticBase):  # type: ignore[misc]
       σ 默认冻结（`sigma_trainable=False`，§5y「PPO 只训 r」）；基类 actor 干被冻结且不参与
       前向（本臂无独立 actor MLP，μ 由冻结分支 + r 构成）。
     - 可训集合摘除由 train 侧 `_prune_frozen_params` 落地（同 D065 口径）。
+    - σ 病态区下夹经 `ClampedStdPolicyMixin.update_distribution`（本臂 `update_distribution`
+      覆写在调用 super() 时命中 mixin 的夹紧上下文；健康区逐位不变）。
     """
 
     def __init__(
@@ -2050,9 +2290,12 @@ class ResidualDecoderPolicy(_ActorCriticBase):  # type: ignore[misc]
         return self.mu_path(dec_obs, r_obs)
 
     def update_distribution(self, observations) -> None:
-        mu = self.mu(observations)
-        std = self.std.to(mu.device).expand_as(mu)
-        self.distribution = torch.distributions.Normal(mu, std)
+        # σ 病态区下夹：本臂自带 update_distribution（MRO 会盖掉 mixin 的同名方法），
+        # 故显式经 mixin 的夹紧上下文构造 Normal（健康区恒等，见 ClampedStdPolicyMixin）。
+        with self._std_clamped():
+            mu = self.mu(observations)
+            std = self.std.to(mu.device).expand_as(mu)
+            self.distribution = torch.distributions.Normal(mu, std)
 
     def act(self, observations, **kwargs) -> torch.Tensor:
         self.update_distribution(observations)
@@ -2112,6 +2355,22 @@ def register_residual_policy_in_rsl_rl(cls=ResidualDecoderPolicy, name: str = RE
     for mod in targets:
         setattr(mod, name, cls)
     return name
+
+
+def register_arm_policy_classes_in_rsl_rl() -> dict:
+    """把三臂策略类统一注入 rsl_rl 命名空间，返回 {arm: 类名}（三臂同经 σ 夹紧层）。
+
+    - direct/decoder：`ClampedStdActorCritic`（D064 ActorCritic 逐字 + σ 下夹）；
+    - residual：`ResidualDecoderPolicy`（μ 路径不变 + σ 下夹）。
+    统一入口保证「三臂配置表都挂了夹紧」由**同一处构造**落地，避免漏挂一臂。
+    """
+    return {
+        "direct": register_residual_policy_in_rsl_rl(
+            ClampedStdActorCritic, CLAMPED_ACTOR_CRITIC_CLASS_NAME),
+        "decoder": register_residual_policy_in_rsl_rl(
+            ClampedStdActorCritic, CLAMPED_ACTOR_CRITIC_CLASS_NAME),
+        "residual": register_residual_policy_in_rsl_rl(),
+    }
 
 
 # ------------------------------------------------------------- env / policy 装配
@@ -2373,12 +2632,90 @@ def _resolve_ppo_and_policy(runner) -> tuple[object, object, object]:
     return alg, optimizer, policy
 
 
+# ------------------------------------------------- σ 漂移仪器（update 前后各记一行）
+def _policy_std_stats(policy) -> dict | None:
+    """读 policy 的 σ（`self.std`，可能为 None/非 Parameter）统计：min/mean/max/负值个数。
+
+    直接读**参数本体**（非夹紧后的分布 std），故能观测到 σ 滑向负值的全过程。非 "scalar"
+    σ 变体（无 `std` 属性）返回 None，仪器静默跳过（不干扰其它变体）。
+    """
+    std = getattr(policy, "std", None)
+    if std is None:
+        return None
+    with torch.no_grad():
+        s = std.detach().reshape(-1).to(torch.float32)
+        return {
+            "min": float(s.min().item()),
+            "mean": float(s.mean().item()),
+            "max": float(s.max().item()),
+            "n_negative": int((s < 0).sum().item()),
+            "dim": int(s.numel()),
+        }
+
+
+def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase: str = "train") -> dict:
+    """包住 `alg.update`，每次把 σ 统计追加一行到 `outputs/<out>/std_trajectory.log`。
+
+    rsl_rl 主循环每 iter 调一次 `alg.update()`（on_policy_runner.py:262），故包住它即可得到
+    「每 iter 的 σ 轨迹」。每次记 pre（update 前）/post（update 后）两行；update 抛异常时记
+    crash 行再原样 re-raise（不吞异常）——crash 行正好是 σ 变负被夹紧兜住的那一瞬。
+    `every` 控制抽样（默认每 iter；设 N 则每 N 个 update 记一次，但 crash 行始终记）。
+
+    返回 {"log": 路径, "wrapped": True}（供身份信封/打印）。**只读 σ 参数，不改训练。**
+    """
+    log_path = Path(out_dir) / STD_TRAJECTORY_LOG
+    state = {"calls": 0}
+    orig_update = alg.update
+
+    def _emit(tag: str, stats: dict | None) -> None:
+        if stats is None:
+            return
+        try:
+            _emit_line(tag, stats)
+        except OSError as exc:  # 仪器 best-effort：写日志失败只警告，不阻断训练、不吞真异常
+            print(f"[WARN] std_trajectory 写日志失败（tag={tag}）: {exc}", flush=True)
+
+    def _emit_line(tag: str, stats: dict) -> None:
+        line = json.dumps(
+            {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "phase": phase,
+                "tag": tag,
+                "update_calls": state["calls"],
+                **stats,
+            },
+            ensure_ascii=False,
+        )
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+    def _wrapped_update(*args, **kwargs):
+        state["calls"] += 1
+        record = (state["calls"] % max(1, int(every)) == 0)
+        if record:
+            _emit("pre", _policy_std_stats(alg.policy))
+        try:
+            result = orig_update(*args, **kwargs)
+        except BaseException:  # noqa: BLE001（crash 行必记；异常原样冒泡，不吞）
+            _emit("crash", _policy_std_stats(alg.policy))
+            raise
+        if record:
+            _emit("post", _policy_std_stats(alg.policy))
+        return result
+
+    alg.update = _wrapped_update
+    return {"log": str(log_path), "wrapped": True}
+
+
 def _make_runner_cfg_dict(hv, cli, out_dir: Path, device: str, policy_kwargs: dict | None) -> dict:
     """rsl_rl runner cfg dict：PPO 配方逐字段继承 D064 官方 G1 rough（保可比性）。
 
     residual 臂改 policy.class_name + 透传 policy_kwargs（照 D065 的
-    `runner_cfg.to_dict()` + `dict["policy"].update(...)` 手法）；direct/decoder 臂
-    = D064 逐字（默认 ActorCritic）。
+    `runner_cfg.to_dict()` + `dict["policy"].update(...)` 手法）；三臂 policy 类
+    统一经 register_arm_policy_classes_in_rsl_rl 设 class_name——direct/decoder
+    = ClampedStdActorCritic（rsl_rl ActorCritic 逐字继承 + σ 病态区夹紧，健康区
+    逐位等价；2026-09-23 σ 变负 crash 修复）、residual = ResidualDecoderPolicy
+    （自带夹紧）。
     """
     RslRlPpoActorCriticCfg = hv.RslRlPpoActorCriticCfg
     RslRlPpoAlgorithmCfg = hv.RslRlPpoAlgorithmCfg
@@ -2414,8 +2751,11 @@ def _make_runner_cfg_dict(hv, cli, out_dir: Path, device: str, policy_kwargs: di
     )
     runner_cfg.run_name = f"{cli.arm}_{cli.terrain}"
     cfg_dict = runner_cfg.to_dict()
+    # 三臂统一走 σ 夹紧层：direct/decoder -> ClampedStdActorCritic；residual ->
+    # ResidualDecoderPolicy（两者都继承 ClampedStdPolicyMixin）。见 register_arm_policy_classes_in_rsl_rl。
+    arm_classes = register_arm_policy_classes_in_rsl_rl()
+    cfg_dict["policy"]["class_name"] = arm_classes[cli.arm]
     if cli.arm == "residual":
-        cfg_dict["policy"]["class_name"] = register_residual_policy_in_rsl_rl()
         cfg_dict["policy"].update(policy_kwargs or {})
     return cfg_dict
 
@@ -2556,6 +2896,11 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
             raise RuntimeError("--resume 需要 --ckpt <path>")
         runner.load(str(Path(cli.ckpt).resolve()))
         print(f"[d067] resumed from {cli.ckpt}", flush=True)
+    # σ 漂移仪器：包住 alg.update，每 iter 记 σ 的 min/mean/max/负值个数（三臂共用）。
+    # 需在 runner.load 之后装（load 会重建 optimizer，但 alg/policy 对象同一；包 update 不受影响）。
+    _alg_i, _opt_i, _policy_i = _resolve_ppo_and_policy(runner)
+    std_instrument = install_std_trajectory_instrument(_alg_i, out_dir, every=1, phase=cli.arm)
+    print(f"[d067] σ 漂移仪器 -> {std_instrument['log']}（初始 σ={_policy_std_stats(_policy_i)}）", flush=True)
     runner.learn(num_learning_iterations=runner_cfg_dict["max_iterations"])
     final_ckpt = out_dir / "model_final.pt"
     runner.save(str(final_ckpt))
@@ -2596,6 +2941,8 @@ def _smoke(*, cli, out_dir, env, policy_obs, obs_dim_policy, action_dim, hv, run
         prune = _prune_frozen_params(optimizer)
         _check(policy.mu_path.only_residual_trainable(), "梯度隔离不通过（除 r 外仍有可训参数）")
         print(f"[d067] smoke b2) 零初始化恒等 + 梯度隔离 PASS {prune}", flush=True)
+    _alg_s, _opt_s, _policy_s = _resolve_ppo_and_policy(runner)
+    install_std_trajectory_instrument(_alg_s, out_dir, every=1, phase=f"smoke_{cli.arm}")
     runner.learn(num_learning_iterations=SMOKE_ITERS)
     ckpt = out_dir / "model_smoke.pt"
     runner.save(str(ckpt))
