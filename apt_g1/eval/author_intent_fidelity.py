@@ -31,6 +31,12 @@ D061a 训练口径是"逐帧 teacher-forcing next-token CE"；但部署时模型
 
 模型配置一律以 ckpt 的 `model_cfg` 为准（meta.json 顶层无 args.model 段）。
 
+v1 支持（D062-R1 电池）：`--v1-ckpt` 指向 D062 v1 ckpt（anchor/chunk/priv/both）时，
+走 `train_author_v1.load_author_v1` 正规加载（执行根平铺坑——从 sync 克隆包根跑），
+逐帧路径经 `_V1FrameAdapter` 只走主干 encode+head（与 v0 forward 同形状同语义，
+chunk/priv 头不参与），指标口径与 v0 完全一致；结果 JSON 增记 `v1` 身份信封
+（ckpt md5 / variant / model_cfg / model_src=load_author_v1）。
+
 CLI 速览：`python apt_g1/eval/author_intent_fidelity.py --selftest`
 （本机 CPU 自测）/ `--selftest-errors`（三条报错路径）/ 正常评测见 --help。
 """
@@ -101,19 +107,55 @@ def default_train_module_path():
                                         "train_author_v0.py"))
 
 
-def load_train_module(path=None):
+def load_train_module(path=None, module_name="train_author_v0_axis_c"):
     """按文件加载 train_author_v0（无副作用，main 有 guard）。→ (mod | None, path, err)"""
     p = os.path.abspath(path) if path else default_train_module_path()
     if not os.path.isfile(p):
         return None, p, f"文件不存在：{p}"
     try:
-        spec = importlib.util.spec_from_file_location("train_author_v0_axis_c", p)
+        spec = importlib.util.spec_from_file_location(module_name, p)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = mod
         spec.loader.exec_module(mod)
         return mod, p, None
     except Exception as e:  # noqa: BLE001 —— 兜底而非崩溃（回退副本）
         return None, p, f"{type(e).__name__}: {e}"
+
+
+def default_v1_train_module_path():
+    return os.path.abspath(os.path.join(script_dir(), "..", "training",
+                                        "train_author_v1.py"))
+
+
+def load_v1_module(path=None):
+    """按文件加载 train_author_v1（D062-R1 v1 ckpt 用；口径同 load_train_module）。
+
+    候选序：显式 path → 仓库内默认位置（apt_g1/training/）→ 服务器平铺执行根
+    （cwd/train_author_v1.py）→ sys.path 包导入（training.* / apt_g1.*，覆盖从
+    sync 克隆包根跑的布局）。返回 (mod | None, path, err)。
+    """
+    cands = []
+    if path:
+        cands.append(os.path.abspath(path))
+    cands.append(default_v1_train_module_path())
+    cands.append(os.path.abspath("train_author_v1.py"))
+    errs = []
+    for p in cands:
+        if not os.path.isfile(p):
+            errs.append(f"{p}: 文件不存在")
+            continue
+        mod, pp, err = load_train_module(p, module_name="train_author_v1_axis_c")
+        if mod is not None:
+            return mod, pp, None
+        errs.append(f"{pp}: {err}")
+    last_path = cands[-1] if cands else default_v1_train_module_path()
+    for mod_name in ("training.train_author_v1", "apt_g1.training.train_author_v1",
+                     "apt_g1.train_author_v1", "train_author_v1"):
+        try:
+            return importlib.import_module(mod_name), mod_name, None
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"{mod_name}: {type(e).__name__}: {e}")
+    return None, last_path, "所有候选失败：" + "；".join(errs)
 
 
 # ------------------------------------------------------------------ 兜底副本
@@ -347,6 +389,29 @@ def _make_shim():
 
 
 # ------------------------------------------------------------------ ckpt / 模型
+class _V1FrameAdapter(nn.Module):
+    """AuthorV1Transformer → v0 式四槽逐帧前向适配（D062-R1 --v1-ckpt 用）。
+
+    v1 forward 吃 batch dict 且会连带跑 chunk/priv 头；逐帧主路径只需要主干部
+    （encode + head，与 v0 AuthorV0Transformer.forward 逐字同构，语义不变），故
+    适配成 forward(tokens_idx, state, intent_idx, ctx_feat) -> (b,t,token_dim,vocab)，
+    teacher_forced_predictions / autoregressive_rollout 等调用点零改动；
+    chunk/priv 头不参与逐帧路径。
+    """
+
+    def __init__(self, v1_model, token_dim):
+        super().__init__()
+        self.model = v1_model
+        self.token_dim = int(token_dim)
+
+    def forward(self, tokens_idx, state, intent_idx, ctx_feat):
+        b, t, _k = tokens_idx.shape
+        frames, _ctx_repr = self.model.encode(tokens_idx, state, intent_idx,
+                                              ctx_feat)
+        return self.model.head(frames).view(b, t, self.token_dim,
+                                            int(self.model.vocab))
+
+
 def load_ckpt(path):
     if not os.path.isfile(path):
         raise SystemExit(
@@ -504,7 +569,8 @@ METRIC_DEFS = {
 # ------------------------------------------------------------------ 主评测
 def resolve_paths(args):
     sd = script_dir()
-    ckpt = os.path.abspath(args.ckpt) if args.ckpt else os.path.abspath(
+    ckpt_arg = getattr(args, "v1_ckpt", None) or args.ckpt  # --v1-ckpt 优先
+    ckpt = os.path.abspath(ckpt_arg) if ckpt_arg else os.path.abspath(
         os.path.join(sd, "..", "outputs", "d061_author_v0", "ckpt_final.pt"))
     meta = args.meta
     if meta is None:
@@ -532,13 +598,40 @@ def run_eval(args, progress_every=20):
     win_len = int(getattr(mod, "WIN", WIN))
     token_dim = int(getattr(mod, "TOKEN_DIM", TOKEN_DIM))
 
-    ckpt = load_ckpt(ckpt_path)
-    cfg = read_model_cfg(ckpt, ckpt_path)
-    model = build_model_from_cfg(cfg, mod, win_len, token_dim)
-    miss, unexp = model.load_state_dict(ckpt["model"], strict=False)
-    if miss or unexp:
-        raise SystemExit(f"[fidelity] ckpt 权重与模型不匹配：缺 {list(miss)} / "
-                         f"多 {list(unexp)}（检查 model_cfg 与权重是否同源）")
+    v1_variant = None
+    v1_module_path = None
+    if getattr(args, "v1_ckpt", None):
+        # D062-R1 v1 路径：load_author_v1 正规加载（执行根平铺坑——从 sync 克隆包根跑）
+        ckpt_path = os.path.abspath(args.v1_ckpt)
+        if not os.path.isfile(ckpt_path):
+            raise SystemExit(f"[fidelity] --v1-ckpt 不存在：{ckpt_path}")
+        t1, v1_module_path, t1_err = load_v1_module()
+        if t1 is None:
+            raise SystemExit(f"[fidelity] train_author_v1 不可加载：{v1_module_path}"
+                             f"（{t1_err}）")
+        device = torch.device(args.device)
+        if device.type == "cuda" and not torch.cuda.is_available():
+            raise SystemExit("[fidelity] --device cuda 但 torch.cuda 不可用")
+        v1_model, cfg = t1.load_author_v1(ckpt_path, device=str(device))
+        if int(cfg.get("win", 0)) != int(win_len) or \
+                int(cfg["token_dim"]) != int(token_dim):
+            raise SystemExit(
+                f"[fidelity] v1 ckpt win/token_dim={cfg.get('win')}/"
+                f"{cfg.get('token_dim')} 与语料 {win_len}/{token_dim} 不符")
+        model = _V1FrameAdapter(v1_model, int(cfg["token_dim"]))
+        v1_variant = cfg.get("variant")
+        notes.append(f"--v1-ckpt：经 train_author_v1.load_author_v1 加载"
+                     f"（variant={v1_variant}）；逐帧路径走主干 encode+head，"
+                     f"chunk/priv 头不参与")
+        ckpt = {}  # v1 权重已由 load_author_v1 严格加载；不再持有原始 ckpt dict
+    else:
+        ckpt = load_ckpt(ckpt_path)
+        cfg = read_model_cfg(ckpt, ckpt_path)
+        model = build_model_from_cfg(cfg, mod, win_len, token_dim)
+        miss, unexp = model.load_state_dict(ckpt["model"], strict=False)
+        if miss or unexp:
+            raise SystemExit(f"[fidelity] ckpt 权重与模型不匹配：缺 {list(miss)} / "
+                             f"多 {list(unexp)}（检查 model_cfg 与权重是否同源）")
     if int(cfg["win"]) < int(args.prefix_frames) + 1:
         raise SystemExit(f"[fidelity] --prefix-frames={args.prefix_frames} 过大："
                          f"窗长 {cfg['win']}（需 ≤ win-1）")
@@ -683,6 +776,16 @@ def run_eval(args, progress_every=20):
         },
         "notes": notes,
     }
+    if v1_variant is not None:  # D062-R1 v1 身份信封（v0 路径不新增任何键）
+        payload["v1"] = {
+            "model_src": "load_author_v1",
+            "ckpt": ckpt_path,
+            "ckpt_md5": md5_file(ckpt_path),
+            "variant": v1_variant,
+            "model_cfg": dict(cfg),
+            "frame_path": "主干 encode+head（逐帧路径；chunk/priv 头不参与）",
+            "train_module_v1": v1_module_path,
+        }
     out = os.path.abspath(args.out_json)
     mod.write_json(out, payload)
     print(f"[fidelity] 落盘 {out}（{payload['elapsed_s']}s）")
@@ -898,7 +1001,11 @@ def parse_args(argv=None):
                     "自回归生成区）")
     p.add_argument("--ckpt", default=None,
                    help="D061a ckpt（默认 apt_g1/outputs/d061_author_v0/"
-                        "ckpt_final.pt）；模型配置以 ckpt 的 model_cfg 为准")
+                        "ckpt_final.pt）；模型配置以 ckpt 的 model_cfg 为准；"
+                        "与 --v1-ckpt 二选一（v1 优先）")
+    p.add_argument("--v1-ckpt", default=None,
+                   help="D062-R1 v1 ckpt（train_author_v1.load_author_v1 正规加载；"
+                        "逐帧指标口径与 v0 一致，chunk/priv 头不参与）")
     p.add_argument("--meta", default=None,
                    help="meta.json（缺省自动找 ckpt 同目录；缺则身份信封只记 ckpt）")
     p.add_argument("--assembly-manifest", default=None,

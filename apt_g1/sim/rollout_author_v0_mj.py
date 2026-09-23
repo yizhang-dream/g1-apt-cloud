@@ -91,6 +91,15 @@ Usage（服务器）:
 本机:
     python sim/rollout_author_v0_mj.py --selftest
     python sim/rollout_author_v0_mj.py --dry-run
+
+D062-R1 v1 电池（--v1-ckpt，D062-R1 四臂 anchor/chunk/priv/both ckpt_final.pt）:
+    python sim/rollout_author_v0_mj.py --v1-ckpt outputs/d062_r1/both/ckpt_final.pt \
+        --command-vx 0.6,1.0 --seeds 0,1 --dur-s 20 --out-json outputs/d062_r1_axis_a.json
+    走 train_author_v1.load_author_v1 正规加载（服务器从 sync 克隆包根跑；
+    不复用本脚本的 v0 加载副本）；逐帧滑窗自回归口径与 v0 相同——只走 v1 主干
+    encode+head，chunk/priv 头不参与；结果 JSON 增记 model_src（可 --model-src
+    覆盖标签）与 v1 身份信封（ckpt md5 / variant / model_cfg）。不给 --v1-ckpt
+    时 v0 路径行为不变。
 """
 
 from __future__ import annotations
@@ -297,6 +306,31 @@ def _import_train_author():
         except Exception as e:  # noqa: BLE001
             errs.append(f"{mod}: {e}")
     raise ImportError("无法 import train_author_v0；候选全部失败:\n  " + "\n  ".join(errs))
+
+
+def _import_train_author_v1():
+    """同 _import_train_author，但目标模块为 train_author_v1（D062-R1 v1 ckpt 用）。
+
+    服务器平铺执行根（train_author_v1.py 在 sys.path 顶层）与本地仓内布局
+    （apt_g1/training/ 包，从 sync 克隆包根跑）都覆盖。
+    """
+    import importlib
+
+    for p in reversed(_script_local_paths()):  # 仓根优先（apt_g1.* 与 training.* 都通）
+        if p not in sys.path:
+            sys.path.insert(0, p)
+    errs = []
+    for mod in (
+        "train_author_v1",
+        "training.train_author_v1",
+        "apt_g1.training.train_author_v1",
+        "apt_g1.train_author_v1",
+    ):
+        try:
+            return importlib.import_module(mod)
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"{mod}: {e}")
+    raise ImportError("无法 import train_author_v1；候选全部失败:\n  " + "\n  ".join(errs))
 
 
 def _filter_kwargs(cls_or_fn, cfg: dict) -> dict:
@@ -898,18 +932,59 @@ def selftest() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    print("[selftest] D062-R1 v1 适配层（--v1-ckpt：load_author_v1 → v0 四槽逐帧适配）")
+    try:
+        T1 = _import_train_author_v1()
+    except ImportError as e:  # v1 电池环境才要求该模块；缺则跳过不判负
+        T1 = None
+        print(f"  [skip] train_author_v1 不可导入（{str(e).splitlines()[0]}）")
+    if T1 is not None:
+        v1_kw = dict(d_model=32, n_layer=1, n_head=2, ffn=64, grad_ckpt=False,
+                     use_chunk=True, use_priv=True, chunk_k=4, chunk_prefix=4,
+                     chunk_d_model=32, chunk_layers=1, chunk_n_head=2,
+                     chunk_ffn=64, priv_hidden=32, priv_extra=0)
+        v1_model = T1.AuthorV1Transformer(27, **v1_kw).eval()
+        tmp_v1 = tempfile.mkdtemp(prefix="d061b_selftest_v1_")
+        try:
+            v1_path = os.path.join(tmp_v1, "ckpt_final.pt")
+            v1_args = argparse.Namespace(
+                d_model=32, n_layer=1, n_head=2, ffn=64, grad_ckpt=False,
+                chunk_k=4, chunk_prefix=4, chunk_d_model=32, chunk_layers=1,
+                chunk_n_head=2, chunk_ffn=64, priv_hidden=32,
+                priv_extra_cols=None, variant="both")
+            T1.save_ckpt(v1_path, v1_model, 0, v1_args,
+                         {"vocab": 27, "code_min": -14})
+            m1, cfg1, dctx1 = _load_author_v1(v1_path, "cpu")
+            check("v1 ckpt 经 load_author_v1 读回（variant=both/vocab=27/"
+                  "default_ctx=None）",
+                  cfg1.get("variant") == "both" and int(cfg1["vocab"]) == 27
+                  and dctx1 is None)
+            runner_v1 = AuthorRunner(m1, cfg1, device="cpu")
+            tok1 = runner_v1.step(np.zeros(AUTHOR_STATE_DIM, np.float32),
+                                  build_ctx(cmd, 0, 10))
+            check("v1 适配层 step → (token_dim,)=64 有限 token",
+                  tok1.shape == (64,) and bool(np.all(np.isfinite(tok1))))
+            check("v1 适配层无单码广播（主干逐帧头完整）",
+                  runner_v1.single_code_broadcast is False)
+        finally:
+            shutil.rmtree(tmp_v1, ignore_errors=True)
+
     print("AXIS_A_SELFTEST_" + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
 
 def dry_run(args) -> int:
     matrix = build_run_matrix(parse_floats(args.command_vx), parse_ints(args.seeds), args.dur_s)
+    using_v1 = bool(getattr(args, "v1_ckpt", None))
     plan = {
         "mode": "dry-run",
-        "ckpt": args.ckpt,
-        "ckpt_exists": os.path.exists(args.ckpt),
-        "author_module": "train_author_v0 (延迟 import)",
-        "author_cls": "AuthorV0Transformer",
+        "ckpt": os.path.abspath(args.v1_ckpt) if using_v1 else args.ckpt,
+        "ckpt_exists": os.path.exists(args.v1_ckpt if using_v1 else args.ckpt),
+        "author_module": ("train_author_v1.load_author_v1（--v1-ckpt）" if using_v1
+                          else "train_author_v0 (延迟 import)"),
+        "author_cls": ("AuthorV1Transformer→v0 四槽逐帧适配（encode+head，"
+                       "chunk/priv 头不参与）" if using_v1
+                       else "AuthorV0Transformer"),
         "repo": args.repo,
         "decoder_onnx": os.path.join(args.repo, DEC_ONNX_REL),
         "device": args.device,
@@ -924,7 +999,9 @@ def dry_run(args) -> int:
         "n_runs": len(matrix),
         "run_matrix": matrix,
         "load_plan": [
-            "1) import train_author_v0 -> AuthorV0Transformer(**ckpt['model_cfg']) -> load_state_dict",
+            ("1) import train_author_v1.load_author_v1 -> 逐帧 encode+head 适配"
+             if using_v1 else
+             "1) import train_author_v0 -> AuthorV0Transformer(**ckpt['model_cfg']) -> load_state_dict"),
             "2) import eval_distill.NoQuantDecoder(repo/" + DEC_ONNX_REL + ")",
             "3) import envs.mujoco_g1_flat_env.MujocoG1FlatEnv (子类抑制自动 reset)",
             "4) 每 run: env.reset() -> 冷启动滑窗填空 -> 50Hz 自回归 token -> env.step",
@@ -973,9 +1050,57 @@ def _load_author(ckpt_path: str, device: str, repo: str = DEFAULT_REPO):
     return model, cfg, default_ctx
 
 
+def _v1_frame_adapter(v1_model, token_dim: int):
+    """AuthorV1Transformer → v0 式四槽逐帧前向适配（惰性建类：模块级不 import torch）。
+
+    v1 的 forward 吃 batch dict 且会连带跑 chunk/priv 头；逐帧主路径只需要主干部
+    （encode + head，与 v0 AuthorV0Transformer.forward 逐字同构，语义不变），故适配成
+    forward(tokens_idx, state, intent_idx, ctx_feat) -> (b, t, token_dim, vocab)。
+    该签名使 _resolve_forward 的关键词映射与 v0 完全一致，AuthorRunner 零改动；
+    chunk/priv 头不参与逐帧路径（--use-chunk-head 类流式推理不在本脚本范围）。
+    """
+    import torch
+
+    class _V1FrameAdapter(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = v1_model
+            self.token_dim = int(token_dim)
+
+        def forward(self, tokens_idx, state, intent_idx, ctx_feat):
+            b, t, _k = tokens_idx.shape
+            frames, _ctx_repr = self.model.encode(
+                tokens_idx, state, intent_idx, ctx_feat)
+            return self.model.head(frames).view(
+                b, t, self.token_dim, int(self.model.vocab))
+
+    return _V1FrameAdapter()
+
+
+def _load_author_v1(ckpt_path: str, device: str, repo: str = DEFAULT_REPO):
+    """D062-R1 v1 ckpt 正规加载：training/train_author_v1.load_author_v1 → (model, cfg)。
+
+    返回 (v0 四槽逐帧适配模型, cfg, default_ctx)。default_ctx 恒 None：v1 save_ckpt
+    不写 ctx 示例，ctx 仍由本脚本 build_ctx 构造（与 v0 口径一致）。cfg 含
+    vocab/code_min/state_dim/win/token_dim（AuthorRunner 所需键全在）与
+    variant/d_model 等身份字段，直接透传。
+    """
+    _ensure_sys_path(repo)
+    T1 = _import_train_author_v1()
+    model, cfg = T1.load_author_v1(ckpt_path, device=device)
+    adapter = _v1_frame_adapter(model, int(cfg.get("token_dim", 64)))
+    return adapter, dict(cfg), None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="E61/b AXIS-A: author-v0 自回归 token 闭环 (MuJoCo)")
     ap.add_argument("--ckpt", default=DEFAULT_CKPT)
+    ap.add_argument("--v1-ckpt", default=None,
+                    help="D062-R1 v1 ckpt（走 train_author_v1.load_author_v1 正规路径；"
+                         "给了则忽略 --ckpt，逐帧滑窗口径与 v0 可比，chunk/priv 头不参与）")
+    ap.add_argument("--model-src", default=None,
+                    help="模型来源标签（记录进结果 JSON 的 model_src；缺省：给了 "
+                         "--v1-ckpt 即 load_author_v1，否则不记该字段）")
     ap.add_argument("--repo", default=DEFAULT_REPO)
     ap.add_argument("--command-vx", default="0.6,1.0", help="命令档位（0.6=SLOW_WALK, 1.0=RUN）")
     ap.add_argument("--seeds", default="0,1")
@@ -993,7 +1118,10 @@ def main(argv=None) -> int:
 
     matrix = build_run_matrix(parse_floats(args.command_vx), parse_ints(args.seeds), args.dur_s)
     t0 = time.time()
-    model, cfg, default_ctx = _load_author(args.ckpt, args.device, args.repo)
+    if args.v1_ckpt:
+        model, cfg, default_ctx = _load_author_v1(args.v1_ckpt, args.device, args.repo)
+    else:
+        model, cfg, default_ctx = _load_author(args.ckpt, args.device, args.repo)
     runner = AuthorRunner(model, cfg, device=args.device, default_ctx=default_ctx)
     factory = make_mujoco_factory(args.repo, os.path.join(args.repo, DEC_ONNX_REL))
 
@@ -1008,11 +1136,12 @@ def main(argv=None) -> int:
               f"survived={r['survived']} fall_step={r['fall_step']} "
               f"realized_vx={r['realized_vx']} h_min={r['h_min']}")
 
+    model_ckpt = args.v1_ckpt if args.v1_ckpt else args.ckpt
     envelope = {
         "script": os.path.abspath(__file__),
         "script_md5": md5_file(os.path.abspath(__file__)),
-        "ckpt": os.path.abspath(args.ckpt),
-        "ckpt_md5": md5_file(args.ckpt) if os.path.exists(args.ckpt) else None,
+        "ckpt": os.path.abspath(model_ckpt),
+        "ckpt_md5": md5_file(model_ckpt) if os.path.exists(model_ckpt) else None,
         "model_cfg": cfg,
         "device": args.device,
         "repo": args.repo,
@@ -1042,6 +1171,17 @@ def main(argv=None) -> int:
         "per_run": per_run,
         "summary": summarize(per_run),
     }
+    if args.v1_ckpt:  # D062-R1 v1 身份信封（不给 --v1-ckpt 时 v0 信封字段零增改）
+        envelope["model_src"] = args.model_src or "load_author_v1"
+        envelope["v1"] = {
+            "ckpt": os.path.abspath(args.v1_ckpt),
+            "ckpt_md5": md5_file(args.v1_ckpt),
+            "model_src": "load_author_v1",
+            "variant": cfg.get("variant"),
+            "model_cfg": dict(cfg),
+            "frame_path": "AuthorV1Transformer.encode+head（逐帧主干；"
+                          "chunk/priv 头不参与）",
+        }
     out = args.out_json
     if not os.path.isabs(out):
         out = os.path.join(os.getcwd(), out)
