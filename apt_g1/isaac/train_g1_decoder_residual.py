@@ -241,6 +241,31 @@ update 内分步 NaN 溯源探针（2026-09-22，第四层，纯记录仪器）�
   读 `alg.kl_mean`/`alg.kl`（当前版本恒为 null，`kl_source="absent"`）。adaptive 分支对
   `self.learning_rate` 的改写**是**可后验的：记 `learning_rate_pre`/`learning_rate` 两值，
   lr 下调即 kl_mean>2·desired_kl、上调即 kl_mean<desired_kl/2，可反推 KL 是否爆炸。
+
+advantage/returns 消毒器 + critic 前向探针（2026-09-22，第五层修复/溯源，probe4 逐环日志实证）：
+  已定案根因链（probe4 逐环日志）：iter 950 rollout 中 critic `evaluate` 返回的 values 出 **1 个
+  NaN**（obs/权重均有限）→ GAE 把该 NaN 扩散成 **19 个 returns** → advantage 归一化
+  `(A-mean)/(std+1e-8)` 的分母含 NaN ⇒ **放大成全 24576 个 NaN** → 单次 update 梯度全染
+  （参数快照 5/5 翻转）→ 全灭。**放大器 = 归一化对单个 NaN 无免疫**（一个 NaN 拉低/污染
+  mean/std，除法把 NaN 摊到全量）。本层两件（**不改奖励/网络/超参，不动 rsl_rl 本体**）：
+    1. **消毒器（发射解锁件）**：`_wrapped_update` 在 `orig_update` **之前**对
+       `storage.advantages`/`storage.returns` 做非有限检测；若有：
+         ① 用 `_first_nonfinite_probe` 落 `tag=nan_probe` 行（`stage=pre_mid`，含
+            n_nonfinite/first_coord，与第四层 pre_mid 语义一致）；
+         ② **写回消毒**：非有限元素置 0（就地写 `storage.advantages/returns`），并落
+            `tag=nan_probe_sanitize` 行（n_nonfinite/n_total/n_zeroed/purged_full/abs_max_before）；
+         ③ update 照常进行。
+       **口径（声明）**：24576 中 1 个离群置 0，对归一化后统计量的偏置可忽略；全量 NaN 置 0
+       ⇒ 该 update 退化为**空学习步**（advantage 全 0 → surrogate 梯度 0），但**不毁权重**
+       （严格优于「全灭」：保命带只保进程不崩，权重仍被 NaN 梯度写坏；消毒器保权重）。
+       **只在检测到非有限时才写**：健康路径（advantages/returns 全有限）逐位零改动、零写回。
+    2. **critic 前向探针（溯源件）**：`install_std_trajectory_instrument` 仪器安装时对
+       `alg.policy.evaluate` 做**只读包装**——每次调用后检查返回 values 的 `isfinite`；发现非有限
+       时落 `tag=nan_probe` 行（`stage=critic_forward`，含 values 的 first_coord）+ 该次
+       `critic_obs` **逐 key min/max/abs_max**（critic 组含**无噪** height_scan 187 维——重点看；
+       大张量按同一阈值跳过，copy 前置判断）。**只记录不阻断、不改返回值、不改 critic_obs。**
+  另收上一轮 reviewer 的 should-fix：`_wrapped_update` 中两处 `_nan_probe_param_snapshot` 调用
+  包 `try/except`（探针绝不打断训练原则）。
 """
 
 from __future__ import annotations
@@ -2141,6 +2166,190 @@ def selftest_nan_probe_param_snapshot_flip(seed: int = 0) -> dict:
     return {"param_snapshot_flip_captured": True, "pre_finite_post_nan": True, "healthy_no_flip": True}
 
 
+# ------------------------------------------------- 第五层：消毒器 + critic 探针 selftest
+def selftest_advantage_sanitizer(seed: int = 0) -> dict:
+    """第五层新增断言 ①：advantage/returns 消毒器（非有限置 0 + 写回行 + 健康路径零写回）。
+
+    三路：(a) 注入 1 个 NaN advantage -> 该元素置 0、其余逐位不变、落 nan_probe（pre_mid）+ 
+    nan_probe_sanitize 行（n_zeroed=1、purged_full=False）；(b) advantage 全 NaN -> 全置 0、
+    purged_full=True、returns 不受影响；(c) 健康路径 -> advantages/returns 逐位不变、**无**
+    sanitize 行（发射解锁件只在真出 NaN 时动作）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    # --- (a) 单 NaN advantage ---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([float("nan"), 1.0, 2.0], dtype=torch.float32),
+                             ret=torch.tensor([3.0, 4.0, 5.0], dtype=torch.float32), loss=0.7)
+        ret_before = alg.storage.returns.clone()
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        ret = alg.update()
+        _check(isinstance(ret, dict) and "loss" in ret, "消毒器改写了 update 返回值")
+        adv = alg.storage.advantages
+        _check(adv[0].item() == 0.0, f"NaN advantage 应置 0，实为 {adv[0].item()!r}")
+        _check(adv[1].item() == 1.0 and adv[2].item() == 2.0, f"非 NaN 元素被误改：{adv.tolist()}")
+        _check(torch.equal(alg.storage.returns, ret_before), "returns 有限却被改写（应零写回）")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        san = [r for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG]
+        _check(len(san) == 1, f"应恰好 1 条 sanitize 行，实为 {len(san)}")
+        s = san[0]
+        for field in ("name", "n_nonfinite", "n_total", "n_zeroed", "purged_full", "abs_max_before",
+                      "first", "first_index", "first_coord", "stage"):
+            _check(field in s, f"sanitize 行缺字段 {field!r}：{s}")
+        _check(s["name"] == "storage.advantages", f"sanitize name 错：{s['name']!r}")
+        _check(s["n_nonfinite"] == 1 and s["n_zeroed"] == 1 and s["n_total"] == 3, f"sanitize 计数错：{s}")
+        _check(s["purged_full"] is False, f"单 NaN 不应 purged_full：{s}")
+        _check(s["stage"] == "pre_mid", f"sanitize stage 应为 pre_mid：{s['stage']!r}")
+        _check(isinstance(s["first"], float) and math.isnan(s["first"]), f"sanitize first 非 NaN：{s}")
+        probes = [r for r in rows if r.get("tag") == NAN_PROBE_TAG and r.get("stage") == "pre_mid"]
+        _check(len(probes) == 1 and probes[0]["name"] == "storage.advantages",
+               f"应同时落 1 条 pre_mid nan_probe：{probes}")
+
+    # --- (b) 全 NaN advantage -> purged_full ---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.full((4,), float("nan"), dtype=torch.float32),
+                             ret=torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32), loss=0.7)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        adv = alg.storage.advantages
+        _check(bool((adv == 0).all()), f"全 NaN advantage 应全置 0：{adv.tolist()}")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        s = [r for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG][0]
+        _check(s["purged_full"] is True, f"全 NaN 应 purged_full=True：{s}")
+        _check(s["n_zeroed"] == 4 and s["n_total"] == 4, f"全 NaN 计数错：{s}")
+
+    # --- (c) 健康路径：零写回、无 sanitize 行 ---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        adv = torch.tensor([1.0, -2.0, 3.0], dtype=torch.float32)
+        ret = torch.tensor([0.5, 0.25, 0.125], dtype=torch.float32)
+        alg = _MockAlgLayer4(adv=adv.clone(), ret=ret.clone(), loss=0.7)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        _check(torch.equal(alg.storage.advantages, adv), "健康 advantage 被改写（应逐位零写回）")
+        _check(torch.equal(alg.storage.returns, ret), "健康 returns 被改写（应逐位零写回）")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        _check(not any(r.get("tag") == NAN_PROBE_SANITIZE_TAG for r in rows),
+               "健康路径不应有 sanitize 行")
+    return {"single_nan_zeroed": True, "full_purged": True, "healthy_bitwise_untouched": True}
+
+
+def selftest_critic_forward_probe(seed: int = 0) -> dict:
+    """第五层新增断言 ②：critic 前向探针（mock evaluate 出 NaN -> 记录行含 critic_obs 幅值）。
+
+    复刻已定案根因链的第一环（critic values 出 1 个 NaN）：mock policy.evaluate 返回含 NaN 的
+    values，断言落 `tag=nan_probe` 行（stage=critic_forward，name=critic.values，含 first_coord）
+    且该次 critic_obs 逐 key（含 height_scan）落 `nan_probe_mag` 幅值行；反例：values 全有限时
+    无 critic_forward 行。**探针不改 evaluate 返回值**（原样透传）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    class _MockPolicyCritic(_MockActorCriticStd):
+        """带只读 evaluate 的 mock policy（返回 NaN 与否可控）。"""
+
+        def __init__(self, nan_values: bool):
+            super().__init__(init_noise_std=1.0)
+            self._nan_values = nan_values
+
+        def evaluate(self, critic_observations):
+            base = torch.tensor([[0.5, 0.25]], dtype=torch.float32)
+            if self._nan_values:
+                base[0, 1] = float("nan")
+            return base
+
+    class _MockAlgCritic:
+        def __init__(self, nan_values: bool):
+            self.policy = _MockPolicyCritic(nan_values)
+            self.storage = SimpleNamespace(
+                observations=None,
+                advantages=torch.tensor([1.0], dtype=torch.float32),
+                returns=torch.tensor([1.0], dtype=torch.float32),
+                values=torch.tensor([0.5], dtype=torch.float32),
+            )
+
+        def update(self):
+            return {"loss": torch.tensor([0.5], dtype=torch.float32)}
+
+    critic_obs = {
+        "policy": torch.tensor([[1.0, 2.0]], dtype=torch.float32),
+        "height_scan": torch.tensor([[0.1, 0.2, 0.3]], dtype=torch.float32),
+    }
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgCritic(nan_values=True)
+        info = install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        _check(info.get("critic_probe") is True, f"critic 探针应包装成功：{info}")
+        vals = alg.policy.evaluate(critic_obs)
+        _check(bool(torch.isnan(vals).any()), "evaluate 返回值被探针改写（应原样透传）")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        cf = [r for r in rows if r.get("tag") == NAN_PROBE_TAG and r.get("stage") == "critic_forward"]
+        _check(len(cf) == 1, f"应恰好 1 条 critic_forward nan_probe，实为 {len(cf)}")
+        p = cf[0]
+        _check(p["name"] == "critic.values", f"critic_forward name 错：{p['name']!r}")
+        _check(p["n_nonfinite"] == 1 and p["n_total"] == 2, f"critic values 计数错：{p}")
+        _check(p["first_coord"] == [0, 1], f"critic values first_coord 应为 [0,1]：{p['first_coord']!r}")
+        mags = {r["name"]: r for r in rows if r.get("tag") == NAN_PROBE_MAG_TAG
+                and r.get("stage") == "critic_forward"}
+        for key in ("critic_obs.policy", "critic_obs.height_scan"):
+            _check(key in mags, f"critic_obs 幅值行缺 {key}：{list(mags)}")
+            for field in ("min", "max", "abs_max", "mean", "n_nonfinite", "n_total"):
+                _check(field in mags[key], f"{key} 幅值行缺字段 {field!r}")
+        hs = mags["critic_obs.height_scan"]
+        _check(abs(hs["abs_max"] - 0.3) < 1e-6 and hs["n_nonfinite"] == 0, f"height_scan 幅值错：{hs}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgCritic(nan_values=False)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()   # 先跑一次 update 以建日志（有限路径零记录，日志仅含 σ 轨迹行）
+        alg.policy.evaluate(critic_obs)
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        _check(not any(r.get("tag") == NAN_PROBE_TAG and r.get("stage") == "critic_forward" for r in rows),
+               "values 全有限时不应有 critic_forward 行")
+    return {"critic_nan_recorded": True, "critic_obs_mag_recorded": True, "finite_no_record": True}
+
+
+def selftest_nan_probe_snapshot_guard(seed: int = 0) -> dict:
+    """第五层新增断言 ③：快照守卫（mock 快照抛异常 -> update 不受影响）。
+
+    复刻上一轮 reviewer 的 should-fix：`_nan_probe_param_snapshot` 若抛异常，必须被 wrapper
+    吞掉（降级空快照），`orig_update` 照常执行并原样返回。断言 update 返回值不变、无异常冒泡、
+    日志仍落 param_snapshot 行（空快照也能写）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0], dtype=torch.float32), loss=0.7)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+
+        def _boom(policy):
+            raise RuntimeError("mock snapshot failure")
+
+        orig_fn = globals()["_nan_probe_param_snapshot"]
+        globals()["_nan_probe_param_snapshot"] = _boom
+        try:
+            ret = alg.update()   # 不应抛
+        finally:
+            globals()["_nan_probe_param_snapshot"] = orig_fn
+        _check(isinstance(ret, dict) and "loss" in ret, "快照抛异常时 update 返回值被破坏")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        snaps = [r for r in rows if r.get("name") == "param_snapshot"]
+        _check(len(snaps) == 1, f"快照抛异常时仍应落 1 条 param_snapshot 行：{len(snaps)}")
+        _check(snaps[0]["param_pre"] == {} and snaps[0]["param_post"] == {},
+               f"降级快照应为空 dict：{snaps[0]}")
+    return {"snapshot_exc_guarded": True, "update_unaffected": True, "degraded_snapshot_logged": True}
+
+
 def run_selftest() -> None:
     """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
     torch.manual_seed(0)
@@ -2173,6 +2382,10 @@ def run_selftest() -> None:
         "nan_probe_advantage_pre_mid": selftest_nan_probe_advantage_pre_mid(),
         "nan_probe_mag_loss_fields": selftest_nan_probe_mag_loss_fields(),
         "nan_probe_param_snapshot_flip": selftest_nan_probe_param_snapshot_flip(),
+        # 第五层：advantage/returns 消毒器 + critic 前向探针 + 快照守卫（should-fix）
+        "advantage_sanitizer": selftest_advantage_sanitizer(),
+        "critic_forward_probe": selftest_critic_forward_probe(),
+        "nan_probe_snapshot_guard": selftest_nan_probe_snapshot_guard(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -3023,6 +3236,9 @@ NAN_PROBE_TAG = "nan_probe"
 # 首 NaN 行的语义是「有非有限量才落一行」，幅值行是「每次都落」的趋势量，混在一起会破坏
 # 既有 `nan_probe` 断言（全有限时不应有 nan_probe 行）与 reviewer 核对口径。
 NAN_PROBE_MAG_TAG = "nan_probe_mag"
+# 第五层：advantage/returns 消毒器写回行（**与首 NaN 行分 tag**：首 NaN 行「有非有限才落」，
+# 消毒行「消毒写回才落」，且带 n_zeroed/purged_full 等写回语义字段）。健康路径（全有限）零写回。
+NAN_PROBE_SANITIZE_TAG = "nan_probe_sanitize"
 # probe 张量时跳过的超大 obs key（防把整段 height_scan（4096×187）反复 copy 到 CPU 造成 OOM/慢）。
 NAN_PROBE_MAX_TENSOR_ELEMS = 1 << 24
 
@@ -3398,6 +3614,160 @@ def _nan_probe_param_diff(pre: dict, post: dict) -> dict:
     return {"param_nan_flipped": flipped, "param_nan_flipped_n": len(flipped)}
 
 
+# ------------------------------------------------- advantage/returns 消毒器（第五层修复）
+def _sanitize_storage_tensor(alg, attr: str) -> dict | None:
+    """对 `alg.storage.<attr>` **就地消毒**：非有限元素置 0；返回写回记录，健康/不可及返回 None。
+
+    **只在检测到非有限时才写**（健康路径逐位零改动、零写回）。就地写（`masked_fill_`）保持
+    张量对象/dtype/device 不变——rsl_rl `update` 读的就是同一张量，故写回对它是可见的。
+
+    口径（见模块 docstring 第五层）：24576 中 1 个离群置 0 对归一化统计量偏置可忽略；
+    全量 NaN 置 0 ⇒ 该 update 退化为空学习步（advantage 全 0 → surrogate 梯度 0），但不毁权重。
+
+    只处理浮点张量；超大张量（> `NAN_PROBE_MAX_TENSOR_ELEMS`）**copy 前置跳过**（消毒器只覆盖
+    GAE 输出量级，不碰超大 obs）。**永不抛**（探针/消毒器 best-effort）。
+    """
+    storage = getattr(alg, "storage", None)
+    if storage is None:
+        return None
+    val = getattr(storage, attr, None)
+    if not isinstance(val, torch.Tensor) or not val.is_floating_point():
+        return None
+    if val.numel() == 0 or val.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+        return None   # copy 前置判断：空/超大张量直接跳过
+    with torch.no_grad():
+        finite = torch.isfinite(val)
+        n_bad = int((~finite).sum().item())
+        if n_bad == 0:
+            return None   # 健康路径：不写、不记（发射解锁件只在真出 NaN 时动作）
+        n_total = int(val.numel())
+        cpu = _to_cpu_tensor(val)
+        rec = _first_nonfinite_probe(f"storage.{attr}", cpu) if cpu is not None else None
+        abs_max_before = None
+        if cpu is not None and cpu.numel():
+            fin_mask = torch.isfinite(cpu.reshape(-1))
+            if bool(fin_mask.any()):
+                abs_max_before = float(cpu.reshape(-1)[fin_mask].abs().max().item())
+        val.masked_fill_(~finite, 0.0)   # 写回：非有限 -> 0（就地，对象不变）
+        return {
+            "name": f"storage.{attr}",
+            "n_nonfinite": n_bad,
+            "n_total": n_total,
+            "n_zeroed": n_bad,
+            "purged_full": n_bad == n_total,   # 全量 NaN -> 该 update 为空学习步
+            "abs_max_before": abs_max_before,
+            "first": rec["first"] if rec is not None else None,
+            "first_index": rec["first_index"] if rec is not None else None,
+            "first_coord": rec["first_coord"] if rec is not None else None,
+        }
+
+
+def _sanitize_advantages_returns(alg) -> list[dict]:
+    """消毒 `storage.advantages` 与 `storage.returns`（orig_update 前调用）；返回写回记录列表。
+
+    两项独立 best-effort：任一项失败不影响另一项，也**不影响 update**（异常在此吞掉并警告）。
+    返回空列表 = 健康路径（零写回）。
+    """
+    out: list[dict] = []
+    for attr in ("advantages", "returns"):
+        try:
+            rec = _sanitize_storage_tensor(alg, attr)
+        except Exception as exc:  # noqa: BLE001（消毒器 best-effort：绝不打断训练）
+            print(f"[WARN] advantage 消毒失败（attr={attr}，忽略）：{type(exc).__name__}: {exc}", flush=True)
+            continue
+        if rec is not None:
+            out.append(rec)
+    return out
+
+
+# ------------------------------------------------- critic 前向探针（第五层溯源件）
+def _critic_obs_mag_records(critic_obs) -> list[dict]:
+    """critic_obs 逐 key 幅值记录（min/max/abs_max/mean/n_nonfinite）；**只读**，best-effort。
+
+    critic 组含**无噪** height_scan 187 维（重点看：若它出 inf/NaN 则根因在特权观测）。大张量按
+    同一阈值**copy 前置跳过**。返回空列表表示无可探量。
+    """
+    out: list[dict] = []
+    try:
+        if isinstance(critic_obs, dict):
+            for key, val in critic_obs.items():
+                if isinstance(val, torch.Tensor) and val.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                    continue   # copy 前置判断
+                t = _to_cpu_tensor(val)
+                if t is None or t.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                    continue
+                out.append(_finite_mag_stats(f"critic_obs.{key}", t))
+        else:
+            if isinstance(critic_obs, torch.Tensor) and \
+                    critic_obs.numel() > NAN_PROBE_MAX_TENSOR_ELEMS:
+                return out
+            t = _to_cpu_tensor(critic_obs)
+            if t is not None and t.numel() <= NAN_PROBE_MAX_TENSOR_ELEMS:
+                out.append(_finite_mag_stats("critic_obs", t))
+    except Exception:  # noqa: BLE001（探针 best-effort）
+        return out
+    return out
+
+
+def _critic_forward_probe(critic_obs, values) -> tuple[dict | None, list[dict]]:
+    """只读检查 `evaluate` 返回 values 的 isfinite；返回 (values 首 NaN 探针, critic_obs 幅值列表)。
+
+    **全有限时返回 (None, [])**（不记录、不改值）；发现非有限时给出 values 的
+    `_first_nonfinite_probe`（含 first_coord）+ 该次 critic_obs 逐 key 幅值。**绝不改 values /
+    critic_obs**（溯源件只记录）。values 为 (values, ...) 变体时取首个张量。
+    """
+    v = values
+    if isinstance(v, (tuple, list)):
+        v = next((x for x in v if isinstance(x, torch.Tensor)), None)
+    if not isinstance(v, torch.Tensor) or v.numel() == 0:
+        return None, []
+    try:
+        if bool(torch.isfinite(v).all()):
+            return None, []
+    except Exception:  # noqa: BLE001（非浮点/异常 -> 不判非有限，静默）
+        return None, []
+    rec = None
+    tv = _to_cpu_tensor(v)
+    if tv is not None:
+        rec = _first_nonfinite_probe("critic.values", tv)
+    return rec, _critic_obs_mag_records(critic_obs)
+
+
+def _install_critic_forward_probe(alg, probe_fn) -> bool:
+    """只读包装 `alg.policy.evaluate`：每次调用后把 (critic_obs, values) 交给 `probe_fn` 探测。
+
+    返回是否包装成功。**不改 evaluate 的入参/返回值/异常语义**（原样透传；probe_fn 内部自带
+    try/except）。policy 无 `evaluate`（非 rsl_rl 变体）时静默返回 False。防重复包装（重复
+    install 时用标记属性跳过）。
+    """
+    policy = getattr(alg, "policy", None)
+    if policy is None:
+        return False
+    orig_evaluate = getattr(policy, "evaluate", None)
+    if not callable(orig_evaluate):
+        return False
+    if getattr(orig_evaluate, "_d067_critic_probe", False):
+        return True   # 已包装过，避免叠包
+
+    def _wrapped_evaluate(*args, **kwargs):
+        critic_obs = None
+        if args:
+            critic_obs = args[0]
+        else:
+            critic_obs = kwargs.get("critic_observations", kwargs.get("observations"))
+        values = orig_evaluate(*args, **kwargs)   # 异常原样冒泡（探针不吞）
+        probe_fn(critic_obs, values)
+        return values
+
+    _wrapped_evaluate._d067_critic_probe = True
+    try:
+        policy.evaluate = _wrapped_evaluate
+    except Exception as exc:  # noqa: BLE001（探针 best-effort：包装失败不影响训练）
+        print(f"[WARN] critic 前向探针包装失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+        return False
+    return True
+
+
 # ------------------------------------------------- σ 漂移仪器（update 前后各记一行）
 def _read_alg_scalar(alg, names: Sequence[str]) -> float | None:
     """按 `names` 顺序在 `alg` 上取首个可及的标量（float/int/0维张量），取不到返回 None。
@@ -3485,10 +3855,17 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
          首末 weight 的 isfinite/norm，pre/post 两拍 + `param_nan_flipped`）。
     另在 `stage=pre` 追加 obs 逐 key/逐段（official/proprio/token）幅值行。**全部只读**。
 
-    返回 {"log": 路径, "wrapped": True}（供身份信封/打印）。**只读 σ/obs/loss/参数，不改训练。**
+    **第五层追加（advantage/returns 消毒器 + critic 前向探针）**：
+      - `_wrapped_update` 在 orig_update **之前**消毒 `storage.advantages/returns`（非有限置 0，
+        `tag=nan_probe_sanitize` 行；健康路径零写回）；
+      - 仪器安装时只读包装 `alg.policy.evaluate`：values 非有限时落 `tag=nan_probe`
+        行（`stage=critic_forward`）+ 该次 critic_obs 逐 key 幅值（含无噪 height_scan 187）。
+
+    返回 {"log": 路径, "wrapped": True, "sanitize": True, "critic_probe": bool}（供身份信封/打印）。
+    **update 数值路径唯一改动 = 消毒器对非有限元素的置 0 写回**（健康路径零改动）；critic 探针只读。
     """
     log_path = Path(out_dir) / STD_TRAJECTORY_LOG
-    state = {"calls": 0, "nan_probes": 0, "nan_probe_mags": 0}
+    state = {"calls": 0, "nan_probes": 0, "nan_probe_mags": 0, "sanitized": 0, "critic_nan": 0}
     orig_update = alg.update
 
     def _emit(tag: str, stats: dict | None, **extra) -> None:
@@ -3576,6 +3953,47 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
         except Exception as exc:  # noqa: BLE001
             print(f"[WARN] nan_probe_mag param_snapshot 失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
 
+    def _emit_sanitize(rec: dict) -> None:
+        """`nan_probe_sanitize` 行：消毒器写回记录（**与首 NaN 行分 tag**，带写回语义字段）。"""
+        try:
+            state["sanitized"] += 1
+            _emit(NAN_PROBE_SANITIZE_TAG, rec, stage="pre_mid")
+            print(
+                f"[WARN] advantage 消毒器: {rec['name']} 非有限 {rec['n_nonfinite']}/{rec['n_total']} "
+                f"-> 置 0（purged_full={rec['purged_full']}，本 update 继续）",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001（消毒器 best-effort）
+            print(f"[WARN] nan_probe_sanitize 记录失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+
+    def _sanitize() -> None:
+        """orig_update 前消毒 advantages/returns（非有限置 0）；健康路径零写回。"""
+        for rec in _sanitize_advantages_returns(alg):
+            _emit_sanitize(rec)
+
+    def _critic_probe(critic_obs, values) -> None:
+        """critic 前向只读探针：values 非有限 -> `tag=nan_probe` 行（stage=critic_forward）+ obs 幅值。
+
+        **只记录不阻断、不改 values/critic_obs**；全有限时零记录。
+        """
+        try:
+            rec, obs_recs = _critic_forward_probe(critic_obs, values)
+            if rec is None:
+                return
+            state["nan_probes"] += 1
+            state["critic_nan"] += 1
+            _emit(NAN_PROBE_TAG, rec, stage="critic_forward")
+            for orec in obs_recs:
+                state["nan_probe_mags"] += 1
+                _emit(NAN_PROBE_MAG_TAG, orec, stage="critic_forward")
+            print(
+                f"[WARN] nan_probe: critic 前向 values 非有限 {rec['n_nonfinite']}/{rec['n_total']} "
+                f"first_coord={rec['first_coord']}（该次 critic_obs 幅值已落 nan_probe_mag）",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001（探针绝不打断训练）
+            print(f"[WARN] nan_probe critic 前向探测失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+
     def _wrapped_update(*args, **kwargs):
         state["calls"] += 1
         record = (state["calls"] % max(1, int(every)) == 0)
@@ -3585,9 +4003,15 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
         _probe_mag("pre")    # ④ obs 逐 key/逐段幅值趋势
         # 第四层：update 前拍参数快照 + 读 lr + 探 advantage/returns（GAE 输出，update 的输入）
         pre_lr = _read_alg_scalar(alg, ("learning_rate", "lr"))
-        pre_snap = _nan_probe_param_snapshot(getattr(alg, "policy", None))
+        # 探针绝不打断训练：快照失败降级为空快照（下游 diff 仍能跑，不会误报翻转）
+        try:
+            pre_snap = _nan_probe_param_snapshot(getattr(alg, "policy", None))
+        except Exception as exc:  # noqa: BLE001（探针绝不打断训练）
+            print(f"[WARN] nan_probe 参数快照(pre)失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+            pre_snap = {}
         _probe("pre_mid")        # ①' advantage/returns/values（首 NaN 在 GAE 还是 loss/backward 的分界）
         _probe_mag("pre_mid")
+        _sanitize()              # 第五层：advantage/returns 非有限置 0（健康路径零写回）
         try:
             result = orig_update(*args, **kwargs)
         except BaseException:  # noqa: BLE001（crash 行必记；异常原样冒泡，不吞）
@@ -3600,12 +4024,19 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
         _probe_mag("post", result)    # ② loss 逐 key 幅值升级
         _emit_update_aux(pre_lr)      # ②' kl_mean（可及才记）+ lr 前后
         # ③ 参数快照对比：std + actor/critic 首末 weight（同刻变 NaN -> 印证 loss NaN 染全部梯度）
-        post_snap = _nan_probe_param_snapshot(getattr(alg, "policy", None))
+        try:
+            post_snap = _nan_probe_param_snapshot(getattr(alg, "policy", None))
+        except Exception as exc:  # noqa: BLE001（探针绝不打断训练）
+            print(f"[WARN] nan_probe 参数快照(post)失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
+            post_snap = {}
         _emit_param_snapshot(pre_snap, post_snap)
         return result
 
+    # 第五层：critic 前向探针——只读包装 `alg.policy.evaluate`（values 非有限才落行）。
+    critic_probe = _install_critic_forward_probe(alg, _critic_probe)
+
     alg.update = _wrapped_update
-    return {"log": str(log_path), "wrapped": True}
+    return {"log": str(log_path), "wrapped": True, "sanitize": True, "critic_probe": bool(critic_probe)}
 
 
 def _make_runner_cfg_dict(hv, cli, out_dir: Path, device: str, policy_kwargs: dict | None) -> dict:
