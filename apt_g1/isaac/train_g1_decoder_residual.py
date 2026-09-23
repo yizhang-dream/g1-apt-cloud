@@ -51,7 +51,9 @@
     - `run_selftest()`：零初始化恒等 / 梯度隔离 / 奖励数学 / 三臂表 / 身份信封 /
       **前向仿射往返** / **residual vs decoder 臂 decoder 输入逐位一致** / 地形契约 /
       切片守卫 / **执行-反馈闭环增益恒等** / **旧标量 0.5 反例** / **29 维 scale 形状与来源** /
-      **adapter env 维分块 ≡ 全 batch（逐位，含整块部分 reset 与尾块）** / **分块 CLI 默认值**
+      **adapter env 维分块 ≡ 全 batch（逐位，含整块部分 reset 与尾块）** / **分块 CLI 默认值** /
+      **adapter bf16 autocast 前向（合成 logits + 非近平局 mock argmax 一致）** /
+      **adapter tf32 标志进/出恢复** / **dtype 与 chunk CLI 默认值（bf16/1024）**
   Layer 2（isaac，import 集中在函数内；本机不 import）
     - `_import_heavy`（复用 train_g1_decoder._import_heavy，单份组装防漂移）
     - env cfg 构建 + max_forward 奖励覆写 + author_token 观测项注入
@@ -336,6 +338,30 @@ residual 臂 author token 源 env 维分块前向（2026-09-24，residual 臂 it
     舍入差（argmax 仅近平局时可能翻转）；CPU 与常见 CUDA 路径实测逐位一致，selftest
     断言 ①③ 以真实 AuthorPolicyAdapter + mock transformer 验证（含整块部分 reset 的
     非均匀 n_valid 场景与尾块）。
+
+adapter 前向精度档 + 分块默认拉大（2026-09-24，性能补丁：精度换速度）：
+  实测+算账：adapter 每控制步对全 envs×200 帧窗完整前向，计算量结构性巨大
+    （1024env ≈ 790 TFLOPs/iter；fp32 理论下限 ~80s/it、chunk128 实测 179s/it，
+    5000it ≈ 10 天不可行）。精确 KV cache 不可能（v0 位置编码窗口相对 + 滑动驱逐
+    ⇒ 缓存每步失效，架构性结论已裁定）⇒ 唯一可行杠杆 = 精度换速度。
+  修法（**只动本文件**，不改奖励/网络/超参/adapter 本体）：
+    1. 新 CLI `--adapter-dtype {fp32,bf16,tf32}`（默认 bf16，`ADAPTER_DTYPES`）——
+       bf16 = autocast 包 adapter.step 的 model 前向（`_AutocastModelForward` 替身 +
+       `_adapter_dtype_ctx` 实例级钉桩，同 `_pinned_window_len` 先例）：autocast 下
+       matmul bf16 / embedding fp32 **由 autocast 决定，不手动控制具体算子**；logits
+       在 autocast 边界升回 fp32 ⇒ step 内 argmax 与逆仿射保持 fp32 口径（bf16
+       logits 与其 fp32 提升严格序同构，argmax 逐位一致——selftest 断言 ④ 直证）。
+       tf32 = `torch.backends.cuda.matmul.allow_tf32=True` 上下文（仅 wrapper 范围，
+       进/出 finally 恢复，不全局泄漏——selftest 断言 ⑤）。fp32 = 旧行为逐字。
+       **口径声明（信封 adapter_perf 字段登记）**：冻结 80M transformer 纯推理
+       argmax 生成 token，bf16 数值近似可接受、token 流偶发近平局翻转不影响 RL 适配；
+       与轴 A/B（D061a author 训练 / D064 decoder 臂）fp32 口径的偏差显式声明于此。
+    2. `--adapter-chunk-envs` 默认 128 -> 1024：bf16 下嵌入/激活内存减半，1024env
+       全批量单块峰值预期 ~7-8GB 可行（估计非承诺）；仍 OOM 时 CLI 可降回 512/128，
+       分块语义不变（selftest 断言 ② 更新为新默认值）。
+    3. 首步仪器：`residual_token_obs` 装载后首个 adapter step 打一行
+       `[adapter-perf] dtype/chunk/首次 step 耗时`（CUDA 侧同步后计时；首步含预热，
+       供首跑判读量级，非稳态基准）。
 """
 
 from __future__ import annotations
@@ -385,9 +411,18 @@ DEFAULT_REWARD_MODE = "auto"   # auto: residual -> max_forward；direct/decoder 
 DEFAULT_FORWARD_WEIGHT = 1.0
 DEFAULT_INTENT_PIN_VALUE = 1.0  # 官方 G1 rough 命令 lin_vel_x 上界（假设 A2）
 # residual 臂 author adapter env 维分块前向的默认块大小（0=不分块）。
-# 依据：1024env 全 batch 前向的码嵌入一次分配 ~3.75GiB（train_author_v0.py:421
-# F.embedding），3060 12G 叠加 Isaac 驻留必爆；128 块峰值 ~470MB/次前向，可接受。
-DEFAULT_ADAPTER_CHUNK_ENVS = 128
+# 依据（2026-09-24 性能补丁，128 -> 1024）：历史默认 128 是 fp32 OOM 修复的保守值
+# （1024env 全 batch 前向的码嵌入一次分配 ~3.75GiB，train_author_v0.py:421
+# F.embedding，3060 12G 叠加 Isaac 驻留必爆）；引入 --adapter-dtype bf16 后嵌入/激活
+# 内存减半，1024env 全批量单块峰值预期 ~7-8GB 可行（估计非承诺），大块减小批开销；
+# 若仍 OOM，CLI 可降回 512/128（分块语义不变）。
+DEFAULT_ADAPTER_CHUNK_ENVS = 1024
+# residual 臂 author adapter 前向精度档（性能补丁：精度换速度，默认 bf16）。
+# 口径声明见模块 docstring「adapter 前向精度档」与身份信封 adapter_perf 字段：冻结
+# 80M transformer 纯推理 argmax 生成 token，bf16 数值近似可接受、token 流偶发近平局
+# 翻转不影响 RL 适配；与轴 A/B 的 fp32 口径偏差显式声明。
+ADAPTER_DTYPES = ("fp32", "bf16", "tf32")
+DEFAULT_ADAPTER_DTYPE = "bf16"
 
 # env 地形名 -> author ctx 地形名（ctx_from_command 只认 plane/rough_paper/climbing_box，
 # 见 eval_author_v0_decoder.TERRAIN_TYPES:193）。本仓无 climbing_box env 地形，故不映射到
@@ -2785,12 +2820,15 @@ def selftest_adapter_chunk_equivalence(seed: int = 0) -> dict:
 
 
 def selftest_adapter_chunk_cli_default() -> dict:
-    """新增断言 ②：--adapter-chunk-envs 默认 128 生效于 CLI；0=不分块可显式覆盖。"""
+    """新增断言 ②：--adapter-chunk-envs 默认 1024 生效于 CLI；0=不分块可显式覆盖。
+
+    （2026-09-24 性能补丁：默认 128 -> 1024，见模块 docstring「adapter 前向精度档」。）
+    """
     ap = build_args()
     dflt = vars(ap.parse_args([]))["adapter_chunk_envs"]
     _check(
-        dflt == DEFAULT_ADAPTER_CHUNK_ENVS == 128,
-        f"--adapter-chunk-envs 默认值应为 128，实得 {dflt}",
+        dflt == DEFAULT_ADAPTER_CHUNK_ENVS == 1024,
+        f"--adapter-chunk-envs 默认值应为 1024，实得 {dflt}",
     )
     off = vars(ap.parse_args(["--adapter-chunk-envs", "0"]))["adapter_chunk_envs"]
     _check(off == 0, "--adapter-chunk-envs 0（不分块）解析失败")
@@ -2828,6 +2866,169 @@ def selftest_adapter_chunk_tail_block(seed: int = 1) -> dict:
         st = torch.randn(10, state_dim, generator=g)
         _chunk_stack_check_step(ref, wrapped, st, ctx_vec, f"tail_post_reset_step{i}")
     return {"bitwise_equal": True, "chunk_layout": [4, 4, 2], "cross_block_partial_reset": True}
+
+
+# ------------------------------ adapter 前向精度档 selftest（性能补丁：精度换速度）
+def _build_non_tie_adapter_stack():
+    """构建「非近平局」mock 双栈：(单 adapter 参考, 分块 wrapper)，同权重实例隔离。
+
+    在 `_MockAuthorTransformer` 上做两步改造，使 argmax 在 bf16 舍入下**可证明不翻转**：
+      1) head.weight ×0.01：h 依赖项压到远小于固定赢家间隔的量级；
+      2) head.bias = 固定赢家模式（vocab 下标 3 为 +8，其余 -4）⇒ logits 间隔 ~12，
+         远大于 bf16 在 |logit|~8 处的 ulp（≈0.0625）⇒ bf16/fp32 argmax 必然一致。
+    两栈各自 `_MockAuthorTransformer(seed=3)` 构造（同种子同权重序 ⇒ 权重逐位一致，
+    实例隔离，互不共享 model 对象——bf16 档的实例级钉桩不影响 fp32 参考）。
+    """
+    lay = _load_author_adapter_layer()
+    token_mean = torch.zeros(TOKEN_DIM)
+    token_std = torch.pow(torch.tensor(2.0), (torch.arange(TOKEN_DIM) % 4 - 2).float())
+    kw = dict(
+        code_min=-4,
+        vocab=8,
+        token_mean=token_mean,
+        token_std=token_std,
+        token_alpha=1.0,
+        token_bound="none",
+        device="cpu",
+    )
+
+    def build_adapter(num_envs: int):
+        model = _MockAuthorTransformer(seed=3)
+        with torch.no_grad():
+            model.head.weight.mul_(0.01)
+            bias = torch.full((8,), -4.0)
+            bias[3] = 8.0
+            model.head.bias.copy_(bias)
+        return lay.AuthorPolicyAdapter(model, num_envs=int(num_envs), **kw)
+
+    ref = build_adapter(8)
+    wrapped = _ChunkedAuthorAdapter([build_adapter(4), build_adapter(4)], chunk_envs=4, num_envs=8)
+    return ref, wrapped
+
+
+def selftest_adapter_dtype_bf16_autocast(seed: int = 2) -> dict:
+    """新增断言 ④：bf16 档 autocast 前向可用 + argmax 输出形状正确 + 与 fp32 档 argmax 一致。
+
+    三层证据：
+      a) **合成 logits 秩同构**：非近平局合成 logits（赢家 6~8、输家 -4±1，最小间隔
+         ~6 >> bf16 ulp）的 fp32 argmax 与 bf16 舍入后 argmax 100% 一致——这是
+         「argmax 在 fp32 logits 上做」与 bf16 路径等价的数学根据；
+      b) **非近平局 mock 端到端**：bf16 档（autocast 包 model 前向 + logits 边界升
+         fp32）与 fp32 档对同一 state 序列逐步输出**逐位一致**（act 由 argmax idx 唯一
+         决定 ⇒ 输出一致 ⇔ argmax 一致），且走分块 wrapper（生产形态，逐块钉桩路径）；
+      c) **钉桩卫生**：bf16 步内各底层 adapter 的 `.model` 已替换为 autocast 替身、
+         步后逐个还原为原对象；替身输出 logits dtype == fp32（argmax fp32 口径直证）。
+    """
+    # ---- a) 合成 logits（非近平局）----
+    g = torch.Generator().manual_seed(int(seed))
+    synth = torch.randn(16, TOKEN_DIM, 8, generator=g) - 4.0      # 输家基线 -4±1
+    win = torch.randint(0, 8, (16, TOKEN_DIM), generator=g)
+    winner_val = 6.0 + 2.0 * torch.rand(16, TOKEN_DIM, generator=g)  # 赢家 6~8
+    synth = synth.scatter(2, win.unsqueeze(-1), winner_val.unsqueeze(-1))
+    am_fp = synth.argmax(dim=-1)
+    am_bf = synth.bfloat16().float().argmax(dim=-1)
+    agree = int((am_fp == am_bf).sum())
+    _check(
+        agree == am_fp.numel(),
+        f"合成 logits bf16/fp32 argmax 一致率应 100%：{agree}/{int(am_fp.numel())}",
+    )
+    # ---- b) 非近平局 mock 端到端（fp32 参考 vs bf16 档，同权重双栈）----
+    fp_stack = _build_non_tie_adapter_stack()[1]
+    bf_stack = _build_non_tie_adapter_stack()[1]
+    bf_bases = _base_adapters(bf_stack)
+    orig_models = [ad.model for ad in bf_bases]
+    ctx_vec = np.linspace(-0.5, 0.5, 13, dtype=np.float32)
+    state_dim = int(fp_stack.chunks[0].states.shape[-1])
+    for i in range(3):
+        st = torch.randn(8, state_dim, generator=g)
+        with _adapter_dtype_ctx(fp_stack, "fp32"):
+            a_fp = fp_stack.step(st, ctx=ctx_vec)
+        with _adapter_dtype_ctx(bf_stack, "bf16"):
+            for ad in bf_bases:
+                _check(isinstance(ad.model, _AutocastModelForward), f"step{i}: bf16 步内 .model 应为 autocast 替身")
+            a_bf = bf_stack.step(st, ctx=ctx_vec)
+        _check(a_bf.shape == (8, TOKEN_DIM), f"step{i}: bf16 档 argmax 输出形状应 (8,64)，得 {tuple(a_bf.shape)}")
+        _check(bool(torch.isfinite(a_bf).all()), f"step{i}: bf16 档输出含非有限值")
+        _check(torch.equal(a_fp, a_bf), f"step{i}: 非近平局 mock 下 bf16 档与 fp32 档 argmax 输出应逐位一致")
+    for ad, m in zip(bf_bases, orig_models):
+        _check(ad.model is m, "bf16 步后 .model 未还原为原对象（实例级钉桩泄漏）")
+    # ---- c) 替身直证：autocast 边界升 fp32 + 形状契约 ----
+    lay = _load_author_adapter_layer()
+    probe = _AutocastModelForward(_MockAuthorTransformer(seed=3), "cpu", torch.bfloat16)
+    out = probe(
+        torch.zeros(2, 5, TOKEN_DIM, dtype=torch.long),
+        torch.randn(2, 5, lay.STATE_DIM),
+        torch.zeros(2, 5, TOKEN_DIM, dtype=torch.long),
+        torch.randn(2, 13),
+    )
+    _check(out.dtype == torch.float32, f"替身输出 logits 应升回 fp32，实得 {out.dtype}")
+    _check(tuple(out.shape) == (2, 5, TOKEN_DIM, 8), f"替身输出形状异常：{tuple(out.shape)}")
+    return {
+        "synthetic_argmax_agree": agree / float(am_fp.numel()),
+        "e2e_bitwise_equal": True,
+        "output_shape_ok": True,
+        "model_patched_and_restored": True,
+        "wrapper_logits_fp32": True,
+    }
+
+
+def selftest_adapter_dtype_tf32_restore() -> dict:
+    """新增断言 ⑤：tf32 档 `torch.backends.cuda.matmul.allow_tf32` 进/出恢复（finally）。
+
+    三路断言：进入后为 True；正常退出恢复进前值；异常路径（finally）同样恢复。
+    标志位是纯进程级 flag（无 CUDA 也可读写），本机 CPU 即可验证。
+    """
+    dummy = SimpleNamespace(device=torch.device("cpu"))
+    pre = bool(torch.backends.cuda.matmul.allow_tf32)
+    with _adapter_dtype_ctx(dummy, "tf32"):
+        _check(bool(torch.backends.cuda.matmul.allow_tf32) is True, "tf32 档进入后 allow_tf32 应为 True")
+    _check(bool(torch.backends.cuda.matmul.allow_tf32) == pre, "tf32 档正常退出后 allow_tf32 未恢复进前值")
+    # 异常路径：翻转初值再抛异常，finally 仍须恢复
+    pre2 = not pre
+    torch.backends.cuda.matmul.allow_tf32 = pre2
+    try:
+        with _adapter_dtype_ctx(dummy, "tf32"):
+            raise RuntimeError("probe: tf32 异常路径")
+    except RuntimeError:
+        pass
+    _check(bool(torch.backends.cuda.matmul.allow_tf32) == pre2, "tf32 档异常路径未在 finally 恢复 allow_tf32")
+    torch.backends.cuda.matmul.allow_tf32 = pre   # 收尾还原原始值（不污染同进程后续断言）
+    return {"enter_true": True, "exit_restored": True, "exc_restored": True, "pre_flag": pre}
+
+
+def selftest_adapter_dtype_cli_default() -> dict:
+    """新增断言 ⑥：--adapter-dtype 默认 bf16、--adapter-chunk-envs 默认 1024 生效于 CLI。"""
+    ap = build_args()
+    dflt_dtype = vars(ap.parse_args([]))["adapter_dtype"]
+    _check(
+        dflt_dtype == DEFAULT_ADAPTER_DTYPE == "bf16",
+        f"--adapter-dtype 默认值应为 bf16，实得 {dflt_dtype!r}",
+    )
+    dflt_chunk = vars(ap.parse_args([]))["adapter_chunk_envs"]
+    _check(
+        dflt_chunk == DEFAULT_ADAPTER_CHUNK_ENVS == 1024,
+        f"--adapter-chunk-envs 默认值应为 1024，实得 {dflt_chunk}",
+    )
+    got_tf32 = vars(ap.parse_args(["--adapter-dtype", "tf32"]))["adapter_dtype"]
+    _check(got_tf32 == "tf32", "--adapter-dtype tf32 解析失败")
+    got_fp32 = vars(ap.parse_args(["--adapter-dtype", "fp32"]))["adapter_dtype"]
+    _check(got_fp32 == "fp32", "--adapter-dtype fp32 解析失败")
+    import io  # noqa: PLC0415（仅自测用：吞掉 argparse 拒绝时的 usage/error 噪音）
+
+    err_sink = io.StringIO()
+    with contextlib.redirect_stderr(err_sink):
+        try:
+            ap.parse_args(["--adapter-dtype", "fp16"])
+            _check(False, "--adapter-dtype fp16 应被 choices 拒绝（未拒绝）")
+        except SystemExit:
+            pass
+    return {
+        "default_dtype": str(dflt_dtype),
+        "default_chunk_envs": int(dflt_chunk),
+        "override_tf32": str(got_tf32),
+        "override_fp32": str(got_fp32),
+        "invalid_rejected": True,
+    }
 
 
 def run_selftest() -> None:
@@ -2874,6 +3075,10 @@ def run_selftest() -> None:
         "adapter_chunk_equivalence": selftest_adapter_chunk_equivalence(),
         "adapter_chunk_cli_default": selftest_adapter_chunk_cli_default(),
         "adapter_chunk_tail_block": selftest_adapter_chunk_tail_block(),
+        # residual 臂 adapter 前向精度档（性能补丁：精度换速度，默认 bf16/1024）
+        "adapter_dtype_bf16_autocast": selftest_adapter_dtype_bf16_autocast(),
+        "adapter_dtype_tf32_restore": selftest_adapter_dtype_tf32_restore(),
+        "adapter_dtype_cli_default": selftest_adapter_dtype_cli_default(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -3166,6 +3371,100 @@ class _ChunkedAuthorAdapter:
         return torch.cat(outs, dim=0)
 
 
+# --------------------------------------- adapter 前向精度档（性能补丁：精度换速度）
+# 实测：1024env 全批量 adapter 前向 chunk128 ≈179s/it（5000it 不可行），精确 KV cache
+# 不可行（v0 位置编码窗口相对+滑动驱逐，缓存每步失效）。本节三件只改「前向算什么精度」，
+# 不改奖励/网络/超参/adapter 本体；口径声明见模块 docstring「adapter 前向精度档」。
+class _AutocastModelForward:
+    """bf16 档的 model 前向替身：autocast 包前向，logits 在边界升回 fp32。
+
+    为何要替身而不是直接包整个 `adapter.step`：AuthorPolicyAdapter.step 内部
+    `logits = self.model(...)` 后**紧接 argmax**（本体文件是轴 B 生产件不可改，argmax
+    无法外移）——把 autocast 精确钉在 model 前向上、logits 于 autocast 边界 `.float()`，
+    即同时得到「matmul bf16 / embedding fp32 由 autocast 决定，不手动控制具体算子」
+    与「argmax 在 fp32 logits 上做」（bf16 logits 与其 fp32 提升严格序同构，argmax
+    逐位一致；升 fp32 只是保住 step 内 argmax/逆仿射的输入 dtype 契约，selftest 断言 ④
+    以合成 logits + 非近平局 mock 直证）。替身是普通可调用对象（非 nn.Module）：
+    adapter 冻结推理、无参数注册需求，避免 _modules/state_dict 语义副作用。
+    """
+
+    def __init__(self, model, device_type: str, dtype: torch.dtype) -> None:
+        self._inner = model
+        self._device_type = str(device_type)
+        self._dtype = dtype
+
+    def __call__(self, *args, **kwargs):
+        with torch.autocast(device_type=self._device_type, dtype=self._dtype):
+            out = self._inner(*args, **kwargs)
+        return out.float()
+
+
+def _base_adapters(adapter) -> list:
+    """枚举 adapter（单实例或 _ChunkedAuthorAdapter）底层的 AuthorPolicyAdapter 列表。"""
+    chunks = getattr(adapter, "chunks", None)
+    return list(chunks) if chunks is not None else [adapter]
+
+
+@contextlib.contextmanager
+def _adapter_dtype_ctx(adapter, dtype_mode: str):
+    """residual 臂 `adapter.step` 的精度档上下文（性能补丁唯一改动点=前向精度）。
+
+    - "fp32"：什么都不做（旧行为逐字，无任何附加开销）；
+    - "bf16"：把底层每个 AuthorPolicyAdapter 的 `.model` 临时替换为
+      `_AutocastModelForward`（autocast(bf16) 包前向 + logits 边界升 fp32），步内即
+      还原（同 `_pinned_window_len` 的实例级钉桩先例，不改 adapter 本体文件、不留
+      驻留状态，异常路径同样还原）；
+    - "tf32"：进入时 `torch.backends.cuda.matmul.allow_tf32=True`，退出 finally 恢复
+      进前值（仅本 wrapper 范围生效，不全局泄漏；selftest 断言 ⑤ 直证进/出/异常三路）。
+    """
+    mode = str(dtype_mode)
+    if mode not in ADAPTER_DTYPES:
+        raise ValueError(f"--adapter-dtype 须 ∈ {ADAPTER_DTYPES}，收到 {mode!r}")
+    if mode == "fp32":
+        yield
+        return
+    if mode == "tf32":
+        old = bool(torch.backends.cuda.matmul.allow_tf32)
+        torch.backends.cuda.matmul.allow_tf32 = True
+        try:
+            yield
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old
+        return
+    # bf16：实例级钉桩底层 model（chunked 时逐块替换）
+    dev_type = torch.device(adapter.device).type
+    bases = _base_adapters(adapter)
+    saved = [ad.model for ad in bases]
+    for ad in bases:
+        ad.model = _AutocastModelForward(ad.model, dev_type, torch.bfloat16)
+    try:
+        yield
+    finally:
+        for ad, m in zip(bases, saved):
+            ad.model = m
+
+
+def _log_adapter_perf_first_step(env, adapter, t0: float) -> None:
+    """首步仪器：residual_token_obs 装载后首个 adapter step 打一行 [adapter-perf]。
+
+    CUDA 侧同步后再读钟（首步含预热/内核选择，量级判读用，非稳态基准）；失败只降级
+    为不同步计时，绝不打断观测计算。
+    """
+    try:
+        if torch.device(getattr(adapter, "device", "cpu")).type == "cuda":
+            torch.cuda.synchronize()
+    except Exception:  # pragma: no cover（仪器绝不打断训练）
+        pass
+    dt = time.perf_counter() - t0
+    n_chunks = len(getattr(adapter, "chunks", []) or [adapter])
+    print(
+        f"[adapter-perf] dtype={env._d067_adapter_dtype} adapter_chunk_envs="
+        f"{env._d067_adapter_chunk_envs} num_envs={int(adapter.num_envs)} chunks={n_chunks} "
+        f"first_adapter_step_s={dt:.3f}（首步含 CUDA 预热，供首跑判读量级）",
+        flush=True,
+    )
+
+
 def residual_token_obs(
     env,
     ckpt_path: str,
@@ -3184,6 +3483,7 @@ def residual_token_obs(
     ctx_builder_batch,
     state_builder,
     adapter_chunk_envs: int = 0,
+    adapter_dtype: str = DEFAULT_ADAPTER_DTYPE,
 ):
     """policy 观测项：(N, 64) 冻结 author adapter 产出的 **token 坐标**（观测常量，无梯度）。
 
@@ -3234,6 +3534,11 @@ def residual_token_obs(
         model, model_cfg = author_loader(ckpt_path, device=str(env.device))
         token_mean_t = torch.as_tensor(token_mean, dtype=torch.float32, device=env.device).reshape(-1)
         token_std_t = torch.as_tensor(token_std, dtype=torch.float32, device=env.device).reshape(-1)
+        # 性能补丁（精度换速度，见模块 docstring「adapter 前向精度档」）：前向精度档
+        # fail-loud 校验，非法档拒绝开训。
+        dtype_mode = str(adapter_dtype)
+        if dtype_mode not in ADAPTER_DTYPES:
+            raise ValueError(f"--adapter-dtype 须 ∈ {ADAPTER_DTYPES}，收到 {dtype_mode!r}")
         # OOM 修复（见模块 docstring「env 维分块前向」）：--adapter-chunk-envs > 0 且小于
         # 总 env 数时，把 N 个 env 拆成 ceil(N/C) 个独立 adapter 实例逐块前向（峰值 ~1/M）；
         # 0 = 不分块（单 adapter，旧行为逐字）；C >= N 时分块无意义，同样走单 adapter。
@@ -3296,12 +3601,16 @@ def residual_token_obs(
         env._d067_token_std = token_std_t
         env._d067_token_alpha = float(token_alpha)
         env._d067_token_bound = str(token_bound)
+        # 性能补丁仪器（首步 [adapter-perf] 行的数据源）：精度档 + 分块 + 首步待计时
+        env._d067_adapter_dtype = dtype_mode
+        env._d067_adapter_chunk_envs = chunk_envs
+        env._d067_adapter_perf_pending = True
         print(
             f"[d067] author token 源已装载：ckpt={ckpt_path} token_stats={token_stats} "
             f"vocab={model_cfg.get('vocab')} code_min={model_cfg.get('code_min')} "
             f"intent_pin_max={intent_pin_max} intent_pin_value={intent_pin_value} "
             f"token_bound={token_bound} terrain={terrain!r}->ctx_terrain={terrain_ctx!r} "
-            f"adapter_chunk_envs={chunk_envs} 块划分={sizes}",
+            f"adapter_chunk_envs={chunk_envs} 块划分={sizes} adapter_dtype={dtype_mode}",
             flush=True,
         )
 
@@ -3345,8 +3654,13 @@ def residual_token_obs(
     else:
         cmd = env.command_manager.get_term("base_velocity").vel_command_b[:, 0]
         ctx = ctx_builder_batch(cmd, env._d067_token_terrain)
+    # 性能补丁：首步仪器待打 -> 先取 t0（只在 adapter.step 计时，不含仿射/观测组装）
+    perf_t0 = time.perf_counter() if getattr(env, "_d067_adapter_perf_pending", False) else None
     with torch.no_grad():
-        raw = adapter.step(st, ctx=ctx)
+        # 精度档上下文（fp32=逐字旧行为；bf16=autocast 包前向+logits 边界升 fp32；
+        # tf32=matmul 标志进/出恢复）。仅包 adapter.step 前向，仿射/缓存逻辑不动。
+        with _adapter_dtype_ctx(adapter, getattr(env, "_d067_adapter_dtype", "fp32")):
+            raw = adapter.step(st, ctx=ctx)
         # M2：adapter.step 返回归一化动作 a（逆仿射产物），补前向仿射 -> token 坐标，
         # 否则 decoder 分支的 FSQ 量化吃到 a 而非 tok（先验破坏）。
         tok = forward_token_affine(
@@ -3356,6 +3670,9 @@ def residual_token_obs(
             env._d067_token_alpha,
             env._d067_token_bound,
         )
+    if perf_t0 is not None:
+        env._d067_adapter_perf_pending = False
+        _log_adapter_perf_first_step(env, adapter, perf_t0)
     tok = tok.detach()
     env._d067_token_cache = tok
     env._d067_token_step_key = key
@@ -3398,8 +3715,10 @@ def _token_obs_params(hv, cli, terrain: str) -> tuple[dict, str]:
             [hv.ctx_from_command(float(v), 0.0, 0.0, terrain=terr) for v in np.asarray(vx).reshape(-1)]
         ),
         "state_builder": hv.build_state,
-        # OOM 修复：adapter env 维分块前向块大小（0=不分块；缺省随 CLI 默认 128）
+        # OOM 修复：adapter env 维分块前向块大小（0=不分块；缺省随 CLI 默认 1024）
         "adapter_chunk_envs": int(getattr(cli, "adapter_chunk_envs", DEFAULT_ADAPTER_CHUNK_ENVS)),
+        # 性能补丁：adapter 前向精度档（fp32/bf16/tf32，缺省随 CLI 默认 bf16）
+        "adapter_dtype": str(getattr(cli, "adapter_dtype", DEFAULT_ADAPTER_DTYPE)),
     }, ctx_terrain_name
 
 
@@ -3660,6 +3979,7 @@ def _attach_token_obs(cfg, hv, cli, terrain: str) -> dict:
         "token_bound": params["token_bound"],
         "token_alpha": params["token_alpha"],
         "adapter_chunk_envs": params["adapter_chunk_envs"],
+        "adapter_dtype": params["adapter_dtype"],
         "privileged_critic": True,
     }
 
@@ -4882,6 +5202,17 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
         envelope["token_affine"]["token_bound"] = token_info["token_bound"]
         envelope["token_affine"]["token_alpha"] = token_info["token_alpha"]
         envelope["token_affine"]["token_stats"] = token_info["token_stats"]
+        # 性能补丁登记（精度换速度）：adapter 前向精度档/分块默认与 fp32 口径偏差声明
+        # （见模块 docstring「adapter 前向精度档」），进 run.json 供事后审计。
+        envelope["adapter_perf"] = {
+            "adapter_dtype": str(token_info.get("adapter_dtype", DEFAULT_ADAPTER_DTYPE)),
+            "adapter_chunk_envs": int(token_info.get("adapter_chunk_envs", DEFAULT_ADAPTER_CHUNK_ENVS)),
+            "declaration": (
+                "冻结 80M transformer 纯推理 argmax 生成 token：bf16 数值近似可接受、"
+                "token 流偶发近平局翻转不影响 RL 适配；与轴 A/B（D061a/D064）fp32 口径"
+                "的偏差显式声明（不改奖励/网络/超参/adapter 本体）"
+            ),
+        }
         # 执行/反馈仿射信封（值/来源/逐关节 min-max）；运行期 action term _scale 守卫
         # 在 env 构造后追加 bitwise/gain 实测（见下）。
         envelope[RESIDUAL_ACTION_SCALE_FIELD] = residual_action_scale_envelope(
@@ -5042,7 +5373,12 @@ def build_args() -> argparse.ArgumentParser:
     ap.add_argument("--token-stats", default="", help="官方 g1-mode token 统计 npz（decoder 仿射/author 逆仿射）")
     ap.add_argument("--adapter-chunk-envs", type=int, default=DEFAULT_ADAPTER_CHUNK_ENVS,
                     help="residual 臂 author adapter env 维分块前向块大小（CUDA OOM 修复；"
-                         "0=不分块；默认 128，128 块峰值 ~470MB/次前向）")
+                         "0=不分块；默认 1024（性能补丁拉大，bf16 下峰值可行；"
+                         "OOM 时可降回 512/128）)")
+    ap.add_argument("--adapter-dtype", choices=ADAPTER_DTYPES, default=DEFAULT_ADAPTER_DTYPE,
+                    help="residual 臂 author adapter 前向精度档（性能补丁：精度换速度；"
+                         "默认 bf16=autocast 包前向+logits 边界升 fp32；tf32=matmul 标志"
+                         "仅 wrapper 范围生效；fp32=旧行为逐字。口径声明见模块 docstring）")
     ap.add_argument("--onnx-path", default="", help="SONIC ONNX decoder（残差臂冻结分支；缺省工厂默认）")
     ap.add_argument("--token-alpha", type=float, default=None)
     ap.add_argument("--token-bound", choices=("none", "tanh"), default=None)
