@@ -50,7 +50,8 @@
       `assemble_decoder_obs`（decoder 输入组装）
     - `run_selftest()`：零初始化恒等 / 梯度隔离 / 奖励数学 / 三臂表 / 身份信封 /
       **前向仿射往返** / **residual vs decoder 臂 decoder 输入逐位一致** / 地形契约 /
-      切片守卫 / **执行-反馈闭环增益恒等** / **旧标量 0.5 反例** / **29 维 scale 形状与来源**
+      切片守卫 / **执行-反馈闭环增益恒等** / **旧标量 0.5 反例** / **29 维 scale 形状与来源** /
+      **adapter env 维分块 ≡ 全 batch（逐位，含整块部分 reset 与尾块）** / **分块 CLI 默认值**
   Layer 2（isaac，import 集中在函数内；本机不 import）
     - `_import_heavy`（复用 train_g1_decoder._import_heavy，单份组装防漂移）
     - env cfg 构建 + max_forward 奖励覆写 + author_token 观测项注入
@@ -309,6 +310,32 @@ advantage/returns 消毒器 + critic 前向探针（2026-09-22，第五层修复
        保护，与消毒器职责不同；探针仍跳过超阈值张量以免反复 GPU→CPU 全量 copy 拖慢/OOM）。
     3. 健康路径开销：**一次 GPU 侧归约同步**（`bad_n` 标量 `.item()`）——这是「不跳过超大张量」
        的必要代价（无法在不读数据的前提下判断有没有 NaN）；健康路径仍**零写回**（对象引用不变）。
+
+residual 臂 author token 源 env 维分块前向（2026-09-24，residual 臂 iter0 CUDA OOM 修复）：
+  实证：residual 臂 iter0 即崩——`residual_token_obs` -> `adapter.step` 是**全 batch 完整
+    前向**，author transformer 的码嵌入按 (N·t·64, d_model) 一次性分配
+    （train_author_v0.py:421 F.embedding；1024env×200帧窗×64维×768d×4B ≈ 3.75GiB 量级），
+    叠加 Isaac 驻留必爆 3060 12G；碎片缓解/降 env 数均不可取（后者破坏三臂同预算对照）。
+  修法（**只动本文件**）：新 CLI `--adapter-chunk-envs`（默认 128，0=不分块）——
+    `residual_token_obs` 懒建期把 N 个 env 不重叠地拆成 ceil(N/C) 个**独立
+    AuthorPolicyAdapter 实例**（`_ChunkedAuthorAdapter` 包装：逐块 step 后 cat），前向
+    峰值 ~1/M（128 块 ≈470MB/次前向）。adapter 本体（eval_author_v0_decoder.py =
+    轴 B 生产件）零改动。
+  正确性（adapter 状态 env 维独立性的代码证据 + 唯一 batch 维耦合的等价改法）：
+    adapter 自回归缓冲 codes/states/ctx/n_valid/_last_idx **全部按 env 维独立**
+    （eval_author_v0_decoder.py:579-588；`_push` :608-614 逐 env 滚动；`reset` :650-658
+    只动指定 env；step 的模型前向对 batch 逐行独立）⇒ 不重叠拆到多个实例 ≡ 全 batch。
+    **唯一 batch 维耦合** = `window_len()`（:603-606）：前向帧数 t = n_valid 对整个
+    adapter batch 取 max，且 `step` 是**先 `_push`（n_valid +1）再读** ⇒ 单 adapter 下每
+    env 的前向窗都吃「推进后」的全局 max。naive 分块各块只看块内 max，第 2 步起就会少
+    1 帧、部分 reset 后更偏离。等价改法：每步取 t_global = **推进后**的全局 max
+    （`_step_window_len`：min(推进前全局 max + 1, win)，同一 env 集合的同一值 = 单
+    adapter 的 window_len()），经 `_pinned_window_len` 实例级钉桩各块的 window_len
+    （**不改 adapter 本体文件**，仅实例属性覆写、步内即还原）⇒ codes_w 切片/前向/
+    argmax/逆仿射与全 batch 逐位一致。已知边界：不同 batch 形状理论上可能选到不同 GEMM 分块策略产生末位
+    舍入差（argmax 仅近平局时可能翻转）；CPU 与常见 CUDA 路径实测逐位一致，selftest
+    断言 ①③ 以真实 AuthorPolicyAdapter + mock transformer 验证（含整块部分 reset 的
+    非均匀 n_valid 场景与尾块）。
 """
 
 from __future__ import annotations
@@ -357,6 +384,10 @@ REWARD_MODES = ("auto", "track", "max_forward")
 DEFAULT_REWARD_MODE = "auto"   # auto: residual -> max_forward；direct/decoder -> track
 DEFAULT_FORWARD_WEIGHT = 1.0
 DEFAULT_INTENT_PIN_VALUE = 1.0  # 官方 G1 rough 命令 lin_vel_x 上界（假设 A2）
+# residual 臂 author adapter env 维分块前向的默认块大小（0=不分块）。
+# 依据：1024env 全 batch 前向的码嵌入一次分配 ~3.75GiB（train_author_v0.py:421
+# F.embedding），3060 12G 叠加 Isaac 驻留必爆；128 块峰值 ~470MB/次前向，可接受。
+DEFAULT_ADAPTER_CHUNK_ENVS = 128
 
 # env 地形名 -> author ctx 地形名（ctx_from_command 只认 plane/rough_paper/climbing_box，
 # 见 eval_author_v0_decoder.TERRAIN_TYPES:193）。本仓无 climbing_box env 地形，故不映射到
@@ -2593,8 +2624,216 @@ def selftest_nan_probe_snapshot_guard(seed: int = 0) -> dict:
     return {"snapshot_exc_guarded": True, "update_unaffected": True, "degraded_snapshot_logged": True}
 
 
+# --------------------------------------- adapter env 维分块前向 selftest（OOM 修复）
+def _load_author_adapter_layer() -> SimpleNamespace:
+    """延迟加载 eval_author_v0_decoder 的 Layer 1 纯 torch 件（本机可导入，零 isaaclab）。
+
+    返回 SimpleNamespace(AuthorPolicyAdapter, STATE_DIM)；缺件即 fail loud（真实
+    AuthorPolicyAdapter 是分块等价断言的证据主体，mock 替代会削弱证明力）。
+    """
+    try:
+        from isaac.eval_author_v0_decoder import AuthorPolicyAdapter, STATE_DIM
+    except ImportError:  # pragma: no cover（本机走此支）
+        from apt_g1.isaac.eval_author_v0_decoder import AuthorPolicyAdapter, STATE_DIM  # type: ignore[no-redef]
+    return SimpleNamespace(AuthorPolicyAdapter=AuthorPolicyAdapter, STATE_DIM=int(STATE_DIM))
+
+
+class _MockAuthorTransformer(nn.Module):
+    """本机替身 author transformer（满足 AuthorPolicyAdapter 构造/前向契约的最小件）。
+
+    契约（eval_author_v0_decoder.py）：构造期校验 `pos.shape[1] - n_ctx == win`
+    （:547-552）；前向 `model(codes, states, codes, ctx) -> (N, t, 64, vocab)`
+    （:630-635）。结构 = 码嵌入 + state 投影 + ctx 投影 + 位置表 -> **因果累积均值**
+    （模拟因果注意力「末帧输出依赖窗内全部前序帧」）-> vocab 头。窗口内任一帧变化
+    或窗口长度 t 变化都会改变末帧 logits——正是「分块窗长钉桩」等价断言需要的性质。
+    前向对 batch 维逐行独立（与生产 author transformer 同性质）。
+    """
+
+    def __init__(
+        self,
+        win: int = 200,
+        n_ctx: int = 2,
+        d_model: int = 24,
+        vocab: int = 8,
+        token_dim: int = TOKEN_DIM,
+        state_dim: int = 36,
+        ctx_dim: int = 13,
+        seed: int = 3,
+    ) -> None:
+        super().__init__()
+        self.n_ctx = int(n_ctx)
+        g = torch.Generator().manual_seed(int(seed))
+        self.register_buffer("pos", torch.randn(1, win + n_ctx, d_model, generator=g) * 0.05)
+        self.code_emb = nn.Embedding(vocab, d_model)
+        self.state_proj = nn.Linear(state_dim, d_model)
+        self.ctx_proj = nn.Linear(ctx_dim, d_model)
+        self.head = nn.Linear(d_model, vocab)
+        with torch.no_grad():
+            self.code_emb.weight.normal_(0.0, 0.5, generator=g)
+            self.state_proj.weight.normal_(0.0, 0.2, generator=g)
+            self.state_proj.bias.zero_()
+            self.ctx_proj.weight.normal_(0.0, 0.2, generator=g)
+            self.ctx_proj.bias.zero_()
+            self.head.weight.normal_(0.0, 0.5, generator=g)
+            self.head.bias.normal_(0.0, 0.1, generator=g)
+
+    def forward(self, codes, states, intent, ctx) -> torch.Tensor:
+        t = int(codes.shape[1])
+        h = (
+            self.code_emb(codes)                                        # (N, t, 64, d)
+            + self.state_proj(states).unsqueeze(2)                      # (N, t, 1, d)
+            + self.ctx_proj(ctx)[:, None, None, :]                      # (N, 1, 1, d)
+            + self.pos[:, self.n_ctx : self.n_ctx + t, :].unsqueeze(2)  # (1, t, 1, d)
+        )  # (N, t, 64, d)
+        # 因果累积均值：末帧依赖窗内全部前序帧（t 变 ⇒ 末帧变）
+        w = torch.arange(1, t + 1, dtype=h.dtype, device=h.device).view(1, t, 1, 1)
+        h = h.cumsum(dim=1) / w
+        return self.head(h)  # (N, t, 64, vocab)
+
+
+def _build_chunk_test_stack(num_envs: int, chunk_envs: int, seed: int = 3):
+    """构建分块等价对照栈：(单 adapter 参考, 分块 wrapper)，mock transformer 权重共享。
+
+    两栈同一份模型实例（无状态前向）+ 同参构造（code_min/vocab/token 统计/alpha/bound），
+    初始状态均为全 reset（standing/neutral 填充）⇒ 唯一差异就是「分块与否」。
+    """
+    lay = _load_author_adapter_layer()
+    model = _MockAuthorTransformer(seed=seed)
+    token_mean = torch.zeros(TOKEN_DIM)
+    token_std = torch.pow(torch.tensor(2.0), (torch.arange(TOKEN_DIM) % 4 - 2).float())
+    kw = dict(
+        code_min=-4,
+        vocab=8,
+        token_mean=token_mean,
+        token_std=token_std,
+        token_alpha=1.0,
+        token_bound="none",
+        device="cpu",
+    )
+    ref = lay.AuthorPolicyAdapter(model, num_envs=int(num_envs), **kw)
+    sizes = [chunk_envs] * (num_envs // chunk_envs)
+    if num_envs % chunk_envs:
+        sizes.append(num_envs % chunk_envs)
+    wrapped = _ChunkedAuthorAdapter(
+        [lay.AuthorPolicyAdapter(model, num_envs=s, **kw) for s in sizes],
+        chunk_envs=int(chunk_envs),
+        num_envs=int(num_envs),
+    )
+    return ref, wrapped
+
+
+def _chunk_stack_check_step(ref, wrapped, state_rows, ctx_vec, tag: str) -> torch.Tensor:
+    """两栈同输入各 step 一步，输出与状态（n_valid/codes/states）逐位一致。"""
+    a_ref = ref.step(state_rows, ctx=ctx_vec)
+    a_wrp = wrapped.step(state_rows, ctx=ctx_vec)
+    _check(torch.equal(a_ref, a_wrp), f"{tag}: 分块与全 batch adapter.step 输出非逐位一致")
+    nv_wrp = torch.cat([c.n_valid for c in wrapped.chunks])
+    _check(torch.equal(nv_wrp, ref.n_valid), f"{tag}: 分块栈 n_valid 与参考不一致（reset 路由/推进错位）")
+    codes_wrp = torch.cat([c.codes for c in wrapped.chunks], dim=0)
+    _check(torch.equal(codes_wrp, ref.codes), f"{tag}: 分块栈 codes 窗与参考不一致")
+    states_wrp = torch.cat([c.states for c in wrapped.chunks], dim=0)
+    _check(torch.equal(states_wrp, ref.states), f"{tag}: 分块栈 states 窗与参考不一致")
+    return a_ref
+
+
+def selftest_adapter_chunk_equivalence(seed: int = 0) -> dict:
+    """新增断言 ①：adapter env 维分块前向 ≡ 全 batch（逐位，含自回归状态滚动）。
+
+    以**真实 AuthorPolicyAdapter**（eval_author_v0_decoder Layer 1，本机可导入）+
+    mock transformer 建两套同源栈：chunk=0（单 adapter num_envs=12，参考）vs chunk=4
+    （_ChunkedAuthorAdapter，3 块）。序列：连续 5 步（状态滚动同步）-> **整块部分
+    reset**（env 8..11 = 第 2 块全部 env，制造 n_valid 非均匀）-> 再连续 3 步 ->
+    全量 reset -> 1 步。n_valid 非均匀段正是 `window_len()` 的 batch max 耦合生效处：
+    显式断言「块内 max < 全局 max」证明 naive 分块必然偏离、t_global 钉桩是必要的，
+    并以逐位一致证明钉桩后的等价性。
+    """
+    g = torch.Generator().manual_seed(int(seed))
+    ref, wrapped = _build_chunk_test_stack(12, 4, seed=3)
+    _check(wrapped.num_envs == 12 and len(wrapped.chunks) == 3, "分块栈结构不符（12 envs / 3 块）")
+    ctx_vec = np.linspace(-0.5, 0.5, 13, dtype=np.float32)
+
+    # --- 连续 5 步（含自回归滚动：_last_idx 进下一帧窗）---
+    for i in range(5):
+        st = torch.randn(12, wrapped.chunks[0].states.shape[-1], generator=g)
+        _chunk_stack_check_step(ref, wrapped, st, ctx_vec, f"step{i}")
+
+    # --- 整块部分 reset：env 8..11（第 2 块全部）---
+    ids = torch.tensor([8, 9, 10, 11], dtype=torch.long)
+    ref.reset(ids)
+    wrapped.reset(ids)
+    for i in range(3):
+        st = torch.randn(12, wrapped.chunks[0].states.shape[-1], generator=g)
+        _chunk_stack_check_step(ref, wrapped, st, ctx_vec, f"post_reset_step{i}")
+        # 钉桩必要性证据：块内 n_valid max < 全局 max（naive 分块用块内 max ⇒ 非等价；
+        # _step_window_len 给出的是下一步推进后的全局应有帧数，含非均匀 n_valid 全局耦合）
+        t_global = wrapped._step_window_len()
+        chunk2_local = int(wrapped.chunks[2].n_valid.max().item())
+        _check(chunk2_local < t_global, f"post_reset_step{i}: 测试构造失效（块内 max 应 < 全局 max）")
+
+    # --- 全量 reset（None 路由）后再走一步 ---
+    ref.reset(None)
+    wrapped.reset(None)
+    st = torch.randn(12, wrapped.chunks[0].states.shape[-1], generator=g)
+    _chunk_stack_check_step(ref, wrapped, st, ctx_vec, "post_full_reset_step")
+    return {
+        "bitwise_equal": True,
+        "state_buffers_equal": True,
+        "window_pin_load_bearing": True,
+        "num_envs": 12,
+        "chunk_envs": 4,
+    }
+
+
+def selftest_adapter_chunk_cli_default() -> dict:
+    """新增断言 ②：--adapter-chunk-envs 默认 128 生效于 CLI；0=不分块可显式覆盖。"""
+    ap = build_args()
+    dflt = vars(ap.parse_args([]))["adapter_chunk_envs"]
+    _check(
+        dflt == DEFAULT_ADAPTER_CHUNK_ENVS == 128,
+        f"--adapter-chunk-envs 默认值应为 128，实得 {dflt}",
+    )
+    off = vars(ap.parse_args(["--adapter-chunk-envs", "0"]))["adapter_chunk_envs"]
+    _check(off == 0, "--adapter-chunk-envs 0（不分块）解析失败")
+    explicit = vars(ap.parse_args(["--adapter-chunk-envs", "64"]))["adapter_chunk_envs"]
+    _check(explicit == 64, "--adapter-chunk-envs 64 解析失败")
+    return {"default": int(dflt), "off_override": int(off), "explicit": int(explicit)}
+
+
+def selftest_adapter_chunk_tail_block(seed: int = 1) -> dict:
+    """新增断言 ③：batch 非 chunk 整数倍时尾块处理（10 envs / chunk=4 -> [4,4,2]）。
+
+    覆盖：块划分正确；跨块的**非均匀部分 reset**（env 0=首块、env 9=尾块各一，reset
+    路由换算块内局部 id）；尾块（2 envs）在 t_global 钉桩下与全 batch 逐位一致。
+    """
+    g = torch.Generator().manual_seed(int(seed))
+    ref, wrapped = _build_chunk_test_stack(10, 4, seed=3)
+    _check(
+        [c.num_envs for c in wrapped.chunks] == [4, 4, 2],
+        f"尾块划分应为 [4,4,2]，实得 {[c.num_envs for c in wrapped.chunks]}",
+    )
+    ctx_vec = np.linspace(-0.5, 0.5, 13, dtype=np.float32)
+    state_dim = wrapped.chunks[0].states.shape[-1]
+    for i in range(4):
+        st = torch.randn(10, state_dim, generator=g)
+        _chunk_stack_check_step(ref, wrapped, st, ctx_vec, f"tail_step{i}")
+    # 跨块非均匀 reset：env 0（首块局部 0）+ env 9（尾块局部 1）
+    ids = torch.tensor([0, 9], dtype=torch.long)
+    ref.reset(ids)
+    wrapped.reset(ids)
+    _check(
+        wrapped.chunks[2].n_valid.tolist() == [4, 0],
+        f"尾块 reset 路由错：n_valid={wrapped.chunks[2].n_valid.tolist()}（应 [4,0]）",
+    )
+    for i in range(3):
+        st = torch.randn(10, state_dim, generator=g)
+        _chunk_stack_check_step(ref, wrapped, st, ctx_vec, f"tail_post_reset_step{i}")
+    return {"bitwise_equal": True, "chunk_layout": [4, 4, 2], "cross_block_partial_reset": True}
+
+
 def run_selftest() -> None:
-    """本机 CPU 全量自测（不 import 任何 isaac 模块）。"""
+    """本机 CPU 全量自测（不 import isaaclab；唯一例外：adapter 分块断言经延迟
+    import 加载 eval_author_v0_decoder 的 Layer 1 纯 torch 件，见
+    `_load_author_adapter_layer`——真实 AuthorPolicyAdapter 是等价断言的证据主体）。"""
     torch.manual_seed(0)
     res = {
         "zero_init_identity": selftest_zero_init_identity(),
@@ -2631,6 +2870,10 @@ def run_selftest() -> None:
         "nan_probe_snapshot_guard": selftest_nan_probe_snapshot_guard(),
         # 第七层：消毒器上移到观测端（五路 + 大张量 GPU 侧检测 + dict observations）
         "sanitize_obs_end": selftest_sanitize_obs_end(),
+        # residual 臂 author adapter env 维分块前向（iter0 CUDA OOM 修复）
+        "adapter_chunk_equivalence": selftest_adapter_chunk_equivalence(),
+        "adapter_chunk_cli_default": selftest_adapter_chunk_cli_default(),
+        "adapter_chunk_tail_block": selftest_adapter_chunk_tail_block(),
     }
     print("[d067] selftest 明细: " + json.dumps(res, ensure_ascii=False), flush=True)
     print("D067_SELFTEST_PASS", flush=True)
@@ -2798,6 +3041,131 @@ def load_token_stats(path: str | os.PathLike, *, floor: float = TOKEN_STD_FLOOR)
     return mean, torch.clamp(std, min=float(floor))
 
 
+# ------------------------------------------------- adapter env 维分块前向（OOM 修复）
+# 实证：residual 臂 iter0 崩于 author 全 batch 前向的码嵌入分配（1024env×200帧窗
+# ≈3.75GiB，train_author_v0.py:421 F.embedding）；本节把 N 个 env 拆成 ceil(N/C) 个
+# 独立 AuthorPolicyAdapter 实例逐块前向（峰值 ~1/M），**不改 adapter 本体文件**。
+@contextlib.contextmanager
+def _pinned_window_len(adapter, t_frames: int):
+    """把 adapter 实例的 `window_len` 临时钉到 t_frames（上下文管理器，退出即还原）。
+
+    为什么需要：`AuthorPolicyAdapter.window_len()`（eval_author_v0_decoder.py:603-606）
+    的 t = n_valid 对**整个 adapter batch** 取 max——这是该类唯一的 batch 维耦合。分块
+    后每块只看块内 max，与全 batch 不等价；钉 t_global（各块全局 max = 单 adapter 的
+    window_len()）即恢复逐位等价。实现 = 实例属性覆写（Python 实例 __dict__ 优先于类
+    方法），**不触碰 adapter 本体文件**（轴 B 生产件）；步内即还原，不留驻留状态。
+    """
+    sentinel = object()
+    old = adapter.__dict__.get("window_len", sentinel)
+    adapter.window_len = lambda: int(t_frames)
+    try:
+        yield
+    finally:
+        if old is sentinel:
+            adapter.__dict__.pop("window_len", None)
+        else:
+            adapter.__dict__["window_len"] = old
+
+
+class _ChunkedAuthorAdapter:
+    """AuthorPolicyAdapter 的 env 维分块前向包装（residual 臂 CUDA OOM 修复）。
+
+    结构：持 M = ceil(N/C) 个**独立 AuthorPolicyAdapter 实例**（每实例 num_envs≤C，
+    env 区间不重叠），`step` 逐块调用 `adapter.step(st_chunk, ctx_chunk)` 后 cat。
+
+    **为何分块 ≡ 全 batch（逐位）**：adapter 的自回归状态全部按 env 维独立——
+    codes/states/ctx/n_valid/_last_idx 逐 env 切片（eval_author_v0_decoder.py:579-588）、
+    `_push` 逐 env 滚动（:608-614）、`reset` 只动指定 env（:650-658）、step 的模型前向
+    对 batch 逐行独立 ⇒ 不重叠拆分后每 env 的状态演化与前向输入完全不变。唯一 batch 维
+    耦合 `window_len()` 的处理见 `_step_window_len` + `_pinned_window_len`（每步把各块
+    窗长钉到「`_push` 推进后」的全局 n_valid max，= 单 adapter 同步的 window_len()）。
+
+    已知边界（如实声明）：模型前向逐位一致以「同输入同结果」为前提；不同 batch 形状
+    理论上可能选到不同 GEMM 分块策略产生末位舍入差（argmax 仅近平局时可能翻转）。
+    CPU 与常见 CUDA 路径实测逐位一致；selftest 断言 ①③ 以真实 AuthorPolicyAdapter
+    + mock transformer 逐位验证（含整块部分 reset 的非均匀 n_valid 场景与尾块）。
+    """
+
+    def __init__(self, chunks: list, chunk_envs: int, num_envs: int) -> None:
+        if not chunks:
+            raise ValueError("chunks 须非空")
+        sizes = [int(c.num_envs) for c in chunks]
+        if int(chunk_envs) <= 0 or any(s <= 0 for s in sizes):
+            raise ValueError(f"chunk_envs 与各块 env 数须 > 0：chunk_envs={chunk_envs} sizes={sizes}")
+        if int(num_envs) != sum(sizes):
+            raise ValueError(f"各块 env 数之和 {sum(sizes)} != 总 env 数 {num_envs}")
+        if sizes[0] != int(chunk_envs):
+            raise ValueError(f"首块 env 数 {sizes[0]} 应等于 chunk_envs={chunk_envs}（仅尾块可小）")
+        self.chunks = list(chunks)
+        self.chunk_envs = int(chunk_envs)
+        self.num_envs = int(num_envs)
+        # 同一 device 假设（生产恒单 GPU；t_global 归约要求同 device）
+        self.device = torch.device(chunks[0].n_valid.device)
+        self.win = int(chunks[0].win)
+
+    # -- 统计代理（residual_token_obs 的同源一致性守卫读这两个属性；各块同参构造）--
+    @property
+    def token_mean(self):
+        return self.chunks[0].token_mean
+
+    @property
+    def token_std(self):
+        return self.chunks[0].token_std
+
+    def _step_window_len(self) -> int:
+        """本步（各块 `_push` 之后）应有的前向帧数 t_global（逐位等价的关键）。
+
+        `AuthorPolicyAdapter.step` 的顺序是**先 `_push`（n_valid +1，clamp win）再读
+        `window_len()`**（eval_author_v0_decoder.py:624-625），故分块侧必须按**推进后**
+        的全局 max 取值：
+            t = max_e( min(v_e + 1, win) ) = min( max_e(v_e) + 1, win )
+        其中 v_e 为推进前各 env 的 n_valid（min/max 可交换：单调映射）。
+        torch.stack 一次归约：每控制步只做一次 GPU->CPU 同步（与单 adapter 的
+        `window_len().item()` 同开销量级）。若错用推进前的 max，第 2 步起各块窗长
+        会比单 adapter 少 1 帧（selftest 断言 ① 的连续步检查抓的正是这个）。
+        """
+        n_max = int(torch.stack([ad.n_valid.max() for ad in self.chunks]).max().item())
+        return max(1, min(n_max + 1, self.win))
+
+    @staticmethod
+    def _ctx_for(ctx, off: int, n: int):
+        """把全量 ctx 切到本块：一维（广播向量）原样传，二维按 env 行切片。"""
+        if ctx is None:
+            return None
+        if torch.is_tensor(ctx):
+            return ctx if ctx.ndim == 1 else ctx[off : off + n]
+        arr = np.asarray(ctx)
+        return ctx if arr.ndim == 1 else arr[off : off + n]
+
+    def reset(self, env_ids=None) -> None:
+        """按全局 env id 路由 reset 到所属块（换算块内局部 id）；None = 全部。"""
+        if env_ids is None:
+            for ad in self.chunks:
+                ad.reset(None)
+            return
+        ids = torch.as_tensor(env_ids, device=self.device).reshape(-1).to(torch.long)
+        for k, ad in enumerate(self.chunks):
+            lo = k * self.chunk_envs
+            local = ids[(ids >= lo) & (ids < lo + int(ad.num_envs))] - lo
+            if int(local.numel()) > 0:
+                ad.reset(local)
+
+    def step(self, state_rows, ctx=None) -> torch.Tensor:
+        """逐块 step（块内窗长统一钉 t_global）后 cat -> (N, 64)。"""
+        st = torch.as_tensor(state_rows)
+        if int(st.shape[0]) != self.num_envs:
+            raise ValueError(f"state_rows 首维须 = num_envs={self.num_envs}，得 {tuple(st.shape)}")
+        t_global = self._step_window_len()
+        outs = []
+        off = 0
+        for ad in self.chunks:
+            n = int(ad.num_envs)
+            with _pinned_window_len(ad, t_global):
+                outs.append(ad.step(st[off : off + n], ctx=self._ctx_for(ctx, off, n)))
+            off += n
+        return torch.cat(outs, dim=0)
+
+
 def residual_token_obs(
     env,
     ckpt_path: str,
@@ -2815,6 +3183,7 @@ def residual_token_obs(
     ctx_builder,
     ctx_builder_batch,
     state_builder,
+    adapter_chunk_envs: int = 0,
 ):
     """policy 观测项：(N, 64) 冻结 author adapter 产出的 **token 坐标**（观测常量，无梯度）。
 
@@ -2865,16 +3234,46 @@ def residual_token_obs(
         model, model_cfg = author_loader(ckpt_path, device=str(env.device))
         token_mean_t = torch.as_tensor(token_mean, dtype=torch.float32, device=env.device).reshape(-1)
         token_std_t = torch.as_tensor(token_std, dtype=torch.float32, device=env.device).reshape(-1)
-        adapter = adapter_factory(
-            model,
-            model_cfg,
-            token_mean_t,
-            token_std_t,
-            num_envs=env.num_envs,
-            device=str(env.device),
-            token_alpha=token_alpha,
-            token_bound=token_bound,
-        )
+        # OOM 修复（见模块 docstring「env 维分块前向」）：--adapter-chunk-envs > 0 且小于
+        # 总 env 数时，把 N 个 env 拆成 ceil(N/C) 个独立 adapter 实例逐块前向（峰值 ~1/M）；
+        # 0 = 不分块（单 adapter，旧行为逐字）；C >= N 时分块无意义，同样走单 adapter。
+        chunk_envs = int(adapter_chunk_envs)
+        n_total = int(env.num_envs)
+        if chunk_envs < 0:
+            raise ValueError(f"--adapter-chunk-envs 须 >= 0（0=不分块），收到 {chunk_envs}")
+        if chunk_envs > 0 and chunk_envs < n_total:
+            sizes = [chunk_envs] * (n_total // chunk_envs)
+            if n_total % chunk_envs:
+                sizes.append(n_total % chunk_envs)   # 尾块（非整数倍时）
+            adapter = _ChunkedAuthorAdapter(
+                [
+                    adapter_factory(
+                        model,
+                        model_cfg,
+                        token_mean_t,
+                        token_std_t,
+                        num_envs=s,
+                        device=str(env.device),
+                        token_alpha=token_alpha,
+                        token_bound=token_bound,
+                    )
+                    for s in sizes
+                ],
+                chunk_envs=chunk_envs,
+                num_envs=n_total,
+            )
+        else:
+            sizes = [n_total]
+            adapter = adapter_factory(
+                model,
+                model_cfg,
+                token_mean_t,
+                token_std_t,
+                num_envs=env.num_envs,
+                device=str(env.device),
+                token_alpha=token_alpha,
+                token_bound=token_bound,
+            )
         # 同一份统计守卫：adapter 内部统计（含 floor）须与传入的前向仿射统计逐位一致
         a_mean = getattr(adapter, "token_mean", None)
         a_std = getattr(adapter, "token_std", None)
@@ -2901,7 +3300,8 @@ def residual_token_obs(
             f"[d067] author token 源已装载：ckpt={ckpt_path} token_stats={token_stats} "
             f"vocab={model_cfg.get('vocab')} code_min={model_cfg.get('code_min')} "
             f"intent_pin_max={intent_pin_max} intent_pin_value={intent_pin_value} "
-            f"token_bound={token_bound} terrain={terrain!r}->ctx_terrain={terrain_ctx!r}",
+            f"token_bound={token_bound} terrain={terrain!r}->ctx_terrain={terrain_ctx!r} "
+            f"adapter_chunk_envs={chunk_envs} 块划分={sizes}",
             flush=True,
         )
 
@@ -2998,6 +3398,8 @@ def _token_obs_params(hv, cli, terrain: str) -> tuple[dict, str]:
             [hv.ctx_from_command(float(v), 0.0, 0.0, terrain=terr) for v in np.asarray(vx).reshape(-1)]
         ),
         "state_builder": hv.build_state,
+        # OOM 修复：adapter env 维分块前向块大小（0=不分块；缺省随 CLI 默认 128）
+        "adapter_chunk_envs": int(getattr(cli, "adapter_chunk_envs", DEFAULT_ADAPTER_CHUNK_ENVS)),
     }, ctx_terrain_name
 
 
@@ -3257,6 +3659,7 @@ def _attach_token_obs(cfg, hv, cli, terrain: str) -> dict:
         "token_stats": cli.token_stats,
         "token_bound": params["token_bound"],
         "token_alpha": params["token_alpha"],
+        "adapter_chunk_envs": params["adapter_chunk_envs"],
         "privileged_critic": True,
     }
 
@@ -4637,6 +5040,9 @@ def build_args() -> argparse.ArgumentParser:
     ap.add_argument("--intent-pin-value", type=float, default=DEFAULT_INTENT_PIN_VALUE,
                     help="钉档值（默认 1.0 = 官方 G1 rough lin_vel_x 上界，见假设 A2）")
     ap.add_argument("--token-stats", default="", help="官方 g1-mode token 统计 npz（decoder 仿射/author 逆仿射）")
+    ap.add_argument("--adapter-chunk-envs", type=int, default=DEFAULT_ADAPTER_CHUNK_ENVS,
+                    help="residual 臂 author adapter env 维分块前向块大小（CUDA OOM 修复；"
+                         "0=不分块；默认 128，128 块峰值 ~470MB/次前向）")
     ap.add_argument("--onnx-path", default="", help="SONIC ONNX decoder（残差臂冻结分支；缺省工厂默认）")
     ap.add_argument("--token-alpha", type=float, default=None)
     ap.add_argument("--token-bound", choices=("none", "tanh"), default=None)
