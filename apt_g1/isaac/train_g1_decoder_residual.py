@@ -252,13 +252,32 @@ advantage/returns 消毒器 + critic 前向探针（2026-09-22，第五层修复
        `storage.advantages`/`storage.returns` 做非有限检测；若有：
          ① 用 `_first_nonfinite_probe` 落 `tag=nan_probe` 行（`stage=pre_mid`，含
             n_nonfinite/first_coord，与第四层 pre_mid 语义一致）；
-         ② **写回消毒**：非有限元素置 0（就地写 `storage.advantages/returns`），并落
-            `tag=nan_probe_sanitize` 行（n_nonfinite/n_total/n_zeroed/purged_full/abs_max_before）；
+         ② **写回消毒**：非有限元素置 0（重赋值 `storage.advantages/returns/values`，见第六层），
+            并落 `tag=nan_probe_sanitize` 行（n_nonfinite/n_total/n_zeroed/purged_full/abs_max_before）；
          ③ update 照常进行。
-       **口径（声明）**：24576 中 1 个离群置 0，对归一化后统计量的偏置可忽略；全量 NaN 置 0
-       ⇒ 该 update 退化为**空学习步**（advantage 全 0 → surrogate 梯度 0），但**不毁权重**
-       （严格优于「全灭」：保命带只保进程不崩，权重仍被 NaN 梯度写坏；消毒器保权重）。
-       **只在检测到非有限时才写**：健康路径（advantages/returns 全有限）逐位零改动、零写回。
+       **口径（声明）**：24576 中 1 个离群置 0，对归一化统计量的偏置可忽略。
+       **口径修正（reviewer 2026-09-22）**：归一化先于消毒器 → 实际触发 = `purged_full` 单点
+       场景仅在归一化后（`mini_batch_generator` 的 `(A-mean)/(std+1e-8)` 会把单个 NaN 摊成全量，
+       消毒器在 `orig_update` 前拦下原始单点；storage 层 `purged_full` 只在原始 advantages 已
+       全 NaN 时才出现）。
+       **口径修正（reviewer 2026-09-22）**：全量置 0 = actor 梯度 0 + critic 被拉向 0 + loss 仍报
+       NaN = 权重存活**非空**学习步（critic 仍有梯度路径）；依赖 torch clamp 对 NaN 的反向掩码，
+       2.5.1/2.12 实测一致。
+       **只在检测到非有限时才写**：健康路径（advantages/returns/values 全有限）逐位零改动、零写回。
+
+第六层：消毒器 inference-tensor 写回修复（2026-09-22，第六跑实证）：
+  实证：`storage.advantages` 是 **inference tensor**（rollout 在 `torch.inference_mode()` 下跑，
+  on_policy_runner.py:201）——第五层的**就地** `masked_fill_` 对 inference tensor 抛
+  `RuntimeError: Inplace update to inference tensor outside InferenceMode is not allowed`
+  ⇒ 300 次消毒**全失败**（returns 恰好非 inference tensor 故成功）⇒ update 照吃全 NaN
+  advantages ⇒ 权重全毁。另 critic 探针已抓真源头 = env 507 critic_obs 单点 NaN（1/292864）
+  → critic values 出 NaN。修法 = **重赋值路径**（见 `_sanitize_storage_tensor`）：对
+  `storage.advantages/returns/**values**` 逐个检测非有限，命中则
+  `setattr(storage, name, torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0))`——`nan_to_num`
+  返回**普通 tensor**（非 inference），重赋值绕开 inference-tensor 的就地限制；服务器源码已核
+  `mini_batch_generator` 每次调用**现读** `self.advantages` ⇒ 重赋值对 update 可见。旧就地路径
+  已删（仅留注释说明为何不可用）。`values` 一并消毒 = GAE 输入/源头同层净化。健康路径仍**零写**。
+  obs 不动（rollout 已发生，消毒器同层再动 obs 已晚）；奖励/网络/超参不变。
     2. **critic 前向探针（溯源件）**：`install_std_trajectory_instrument` 仪器安装时对
        `alg.policy.evaluate` 做**只读包装**——每次调用后检查返回 values 的 `isfinite`；发现非有限
        时落 `tag=nan_probe` 行（`stage=critic_forward`，含 values 的 first_coord）+ 该次
@@ -2168,12 +2187,18 @@ def selftest_nan_probe_param_snapshot_flip(seed: int = 0) -> dict:
 
 # ------------------------------------------------- 第五层：消毒器 + critic 探针 selftest
 def selftest_advantage_sanitizer(seed: int = 0) -> dict:
-    """第五层新增断言 ①：advantage/returns 消毒器（非有限置 0 + 写回行 + 健康路径零写回）。
+    """第五/六层新增断言：advantage/returns/values 消毒器（非有限置 0 + 写回行 + 健康零写回）。
 
-    三路：(a) 注入 1 个 NaN advantage -> 该元素置 0、其余逐位不变、落 nan_probe（pre_mid）+ 
-    nan_probe_sanitize 行（n_zeroed=1、purged_full=False）；(b) advantage 全 NaN -> 全置 0、
-    purged_full=True、returns 不受影响；(c) 健康路径 -> advantages/returns 逐位不变、**无**
-    sanitize 行（发射解锁件只在真出 NaN 时动作）。
+    五路：
+      (a) 注入 1 个 NaN advantage -> 该元素置 0、其余逐位不变、落 nan_probe（pre_mid）+
+          nan_probe_sanitize 行（n_zeroed=1、purged_full=False）；
+      (b) advantage 全 NaN -> 全置 0、purged_full=True、returns 不受影响；
+      (c) 健康路径 -> advantages/returns/values **三张量逐位不变且对象引用不变**（零写回）、
+          **无** sanitize 行（发射解锁件只在真出 NaN 时动作）；
+      (d) **第六层：inference tensor 场景** —— 在 `torch.inference_mode()` 下造含 NaN 的
+          advantages（复刻 rollout 产物）→ 消毒成功（重赋值后 storage 属性为**普通 tensor**
+          且无 NaN）；并断言**旧就地路径**（`masked_fill_`）在此场景确实抛错以证明修复必要性；
+      (e) **values 纳入消毒** —— 注入 NaN values -> 被置 0、落 sanitize 行（name=storage.values）。
     """
     import tempfile  # noqa: PLC0415
 
@@ -2189,6 +2214,8 @@ def selftest_advantage_sanitizer(seed: int = 0) -> dict:
         adv = alg.storage.advantages
         _check(adv[0].item() == 0.0, f"NaN advantage 应置 0，实为 {adv[0].item()!r}")
         _check(adv[1].item() == 1.0 and adv[2].item() == 2.0, f"非 NaN 元素被误改：{adv.tolist()}")
+        _check(bool(torch.isfinite(adv).all()), f"消毒后 advantage 仍含非有限值：{adv.tolist()}")
+        _check(not adv.is_inference(), "消毒后 advantage 仍标记为 inference tensor")
         _check(torch.equal(alg.storage.returns, ret_before), "returns 有限却被改写（应零写回）")
         rows = [json.loads(ln) for ln in
                 (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
@@ -2222,21 +2249,82 @@ def selftest_advantage_sanitizer(seed: int = 0) -> dict:
         _check(s["purged_full"] is True, f"全 NaN 应 purged_full=True：{s}")
         _check(s["n_zeroed"] == 4 and s["n_total"] == 4, f"全 NaN 计数错：{s}")
 
-    # --- (c) 健康路径：零写回、无 sanitize 行 ---
+    # --- (c) 健康路径：三张量零写回（逐位 + 对象引用不变）、无 sanitize 行 ---
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         adv = torch.tensor([1.0, -2.0, 3.0], dtype=torch.float32)
         ret = torch.tensor([0.5, 0.25, 0.125], dtype=torch.float32)
+        val = torch.tensor([0.1, 0.2, 0.3], dtype=torch.float32)
         alg = _MockAlgLayer4(adv=adv.clone(), ret=ret.clone(), loss=0.7)
+        alg.storage.values = val.clone()
+        adv_obj, ret_obj, val_obj = alg.storage.advantages, alg.storage.returns, alg.storage.values
         install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
         alg.update()
         _check(torch.equal(alg.storage.advantages, adv), "健康 advantage 被改写（应逐位零写回）")
         _check(torch.equal(alg.storage.returns, ret), "健康 returns 被改写（应逐位零写回）")
+        _check(torch.equal(alg.storage.values, val), "健康 values 被改写（应逐位零写回）")
+        # 零写回 = 连对象引用都不变（重赋值路径在健康路径完全不触发）
+        _check(alg.storage.advantages is adv_obj, "健康 advantage 对象引用被换（应零写回）")
+        _check(alg.storage.returns is ret_obj, "健康 returns 对象引用被换（应零写回）")
+        _check(alg.storage.values is val_obj, "健康 values 对象引用被换（应零写回）")
         rows = [json.loads(ln) for ln in
                 (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
         _check(not any(r.get("tag") == NAN_PROBE_SANITIZE_TAG for r in rows),
                "健康路径不应有 sanitize 行")
-    return {"single_nan_zeroed": True, "full_purged": True, "healthy_bitwise_untouched": True}
+
+    # --- (d) 第六层：inference tensor（rollout 产物）消毒 ---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        with torch.inference_mode():   # 复刻 on_policy_runner.py:201 的 rollout 上下文
+            adv_inf = torch.tensor([float("nan"), 1.0, 2.0], dtype=torch.float32)
+        _check(adv_inf.is_inference(), "构造的 advantage 未标记为 inference tensor（场景不成立）")
+        # 必要性证明：旧就地路径对 inference tensor 抛异常（注意 clone() 会清掉 inference 标记，
+        # 必须直接对 inference tensor 就地写，才复刻旧 `val.masked_fill_` 的真实行为）
+        with torch.inference_mode():
+            legacy_probe = torch.tensor([float("nan"), 1.0, 2.0], dtype=torch.float32)
+        legacy_raised = False
+        try:
+            legacy_probe.masked_fill_(torch.tensor([True, False, False]), 0.0)
+        except RuntimeError as exc:
+            legacy_raised = "InferenceMode" in str(exc)
+        _check(legacy_raised, "旧就地 masked_fill_ 未对 inference tensor 抛错（修复必要性不成立）")
+        alg = _MockAlgLayer4(adv=adv_inf, ret=torch.tensor([3.0, 4.0, 5.0], dtype=torch.float32), loss=0.7)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        adv = alg.storage.advantages
+        _check(not adv.is_inference(), "消毒后 advantage 仍为 inference tensor（重赋值未生效）")
+        _check(bool(torch.isfinite(adv).all()), f"inference tensor 消毒后仍含非有限值：{adv.tolist()}")
+        _check(adv[0].item() == 0.0 and adv[1].item() == 1.0 and adv[2].item() == 2.0,
+               f"inference tensor 消毒值错：{adv.tolist()}")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        san = [r for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG]
+        _check(len(san) == 1 and san[0]["name"] == "storage.advantages" and san[0]["n_zeroed"] == 1,
+               f"inference tensor 场景应落 1 条 advantage sanitize 行：{san}")
+
+    # --- (e) values 纳入消毒（第六层）---
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        alg = _MockAlgLayer4(adv=torch.tensor([1.0, 2.0], dtype=torch.float32),
+                             ret=torch.tensor([1.0, 2.0], dtype=torch.float32), loss=0.7)
+        alg.storage.values = torch.tensor([float("nan"), 0.5], dtype=torch.float32)
+        install_std_trajectory_instrument(alg, out_dir, every=1, phase="selftest")
+        alg.update()
+        val = alg.storage.values
+        _check(val[0].item() == 0.0 and val[1].item() == 0.5, f"NaN values 未置 0：{val.tolist()}")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").strip().splitlines()]
+        san = [r for r in rows if r.get("tag") == NAN_PROBE_SANITIZE_TAG]
+        _check(len(san) == 1 and san[0]["name"] == "storage.values" and san[0]["n_zeroed"] == 1,
+               f"values 应落 1 条 sanitize 行：{san}")
+    return {
+        "single_nan_zeroed": True,
+        "full_purged": True,
+        "healthy_bitwise_untouched": True,
+        "inference_tensor_sanitized": True,
+        "legacy_inplace_raises": True,
+        "values_sanitized": True,
+    }
 
 
 def selftest_critic_forward_probe(seed: int = 0) -> dict:
@@ -3614,18 +3702,30 @@ def _nan_probe_param_diff(pre: dict, post: dict) -> dict:
     return {"param_nan_flipped": flipped, "param_nan_flipped_n": len(flipped)}
 
 
-# ------------------------------------------------- advantage/returns 消毒器（第五层修复）
+# ------------------------------------------------- advantage/returns/values 消毒器（第五/六层修复）
 def _sanitize_storage_tensor(alg, attr: str) -> dict | None:
-    """对 `alg.storage.<attr>` **就地消毒**：非有限元素置 0；返回写回记录，健康/不可及返回 None。
+    """对 `alg.storage.<attr>` 消毒：非有限元素置 0；返回写回记录，健康/不可及返回 None。
 
-    **只在检测到非有限时才写**（健康路径逐位零改动、零写回）。就地写（`masked_fill_`）保持
-    张量对象/dtype/device 不变——rsl_rl `update` 读的就是同一张量，故写回对它是可见的。
+    **第六层修复（inference-tensor 写回）**：`storage.advantages` 由 rollout 在
+    `torch.inference_mode()` 下产生（on_policy_runner.py:201）⇒ 它是 **inference tensor**，
+    对它的**就地** `masked_fill_` 会抛 `RuntimeError: Inplace update to inference tensor
+    outside InferenceMode is not allowed`（第六跑实证：300 次消毒全失败，returns 恰好非
+    inference tensor 故成功）。修法 = **重赋值路径**：`torch.nan_to_num(t, nan=0.0,
+    posinf=0.0, neginf=0.0)` 返回**普通 tensor**（`is_inference()==False`），
+    `setattr(storage, attr, ...)` 绕开 inference-tensor 的就地限制。rsl_rl 2.3.3
+    `mini_batch_generator` 每次调用**现读** `self.advantages`（服务器 .venv_isaac 源码核对），
+    故重赋值对 `update` 可见（就地路径已删除，见下方注释）。
 
-    口径（见模块 docstring 第五层）：24576 中 1 个离群置 0 对归一化统计量偏置可忽略；
-    全量 NaN 置 0 ⇒ 该 update 退化为空学习步（advantage 全 0 → surrogate 梯度 0），但不毁权重。
+    **只在检测到非有限时才写**（健康路径逐位零改动、零写回，对象引用亦不变）。
+
+    口径（见模块 docstring 第五/六层）：单个离群置 0 对归一化统计量偏置可忽略；全量 NaN 置 0
+    ⇒ 权重存活但 actor 梯度 0、critic 被拉向 0（**非空学习步**，见 docstring 口径修正）。
 
     只处理浮点张量；超大张量（> `NAN_PROBE_MAX_TENSOR_ELEMS`）**copy 前置跳过**（消毒器只覆盖
     GAE 输出量级，不碰超大 obs）。**永不抛**（探针/消毒器 best-effort）。
+
+    旧就地路径（已删，仅留说明）：`val.masked_fill_(~finite, 0.0)`——对普通张量可行，但对
+    inference tensor 抛异常（第六层实证），故弃用；改用 `nan_to_num` 重赋值。
     """
     storage = getattr(alg, "storage", None)
     if storage is None:
@@ -3648,13 +3748,16 @@ def _sanitize_storage_tensor(alg, attr: str) -> dict | None:
             fin_mask = torch.isfinite(cpu.reshape(-1))
             if bool(fin_mask.any()):
                 abs_max_before = float(cpu.reshape(-1)[fin_mask].abs().max().item())
-        val.masked_fill_(~finite, 0.0)   # 写回：非有限 -> 0（就地，对象不变）
+        # 重赋值路径（第六层）：nan_to_num 返回普通 tensor，绕开 inference-tensor 就地限制；
+        # 每次调用现读 storage.<attr> 的 update 端可见此写回。
+        clean = torch.nan_to_num(val, nan=0.0, posinf=0.0, neginf=0.0)
+        setattr(storage, attr, clean)
         return {
             "name": f"storage.{attr}",
             "n_nonfinite": n_bad,
             "n_total": n_total,
             "n_zeroed": n_bad,
-            "purged_full": n_bad == n_total,   # 全量 NaN -> 该 update 为空学习步
+            "purged_full": n_bad == n_total,   # 全量 NaN -> actor 梯度 0、critic 被拉向 0（非空学习步）
             "abs_max_before": abs_max_before,
             "first": rec["first"] if rec is not None else None,
             "first_index": rec["first_index"] if rec is not None else None,
@@ -3663,13 +3766,15 @@ def _sanitize_storage_tensor(alg, attr: str) -> dict | None:
 
 
 def _sanitize_advantages_returns(alg) -> list[dict]:
-    """消毒 `storage.advantages` 与 `storage.returns`（orig_update 前调用）；返回写回记录列表。
+    """消毒 `storage.advantages`/`returns`/**`values`**（orig_update 前调用）；返回写回记录列表。
 
-    两项独立 best-effort：任一项失败不影响另一项，也**不影响 update**（异常在此吞掉并警告）。
+    三张量 = GAE 链的输入（values）与输出（advantages/returns），一并消毒（第六层：values 是
+    critic 单点 NaN 的**源头**，同层净化阻断「values NaN → returns NaN → advantage 归一化摊全量」）。
+    各项独立 best-effort：任一项失败不影响其余，也**不影响 update**（异常在此吞掉并警告）。
     返回空列表 = 健康路径（零写回）。
     """
     out: list[dict] = []
-    for attr in ("advantages", "returns"):
+    for attr in ("advantages", "returns", "values"):
         try:
             rec = _sanitize_storage_tensor(alg, attr)
         except Exception as exc:  # noqa: BLE001（消毒器 best-effort：绝不打断训练）
@@ -3856,10 +3961,17 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
     另在 `stage=pre` 追加 obs 逐 key/逐段（official/proprio/token）幅值行。**全部只读**。
 
     **第五层追加（advantage/returns 消毒器 + critic 前向探针）**：
-      - `_wrapped_update` 在 orig_update **之前**消毒 `storage.advantages/returns`（非有限置 0，
-        `tag=nan_probe_sanitize` 行；健康路径零写回）；
+      - `_wrapped_update` 在 orig_update **之前**消毒 `storage.advantages/returns/values`（非有限
+        置 0，`tag=nan_probe_sanitize` 行；健康路径零写回）；
       - 仪器安装时只读包装 `alg.policy.evaluate`：values 非有限时落 `tag=nan_probe`
         行（`stage=critic_forward`）+ 该次 critic_obs 逐 key 幅值（含无噪 height_scan 187）。
+
+    **第六层修复（inference-tensor 写回）**：消毒器改用**重赋值**路径
+    （`setattr(storage, attr, torch.nan_to_num(t, ...))`）——rollout 在 `torch.inference_mode()`
+    下产生的 `storage.advantages` 是 inference tensor，第五层的**就地** `masked_fill_` 对其抛
+    `Inplace update to inference tensor outside InferenceMode is not allowed`（第六跑实证：300 次
+    消毒全失败）⇒ 改用 `nan_to_num` 返回的普通 tensor 重赋值，`update` 每次现读 `storage.<attr>`
+    故可见。`values` 一并纳入消毒（GAE 输入/源头）。健康路径仍零写。
 
     返回 {"log": 路径, "wrapped": True, "sanitize": True, "critic_probe": bool}（供身份信封/打印）。
     **update 数值路径唯一改动 = 消毒器对非有限元素的置 0 写回**（健康路径零改动）；critic 探针只读。
@@ -3967,7 +4079,7 @@ def install_std_trajectory_instrument(alg, out_dir: Path, every: int = 1, phase:
             print(f"[WARN] nan_probe_sanitize 记录失败（忽略）：{type(exc).__name__}: {exc}", flush=True)
 
     def _sanitize() -> None:
-        """orig_update 前消毒 advantages/returns（非有限置 0）；健康路径零写回。"""
+        """orig_update 前消毒 advantages/returns/values（非有限置 0，重赋值路径）；健康路径零写回。"""
         for rec in _sanitize_advantages_returns(alg):
             _emit_sanitize(rec)
 
