@@ -1,0 +1,467 @@
+03:08:09 [d062] 2026-09-23 03:08:09 | torch 2.5.1+cu124 | device cuda | git 5aa08854db2cd3d5395731b23daff358c07682ff
+03:08:09 [corpus] 源 src1_planner_script：train 7485 / heldout 0（manifest 4ff69d20b98717d1d52e1d80c21c434c）
+03:08:09 [corpus] 源 src2_climb_corpus：train 688 / heldout 0（manifest cb0b2329e3745dcf4e2a38b7ec4c7c1b）
+03:08:09 [corpus] 源 src3_official_flat：train 732 / heldout 0（manifest 8294709d850af0f1f3980e6d67de865a）
+03:08:09 [corpus] 源 src4_closed_loop：train 678 / heldout 0（manifest 604dcf6b62a2298ab0c08c71395dbfa5）
+03:08:09 [corpus] 索引完成：train 9583（limit 前 9583）/ heldout 排除 0 / 码域 [-15,13] V=29 / 速度带三档 [0.010778840630908124, 0.18313778405124992, 0.605659280523287]（最大档 0.605659280523287，源=speedA(§5t 锚定标签，整段差分窗内中位)）
+03:08:09 [data] train 9104 / val 479（val_frac=0.05 val_seed=0）
+03:08:09 [model] variant=priv（v1c）n_params=239356229（239.36M）d_model=1280 n_layer=18 n_head=10 ffn=2560 V=29 | chunk=False k=8 prefix=8 | priv=True extra=[]
+03:08:09 [train] variant=priv（v1c）device=cuda amp=torch.bfloat16 grad_ckpt=True | train 9104 窗 / val 479 窗 | batch 64 → 143 步/epoch × 30 epoch（上界 4290 步；收敛判据=尾部 5 eval 点相对变化 <3% 且过相位/降势守卫即停，min_steps=2000）| eval 每 14 步 / ckpt 每 72 步 | chunk_k=8 prefix=8 rollout_w=0.100 ramp=2000 | priv_w=0.050 extra_cols=[]
+03:08:41 [eval] step 14/4290 val_loss=3.5431 val_top1=0.0339 rollout=n/a priv=3.0000 (lr=7.50e-06)
+03:09:11 [eval] step 28/4290 val_loss=3.5254 val_top1=0.0361 rollout=n/a priv=2.9402 (lr=1.45e-05)
+03:09:41 [eval] step 42/4290 val_loss=3.4963 val_top1=0.0401 rollout=n/a priv=2.8508 (lr=2.15e-05)
+03:09:56 [SPEED] step 50/4290 windows=3200 rate=30.2 w/s elapsed=106s ETA=149.6m
+03:10:11 [eval] step 56/4290 val_loss=3.4557 val_top1=0.0462 rollout=n/a priv=2.7443 (lr=2.85e-05)
+03:10:41 [eval] step 70/4290 val_loss=3.4037 val_top1=0.0550 rollout=n/a priv=2.6380 (lr=3.55e-05)
+03:10:45 [ckpt] outputs/d062_r1/priv/ckpt_step0000072.pt
+03:11:11 [eval] step 84/4290 val_loss=3.3422 val_top1=0.0673 rollout=n/a priv=2.5393 (lr=4.25e-05)
+03:11:41 [eval] step 98/4290 val_loss=3.2739 val_top1=0.0826 rollout=n/a priv=2.4573 (lr=4.95e-05)
+03:11:45 [SPEED] step 100/4290 windows=6400 rate=58.6 w/s elapsed=215s ETA=150.2m
+03:12:11 [eval] step 112/4290 val_loss=3.2035 val_top1=0.1017 rollout=n/a priv=2.3865 (lr=5.65e-05)
+03:12:41 [eval] step 126/4290 val_loss=3.1333 val_top1=0.1237 rollout=n/a priv=2.3289 (lr=6.35e-05)
+03:13:11 [eval] step 140/4290 val_loss=3.0659 val_top1=0.1423 rollout=n/a priv=2.2795 (lr=7.05e-05)
+03:13:19 [ckpt] outputs/d062_r1/priv/ckpt_step0000144.pt
+03:13:30 [SPEED] step 150/4290 windows=9552 rate=91.1 w/s elapsed=320s ETA=147.2m
+03:13:41 [eval] step 154/4290 val_loss=3.0044 val_top1=0.1582 rollout=n/a priv=2.2355 (lr=7.75e-05)
+03:14:11 [eval] step 168/4290 val_loss=2.9448 val_top1=0.1735 rollout=n/a priv=2.1926 (lr=8.45e-05)
+03:14:41 [eval] step 182/4290 val_loss=2.8894 val_top1=0.1847 rollout=n/a priv=2.1502 (lr=9.15e-05)
+03:15:11 [eval] step 196/4290 val_loss=2.8380 val_top1=0.1947 rollout=n/a priv=2.1113 (lr=9.85e-05)
+03:15:19 [SPEED] step 200/4290 windows=12752 rate=117.2 w/s elapsed=429s ETA=146.1m
+03:15:41 [eval] step 210/4290 val_loss=2.7904 val_top1=0.2035 rollout=n/a priv=2.0748 (lr=1.06e-04)
+03:15:53 [ckpt] outputs/d062_r1/priv/ckpt_step0000216.pt
+03:16:12 [eval] step 224/4290 val_loss=2.7470 val_top1=0.2103 rollout=n/a priv=2.0424 (lr=1.13e-04)
+03:16:42 [eval] step 238/4290 val_loss=2.7062 val_top1=0.2156 rollout=n/a priv=2.0109 (lr=1.19e-04)
+03:17:04 [SPEED] step 250/4290 windows=15952 rate=151.5 w/s elapsed=534s ETA=143.8m
+03:17:12 [eval] step 252/4290 val_loss=2.6688 val_top1=0.2202 rollout=n/a priv=1.9875 (lr=1.27e-04)
+03:17:42 [eval] step 266/4290 val_loss=2.6348 val_top1=0.2234 rollout=n/a priv=1.9678 (lr=1.34e-04)
+03:18:12 [eval] step 280/4290 val_loss=2.6018 val_top1=0.2289 rollout=n/a priv=1.9507 (lr=1.41e-04)
+03:18:27 [ckpt] outputs/d062_r1/priv/ckpt_step0000288.pt
+03:18:42 [eval] step 294/4290 val_loss=2.5730 val_top1=0.2310 rollout=n/a priv=1.9364 (lr=1.48e-04)
+03:18:53 [SPEED] step 300/4290 windows=19104 rate=175.1 w/s elapsed=643s ETA=142.6m
+03:19:12 [eval] step 308/4290 val_loss=2.5429 val_top1=0.2345 rollout=n/a priv=1.9248 (lr=1.55e-04)
+03:19:42 [eval] step 322/4290 val_loss=2.5142 val_top1=0.2386 rollout=n/a priv=1.9114 (lr=1.61e-04)
+03:20:12 [eval] step 336/4290 val_loss=2.4862 val_top1=0.2407 rollout=n/a priv=1.9028 (lr=1.69e-04)
+03:20:38 [SPEED] step 350/4290 windows=22304 rate=213.5 w/s elapsed=748s ETA=140.3m
+03:20:42 [eval] step 350/4290 val_loss=2.4577 val_top1=0.2480 rollout=n/a priv=1.8939 (lr=1.75e-04)
+03:21:01 [ckpt] outputs/d062_r1/priv/ckpt_step0000360.pt
+03:21:12 [eval] step 364/4290 val_loss=2.4307 val_top1=0.2518 rollout=n/a priv=1.8850 (lr=1.82e-04)
+03:21:42 [eval] step 378/4290 val_loss=2.4054 val_top1=0.2571 rollout=n/a priv=1.8785 (lr=1.89e-04)
+03:22:12 [eval] step 392/4290 val_loss=2.3812 val_top1=0.2622 rollout=n/a priv=1.8713 (lr=1.97e-04)
+03:22:27 [SPEED] step 400/4290 windows=25504 rate=233.0 w/s elapsed=857s ETA=138.9m
+03:22:42 [eval] step 406/4290 val_loss=2.3558 val_top1=0.2654 rollout=n/a priv=1.8643 (lr=2.03e-04)
+03:23:12 [eval] step 420/4290 val_loss=2.3332 val_top1=0.2682 rollout=n/a priv=1.8578 (lr=2.10e-04)
+03:23:35 [ckpt] outputs/d062_r1/priv/ckpt_step0000432.pt
+03:23:42 [eval] step 434/4290 val_loss=2.3127 val_top1=0.2702 rollout=n/a priv=1.8534 (lr=2.18e-04)
+03:24:12 [eval] step 448/4290 val_loss=2.2902 val_top1=0.2749 rollout=n/a priv=1.8480 (lr=2.25e-04)
+03:24:16 [SPEED] step 450/4290 windows=28656 rate=262.8 w/s elapsed=966s ETA=137.4m
+03:24:42 [eval] step 462/4290 val_loss=2.2689 val_top1=0.2770 rollout=n/a priv=1.8439 (lr=2.32e-04)
+03:25:12 [eval] step 476/4290 val_loss=2.2487 val_top1=0.2775 rollout=n/a priv=1.8375 (lr=2.38e-04)
+03:25:42 [eval] step 490/4290 val_loss=2.2318 val_top1=0.2804 rollout=n/a priv=1.8334 (lr=2.46e-04)
+03:26:01 [SPEED] step 500/4290 windows=31856 rate=304.8 w/s elapsed=1071s ETA=135.3m
+03:26:12 [eval] step 504/4290 val_loss=2.2102 val_top1=0.2856 rollout=n/a priv=1.8316 (lr=2.53e-04)
+03:26:13 [ckpt] outputs/d062_r1/priv/ckpt_step0000504.pt
+03:26:43 [eval] step 518/4290 val_loss=2.1939 val_top1=0.2904 rollout=n/a priv=1.8251 (lr=2.60e-04)
+03:27:13 [eval] step 532/4290 val_loss=2.1759 val_top1=0.2916 rollout=n/a priv=1.8209 (lr=2.67e-04)
+03:27:43 [eval] step 546/4290 val_loss=2.1600 val_top1=0.2949 rollout=n/a priv=1.8161 (lr=2.74e-04)
+03:27:50 [SPEED] step 550/4290 windows=35056 rate=320.5 w/s elapsed=1180s ETA=133.7m
+03:28:12 [eval] step 560/4290 val_loss=2.1424 val_top1=0.2969 rollout=n/a priv=1.8126 (lr=2.81e-04)
+03:28:42 [eval] step 574/4290 val_loss=2.1309 val_top1=0.3008 rollout=n/a priv=1.8070 (lr=2.87e-04)
+03:28:46 [ckpt] outputs/d062_r1/priv/ckpt_step0000576.pt
+03:29:13 [eval] step 588/4290 val_loss=2.1183 val_top1=0.3031 rollout=n/a priv=1.8053 (lr=2.95e-04)
+03:29:35 [SPEED] step 600/4290 windows=38208 rate=364.7 w/s elapsed=1285s ETA=131.7m
+03:29:43 [eval] step 602/4290 val_loss=2.1046 val_top1=0.3052 rollout=n/a priv=1.8013 (lr=3.02e-04)
+03:30:13 [eval] step 616/4290 val_loss=2.0894 val_top1=0.3027 rollout=n/a priv=1.8000 (lr=3.09e-04)
+03:30:42 [eval] step 630/4290 val_loss=2.0744 val_top1=0.3051 rollout=n/a priv=1.7957 (lr=3.16e-04)
+03:31:12 [eval] step 644/4290 val_loss=2.0606 val_top1=0.3085 rollout=n/a priv=1.7926 (lr=3.23e-04)
+03:31:20 [ckpt] outputs/d062_r1/priv/ckpt_step0000648.pt
+03:31:24 [SPEED] step 650/4290 windows=41408 rate=378.2 w/s elapsed=1394s ETA=130.1m
+03:31:43 [eval] step 658/4290 val_loss=2.0504 val_top1=0.3088 rollout=n/a priv=1.7910 (lr=3.30e-04)
+03:32:13 [eval] step 672/4290 val_loss=2.0345 val_top1=0.3142 rollout=n/a priv=1.7884 (lr=3.37e-04)
+03:32:43 [eval] step 686/4290 val_loss=2.0225 val_top1=0.3143 rollout=n/a priv=1.7880 (lr=3.44e-04)
+03:33:09 [SPEED] step 700/4290 windows=44608 rate=427.2 w/s elapsed=1499s ETA=128.1m
+03:33:13 [eval] step 700/4290 val_loss=2.0126 val_top1=0.3169 rollout=n/a priv=1.7849 (lr=3.51e-04)
+03:33:43 [eval] step 714/4290 val_loss=1.9957 val_top1=0.3201 rollout=n/a priv=1.7811 (lr=3.58e-04)
+03:33:54 [ckpt] outputs/d062_r1/priv/ckpt_step0000720.pt
+03:34:13 [eval] step 728/4290 val_loss=1.9833 val_top1=0.3196 rollout=n/a priv=1.7826 (lr=3.65e-04)
+03:34:43 [eval] step 742/4290 val_loss=1.9719 val_top1=0.3218 rollout=n/a priv=1.7788 (lr=3.72e-04)
+03:34:57 [SPEED] step 750/4290 windows=47760 rate=438.5 w/s elapsed=1608s ETA=126.5m
+03:35:13 [eval] step 756/4290 val_loss=1.9589 val_top1=0.3305 rollout=n/a priv=1.7785 (lr=3.78e-04)
+03:35:43 [eval] step 770/4290 val_loss=1.9504 val_top1=0.3301 rollout=n/a priv=1.7783 (lr=3.85e-04)
+03:36:13 [eval] step 784/4290 val_loss=1.9387 val_top1=0.3253 rollout=n/a priv=1.7764 (lr=3.92e-04)
+03:36:28 [ckpt] outputs/d062_r1/priv/ckpt_step0000792.pt
+03:36:43 [eval] step 798/4290 val_loss=1.9183 val_top1=0.3342 rollout=n/a priv=1.7755 (lr=4.00e-04)
+03:36:47 [SPEED] step 800/4290 windows=50960 rate=465.8 w/s elapsed=1717s ETA=124.8m
+03:37:13 [eval] step 812/4290 val_loss=1.9090 val_top1=0.3339 rollout=n/a priv=1.7719 (lr=4.06e-04)
+03:37:43 [eval] step 826/4290 val_loss=1.8965 val_top1=0.3350 rollout=n/a priv=1.7706 (lr=4.13e-04)
+03:38:13 [eval] step 840/4290 val_loss=1.8929 val_top1=0.3383 rollout=n/a priv=1.7690 (lr=4.20e-04)
+03:38:31 [SPEED] step 850/4290 windows=54160 rate=518.5 w/s elapsed=1821s ETA=122.9m
+03:38:43 [eval] step 854/4290 val_loss=1.8736 val_top1=0.3447 rollout=n/a priv=1.7700 (lr=4.27e-04)
+03:39:02 [ckpt] outputs/d062_r1/priv/ckpt_step0000864.pt
+03:39:13 [eval] step 868/4290 val_loss=1.8734 val_top1=0.3420 rollout=n/a priv=1.7694 (lr=4.34e-04)
+03:39:43 [eval] step 882/4290 val_loss=1.8542 val_top1=0.3425 rollout=n/a priv=1.7658 (lr=4.41e-04)
+03:40:13 [eval] step 896/4290 val_loss=1.8425 val_top1=0.3450 rollout=n/a priv=1.7682 (lr=4.49e-04)
+03:40:20 [SPEED] step 900/4290 windows=57312 rate=525.3 w/s elapsed=1931s ETA=121.2m
+03:40:43 [eval] step 910/4290 val_loss=1.8326 val_top1=0.3549 rollout=n/a priv=1.7651 (lr=4.56e-04)
+03:41:13 [eval] step 924/4290 val_loss=1.8228 val_top1=0.3521 rollout=n/a priv=1.7654 (lr=4.63e-04)
+03:41:36 [ckpt] outputs/d062_r1/priv/ckpt_step0000936.pt
+03:41:44 [eval] step 938/4290 val_loss=1.8198 val_top1=0.3534 rollout=n/a priv=1.7651 (lr=4.69e-04)
+03:42:06 [SPEED] step 950/4290 windows=60512 rate=574.9 w/s elapsed=2036s ETA=119.3m
+03:42:14 [eval] step 952/4290 val_loss=1.7975 val_top1=0.3590 rollout=n/a priv=1.7625 (lr=4.76e-04)
+03:42:43 [eval] step 966/4290 val_loss=1.7888 val_top1=0.3552 rollout=n/a priv=1.7619 (lr=4.83e-04)
+03:43:13 [eval] step 980/4290 val_loss=1.7768 val_top1=0.3649 rollout=n/a priv=1.7611 (lr=4.91e-04)
+03:43:43 [eval] step 994/4290 val_loss=1.7681 val_top1=0.3646 rollout=n/a priv=1.7618 (lr=4.98e-04)
+03:43:54 [SPEED] step 1000/4290 windows=63712 rate=586.5 w/s elapsed=2144s ETA=117.6m
+03:44:13 [eval] step 1008/4290 val_loss=1.7624 val_top1=0.3682 rollout=n/a priv=1.7618 (lr=5.04e-04)
+03:44:14 [ckpt] outputs/d062_r1/priv/ckpt_step0001008.pt
+03:44:44 [eval] step 1022/4290 val_loss=1.7596 val_top1=0.3665 rollout=n/a priv=1.7674 (lr=5.12e-04)
+03:45:14 [eval] step 1036/4290 val_loss=1.7460 val_top1=0.3703 rollout=n/a priv=1.7617 (lr=5.18e-04)
+03:45:39 [SPEED] step 1050/4290 windows=66864 rate=637.4 w/s elapsed=2249s ETA=115.7m
+03:45:43 [eval] step 1050/4290 val_loss=1.7358 val_top1=0.3767 rollout=n/a priv=1.7603 (lr=5.25e-04)
+03:46:13 [eval] step 1064/4290 val_loss=1.7246 val_top1=0.3719 rollout=n/a priv=1.7592 (lr=5.32e-04)
+03:46:43 [eval] step 1078/4290 val_loss=1.7215 val_top1=0.3739 rollout=n/a priv=1.7604 (lr=5.39e-04)
+03:46:48 [ckpt] outputs/d062_r1/priv/ckpt_step0001080.pt
+03:47:14 [eval] step 1092/4290 val_loss=1.7023 val_top1=0.3863 rollout=n/a priv=1.7585 (lr=5.47e-04)
+03:47:29 [SPEED] step 1100/4290 windows=70064 rate=640.4 w/s elapsed=2359s ETA=114.0m
+03:47:44 [eval] step 1106/4290 val_loss=1.6914 val_top1=0.3881 rollout=n/a priv=1.7572 (lr=5.53e-04)
+03:48:14 [eval] step 1120/4290 val_loss=1.6901 val_top1=0.3805 rollout=n/a priv=1.7577 (lr=5.61e-04)
+03:48:44 [eval] step 1134/4290 val_loss=1.6726 val_top1=0.3874 rollout=n/a priv=1.7576 (lr=5.67e-04)
+03:49:13 [eval] step 1148/4290 val_loss=1.6660 val_top1=0.3903 rollout=n/a priv=1.7583 (lr=5.75e-04)
+03:49:17 [SPEED] step 1150/4290 windows=73216 rate=675.9 w/s elapsed=2467s ETA=112.3m
+03:49:21 [ckpt] outputs/d062_r1/priv/ckpt_step0001152.pt
+03:49:44 [eval] step 1162/4290 val_loss=1.6614 val_top1=0.3905 rollout=n/a priv=1.7562 (lr=5.81e-04)
+03:50:14 [eval] step 1176/4290 val_loss=1.6450 val_top1=0.4005 rollout=n/a priv=1.7552 (lr=5.89e-04)
+03:50:44 [eval] step 1190/4290 val_loss=1.6473 val_top1=0.3960 rollout=n/a priv=1.7588 (lr=5.96e-04)
+03:51:02 [SPEED] step 1200/4290 windows=76416 rate=726.5 w/s elapsed=2572s ETA=110.4m
+03:51:14 [eval] step 1204/4290 val_loss=1.6340 val_top1=0.3989 rollout=n/a priv=1.7581 (lr=6.03e-04)
+03:51:44 [eval] step 1218/4290 val_loss=1.6404 val_top1=0.4016 rollout=n/a priv=1.7576 (lr=6.10e-04)
+03:51:55 [ckpt] outputs/d062_r1/priv/ckpt_step0001224.pt
+03:52:14 [eval] step 1232/4290 val_loss=1.6174 val_top1=0.4025 rollout=n/a priv=1.7549 (lr=6.17e-04)
+03:52:44 [eval] step 1246/4290 val_loss=1.6249 val_top1=0.4041 rollout=n/a priv=1.7582 (lr=6.24e-04)
+03:52:52 [SPEED] step 1250/4290 windows=79616 rate=727.7 w/s elapsed=2682s ETA=108.7m
+03:53:14 [eval] step 1260/4290 val_loss=1.6059 val_top1=0.4118 rollout=n/a priv=1.7544 (lr=6.30e-04)
+03:53:44 [eval] step 1274/4290 val_loss=1.5960 val_top1=0.4086 rollout=n/a priv=1.7550 (lr=6.37e-04)
+03:54:14 [eval] step 1288/4290 val_loss=1.5938 val_top1=0.4125 rollout=n/a priv=1.7560 (lr=6.44e-04)
+03:54:29 [ckpt] outputs/d062_r1/priv/ckpt_step0001296.pt
+03:54:36 [SPEED] step 1300/4290 windows=82768 rate=789.6 w/s elapsed=2786s ETA=106.8m
+03:54:44 [eval] step 1302/4290 val_loss=1.5838 val_top1=0.4181 rollout=n/a priv=1.7552 (lr=6.51e-04)
+03:55:14 [eval] step 1316/4290 val_loss=1.5671 val_top1=0.4196 rollout=n/a priv=1.7600 (lr=6.59e-04)
+03:55:44 [eval] step 1330/4290 val_loss=1.5719 val_top1=0.4201 rollout=n/a priv=1.7529 (lr=6.65e-04)
+03:56:14 [eval] step 1344/4290 val_loss=1.5600 val_top1=0.4219 rollout=n/a priv=1.7536 (lr=6.73e-04)
+03:56:25 [SPEED] step 1350/4290 windows=85968 rate=791.0 w/s elapsed=2895s ETA=105.1m
+03:56:44 [eval] step 1358/4290 val_loss=1.5508 val_top1=0.4261 rollout=n/a priv=1.7551 (lr=6.79e-04)
+03:57:03 [ckpt] outputs/d062_r1/priv/ckpt_step0001368.pt
+03:57:15 [eval] step 1372/4290 val_loss=1.5371 val_top1=0.4288 rollout=n/a priv=1.7568 (lr=6.87e-04)
+03:57:45 [eval] step 1386/4290 val_loss=1.5338 val_top1=0.4275 rollout=n/a priv=1.7640 (lr=6.93e-04)
+03:58:10 [SPEED] step 1400/4290 windows=89168 rate=847.8 w/s elapsed=3000s ETA=103.2m
+03:58:14 [eval] step 1400/4290 val_loss=1.5244 val_top1=0.4285 rollout=n/a priv=1.7621 (lr=7.01e-04)
+03:58:44 [eval] step 1414/4290 val_loss=1.5164 val_top1=0.4351 rollout=n/a priv=1.7610 (lr=7.08e-04)
+03:59:14 [eval] step 1428/4290 val_loss=1.5088 val_top1=0.4338 rollout=n/a priv=1.7522 (lr=7.15e-04)
+03:59:37 [ckpt] outputs/d062_r1/priv/ckpt_step0001440.pt
+03:59:44 [eval] step 1442/4290 val_loss=1.4999 val_top1=0.4379 rollout=n/a priv=1.7538 (lr=7.22e-04)
+03:59:59 [SPEED] step 1450/4290 windows=92320 rate=847.6 w/s elapsed=3109s ETA=101.5m
+04:00:14 [eval] step 1456/4290 val_loss=1.4934 val_top1=0.4422 rollout=n/a priv=1.7536 (lr=7.29e-04)
+04:00:44 [eval] step 1470/4290 val_loss=1.4880 val_top1=0.4399 rollout=n/a priv=1.7526 (lr=7.36e-04)
+04:01:14 [eval] step 1484/4290 val_loss=1.4745 val_top1=0.4475 rollout=n/a priv=1.7524 (lr=7.43e-04)
+04:01:44 [eval] step 1498/4290 val_loss=1.4765 val_top1=0.4480 rollout=n/a priv=1.7557 (lr=7.50e-04)
+04:01:48 [SPEED] step 1500/4290 windows=95520 rate=879.1 w/s elapsed=3218s ETA=99.8m
+04:02:14 [eval] step 1512/4290 val_loss=1.4665 val_top1=0.4511 rollout=n/a priv=1.7588 (lr=7.57e-04)
+04:02:15 [ckpt] outputs/d062_r1/priv/ckpt_step0001512.pt
+04:02:45 [eval] step 1526/4290 val_loss=1.4619 val_top1=0.4502 rollout=n/a priv=1.7545 (lr=7.63e-04)
+04:03:15 [eval] step 1540/4290 val_loss=1.4586 val_top1=0.4561 rollout=n/a priv=1.7509 (lr=7.71e-04)
+04:03:33 [SPEED] step 1550/4290 windows=98720 rate=938.5 w/s elapsed=3323s ETA=97.9m
+04:03:45 [eval] step 1554/4290 val_loss=1.4435 val_top1=0.4586 rollout=n/a priv=1.7598 (lr=7.77e-04)
+04:04:14 [eval] step 1568/4290 val_loss=1.4403 val_top1=0.4589 rollout=n/a priv=1.7558 (lr=7.85e-04)
+04:04:44 [eval] step 1582/4290 val_loss=1.4296 val_top1=0.4655 rollout=n/a priv=1.7532 (lr=7.91e-04)
+04:04:48 [ckpt] outputs/d062_r1/priv/ckpt_step0001584.pt
+04:05:15 [eval] step 1596/4290 val_loss=1.4316 val_top1=0.4629 rollout=n/a priv=1.7572 (lr=7.99e-04)
+04:05:22 [SPEED] step 1600/4290 windows=101872 rate=935.5 w/s elapsed=3432s ETA=96.2m
+04:05:44 [eval] step 1610/4290 val_loss=1.4237 val_top1=0.4617 rollout=n/a priv=1.7559 (lr=8.06e-04)
+04:06:14 [eval] step 1624/4290 val_loss=1.4020 val_top1=0.4687 rollout=n/a priv=1.7602 (lr=8.13e-04)
+04:06:44 [eval] step 1638/4290 val_loss=1.4117 val_top1=0.4683 rollout=n/a priv=1.7598 (lr=8.20e-04)
+04:07:06 [SPEED] step 1650/4290 windows=105072 rate=1006.0 w/s elapsed=3536s ETA=94.3m
+04:07:14 [eval] step 1652/4290 val_loss=1.3959 val_top1=0.4712 rollout=n/a priv=1.7502 (lr=8.26e-04)
+04:07:22 [ckpt] outputs/d062_r1/priv/ckpt_step0001656.pt
+04:07:45 [eval] step 1666/4290 val_loss=1.3883 val_top1=0.4743 rollout=n/a priv=1.7610 (lr=8.34e-04)
+04:08:15 [eval] step 1680/4290 val_loss=1.3826 val_top1=0.4774 rollout=n/a priv=1.7534 (lr=8.40e-04)
+04:08:45 [eval] step 1694/4290 val_loss=1.3787 val_top1=0.4773 rollout=n/a priv=1.7590 (lr=8.48e-04)
+04:08:56 [SPEED] step 1700/4290 windows=108272 rate=990.6 w/s elapsed=3646s ETA=92.6m
+04:09:14 [eval] step 1708/4290 val_loss=1.3696 val_top1=0.4821 rollout=n/a priv=1.7539 (lr=8.55e-04)
+04:09:44 [eval] step 1722/4290 val_loss=1.3650 val_top1=0.4813 rollout=n/a priv=1.7508 (lr=8.62e-04)
+04:09:56 [ckpt] outputs/d062_r1/priv/ckpt_step0001728.pt
+04:10:15 [eval] step 1736/4290 val_loss=1.3633 val_top1=0.4810 rollout=n/a priv=1.7534 (lr=8.69e-04)
+04:10:40 [SPEED] step 1750/4290 windows=111424 rate=1064.5 w/s elapsed=3750s ETA=90.7m
+04:10:45 [eval] step 1750/4290 val_loss=1.3561 val_top1=0.4861 rollout=n/a priv=1.7514 (lr=8.75e-04)
+04:11:14 [eval] step 1764/4290 val_loss=1.3421 val_top1=0.4894 rollout=n/a priv=1.7657 (lr=8.82e-04)
+04:11:44 [eval] step 1778/4290 val_loss=1.3491 val_top1=0.4856 rollout=n/a priv=1.7490 (lr=8.89e-04)
+04:12:14 [eval] step 1792/4290 val_loss=1.3510 val_top1=0.4856 rollout=n/a priv=1.7537 (lr=8.96e-04)
+04:12:29 [SPEED] step 1800/4290 windows=114624 rate=1055.1 w/s elapsed=3859s ETA=89.0m
+04:12:30 [ckpt] outputs/d062_r1/priv/ckpt_step0001800.pt
+04:12:45 [eval] step 1806/4290 val_loss=1.3325 val_top1=0.4961 rollout=n/a priv=1.7539 (lr=9.04e-04)
+04:13:15 [eval] step 1820/4290 val_loss=1.3124 val_top1=0.4989 rollout=n/a priv=1.7607 (lr=9.10e-04)
+04:13:45 [eval] step 1834/4290 val_loss=1.3149 val_top1=0.5012 rollout=n/a priv=1.7584 (lr=9.18e-04)
+04:14:15 [eval] step 1848/4290 val_loss=1.3242 val_top1=0.4948 rollout=n/a priv=1.7574 (lr=9.24e-04)
+04:14:18 [SPEED] step 1850/4290 windows=117824 rate=1076.7 w/s elapsed=3968s ETA=87.2m
+04:14:44 [eval] step 1862/4290 val_loss=1.3121 val_top1=0.4981 rollout=n/a priv=1.7568 (lr=9.32e-04)
+04:15:03 [ckpt] outputs/d062_r1/priv/ckpt_step0001872.pt
+04:15:15 [eval] step 1876/4290 val_loss=1.3066 val_top1=0.5015 rollout=n/a priv=1.7569 (lr=9.38e-04)
+04:15:45 [eval] step 1890/4290 val_loss=1.2906 val_top1=0.5086 rollout=n/a priv=1.7595 (lr=9.46e-04)
+04:16:03 [SPEED] step 1900/4290 windows=120976 rate=1154.6 w/s elapsed=4073s ETA=85.4m
+04:16:15 [eval] step 1904/4290 val_loss=1.2851 val_top1=0.5093 rollout=n/a priv=1.7650 (lr=9.53e-04)
+04:16:45 [eval] step 1918/4290 val_loss=1.2788 val_top1=0.5113 rollout=n/a priv=1.7671 (lr=9.60e-04)
+04:17:15 [eval] step 1932/4290 val_loss=1.2764 val_top1=0.5126 rollout=n/a priv=1.7560 (lr=9.67e-04)
+04:17:37 [ckpt] outputs/d062_r1/priv/ckpt_step0001944.pt
+04:17:45 [eval] step 1946/4290 val_loss=1.2676 val_top1=0.5128 rollout=n/a priv=1.7645 (lr=9.74e-04)
+04:17:53 [SPEED] step 1950/4290 windows=124176 rate=1135.1 w/s elapsed=4183s ETA=83.7m
+04:18:15 [eval] step 1960/4290 val_loss=1.2601 val_top1=0.5165 rollout=n/a priv=1.7585 (lr=9.81e-04)
+04:18:45 [eval] step 1974/4290 val_loss=1.2605 val_top1=0.5173 rollout=n/a priv=1.7490 (lr=9.88e-04)
+04:19:15 [eval] step 1988/4290 val_loss=1.2465 val_top1=0.5186 rollout=n/a priv=1.7640 (lr=9.95e-04)
+04:19:37 [SPEED] step 2000/4290 windows=127376 rate=1220.4 w/s elapsed=4287s ETA=81.8m
+04:19:43 [eval] step 2002/4290 val_loss=1.2335 val_top1=0.5255 rollout=n/a priv=1.7480 (lr=1.00e-03)
+04:20:14 [eval] step 2016/4290 val_loss=1.2415 val_top1=0.5219 rollout=n/a priv=1.7564 (lr=1.00e-03)
+04:20:15 [ckpt] outputs/d062_r1/priv/ckpt_step0002016.pt
+04:20:45 [eval] step 2030/4290 val_loss=1.2315 val_top1=0.5256 rollout=n/a priv=1.7669 (lr=1.00e-03)
+04:21:15 [eval] step 2044/4290 val_loss=1.2232 val_top1=0.5280 rollout=n/a priv=1.7511 (lr=9.99e-04)
+04:21:26 [SPEED] step 2050/4290 windows=130528 rate=1196.5 w/s elapsed=4396s ETA=80.1m
+04:21:45 [eval] step 2058/4290 val_loss=1.2191 val_top1=0.5297 rollout=n/a priv=1.7588 (lr=9.98e-04)
+04:22:15 [eval] step 2072/4290 val_loss=1.2291 val_top1=0.5230 rollout=n/a priv=1.7509 (lr=9.98e-04)
+04:22:45 [eval] step 2086/4290 val_loss=1.2182 val_top1=0.5337 rollout=n/a priv=1.7559 (lr=9.97e-04)
+04:22:49 [ckpt] outputs/d062_r1/priv/ckpt_step0002088.pt
+04:23:11 [SPEED] step 2100/4290 windows=133728 rate=1269.8 w/s elapsed=4501s ETA=78.2m
+04:23:16 [eval] step 2100/4290 val_loss=1.2172 val_top1=0.5272 rollout=n/a priv=1.7567 (lr=9.95e-04)
+04:23:45 [eval] step 2114/4290 val_loss=1.2010 val_top1=0.5350 rollout=n/a priv=1.7509 (lr=9.94e-04)
+04:24:15 [eval] step 2128/4290 val_loss=1.1990 val_top1=0.5367 rollout=n/a priv=1.7549 (lr=9.92e-04)
+04:24:45 [eval] step 2142/4290 val_loss=1.1943 val_top1=0.5356 rollout=n/a priv=1.7521 (lr=9.91e-04)
+04:25:00 [SPEED] step 2150/4290 windows=136880 rate=1263.9 w/s elapsed=4610s ETA=76.5m
+04:25:15 [eval] step 2156/4290 val_loss=1.1871 val_top1=0.5386 rollout=n/a priv=1.7586 (lr=9.89e-04)
+04:25:23 [ckpt] outputs/d062_r1/priv/ckpt_step0002160.pt
+04:25:46 [eval] step 2170/4290 val_loss=1.1849 val_top1=0.5398 rollout=n/a priv=1.7576 (lr=9.87e-04)
+04:26:15 [eval] step 2184/4290 val_loss=1.1724 val_top1=0.5441 rollout=n/a priv=1.7639 (lr=9.84e-04)
+04:26:45 [eval] step 2198/4290 val_loss=1.1694 val_top1=0.5435 rollout=n/a priv=1.7637 (lr=9.82e-04)
+04:26:49 [SPEED] step 2200/4290 windows=140080 rate=1280.3 w/s elapsed=4719s ETA=74.7m
+04:27:15 [eval] step 2212/4290 val_loss=1.1694 val_top1=0.5441 rollout=n/a priv=1.7509 (lr=9.79e-04)
+04:27:45 [eval] step 2226/4290 val_loss=1.1722 val_top1=0.5434 rollout=n/a priv=1.7581 (lr=9.76e-04)
+04:27:57 [ckpt] outputs/d062_r1/priv/ckpt_step0002232.pt
+04:28:16 [eval] step 2240/4290 val_loss=1.1466 val_top1=0.5541 rollout=n/a priv=1.7593 (lr=9.73e-04)
+04:28:34 [SPEED] step 2250/4290 windows=143280 rate=1362.8 w/s elapsed=4824s ETA=72.9m
+04:28:46 [eval] step 2254/4290 val_loss=1.1393 val_top1=0.5564 rollout=n/a priv=1.7629 (lr=9.70e-04)
+04:29:16 [eval] step 2268/4290 val_loss=1.1418 val_top1=0.5545 rollout=n/a priv=1.7503 (lr=9.67e-04)
+04:29:45 [eval] step 2282/4290 val_loss=1.1395 val_top1=0.5572 rollout=n/a priv=1.7589 (lr=9.63e-04)
+04:30:15 [eval] step 2296/4290 val_loss=1.1347 val_top1=0.5582 rollout=n/a priv=1.7545 (lr=9.60e-04)
+04:30:22 [SPEED] step 2300/4290 windows=146432 rate=1353.1 w/s elapsed=4933s ETA=71.1m
+04:30:31 [ckpt] outputs/d062_r1/priv/ckpt_step0002304.pt
+04:30:46 [eval] step 2310/4290 val_loss=1.1321 val_top1=0.5576 rollout=n/a priv=1.7563 (lr=9.56e-04)
+04:31:16 [eval] step 2324/4290 val_loss=1.1367 val_top1=0.5538 rollout=n/a priv=1.7547 (lr=9.52e-04)
+04:31:46 [eval] step 2338/4290 val_loss=1.1185 val_top1=0.5635 rollout=n/a priv=1.7556 (lr=9.48e-04)
+04:32:08 [SPEED] step 2350/4290 windows=149632 rate=1422.0 w/s elapsed=5038s ETA=69.3m
+04:32:16 [eval] step 2352/4290 val_loss=1.1160 val_top1=0.5644 rollout=n/a priv=1.7560 (lr=9.43e-04)
+04:32:45 [eval] step 2366/4290 val_loss=1.1090 val_top1=0.5663 rollout=n/a priv=1.7569 (lr=9.39e-04)
+04:33:05 [ckpt] outputs/d062_r1/priv/ckpt_step0002376.pt
+04:33:16 [eval] step 2380/4290 val_loss=1.1100 val_top1=0.5649 rollout=n/a priv=1.7539 (lr=9.34e-04)
+04:33:46 [eval] step 2394/4290 val_loss=1.1031 val_top1=0.5690 rollout=n/a priv=1.7634 (lr=9.29e-04)
+04:33:57 [SPEED] step 2400/4290 windows=152832 rate=1396.0 w/s elapsed=5147s ETA=67.6m
+04:34:16 [eval] step 2408/4290 val_loss=1.0888 val_top1=0.5732 rollout=n/a priv=1.7514 (lr=9.24e-04)
+04:34:46 [eval] step 2422/4290 val_loss=1.0885 val_top1=0.5749 rollout=n/a priv=1.7595 (lr=9.19e-04)
+04:35:16 [eval] step 2436/4290 val_loss=1.0864 val_top1=0.5755 rollout=n/a priv=1.7469 (lr=9.14e-04)
+04:35:38 [ckpt] outputs/d062_r1/priv/ckpt_step0002448.pt
+04:35:42 [SPEED] step 2450/4290 windows=155984 rate=1487.9 w/s elapsed=5252s ETA=65.7m
+04:35:46 [eval] step 2450/4290 val_loss=1.0883 val_top1=0.5725 rollout=n/a priv=1.7463 (lr=9.09e-04)
+04:36:16 [eval] step 2464/4290 val_loss=1.0783 val_top1=0.5784 rollout=n/a priv=1.7544 (lr=9.03e-04)
+04:36:46 [eval] step 2478/4290 val_loss=1.0728 val_top1=0.5801 rollout=n/a priv=1.7589 (lr=8.97e-04)
+04:37:16 [eval] step 2492/4290 val_loss=1.0701 val_top1=0.5799 rollout=n/a priv=1.7597 (lr=8.91e-04)
+04:37:31 [SPEED] step 2500/4290 windows=159184 rate=1464.0 w/s elapsed=5361s ETA=64.0m
+04:37:46 [eval] step 2506/4290 val_loss=1.0648 val_top1=0.5805 rollout=n/a priv=1.7509 (lr=8.85e-04)
+04:38:16 [eval] step 2520/4290 val_loss=1.0589 val_top1=0.5859 rollout=n/a priv=1.7602 (lr=8.79e-04)
+04:38:17 [ckpt] outputs/d062_r1/priv/ckpt_step0002520.pt
+04:38:46 [eval] step 2534/4290 val_loss=1.0581 val_top1=0.5855 rollout=n/a priv=1.7528 (lr=8.73e-04)
+04:39:16 [eval] step 2548/4290 val_loss=1.0580 val_top1=0.5822 rollout=n/a priv=1.7486 (lr=8.67e-04)
+04:39:20 [SPEED] step 2550/4290 windows=162384 rate=1484.7 w/s elapsed=5470s ETA=62.2m
+04:39:46 [eval] step 2562/4290 val_loss=1.0541 val_top1=0.5850 rollout=n/a priv=1.7531 (lr=8.60e-04)
+04:40:16 [eval] step 2576/4290 val_loss=1.0437 val_top1=0.5898 rollout=n/a priv=1.7495 (lr=8.53e-04)
+04:40:46 [eval] step 2590/4290 val_loss=1.0413 val_top1=0.5903 rollout=n/a priv=1.7577 (lr=8.47e-04)
+04:40:50 [ckpt] outputs/d062_r1/priv/ckpt_step0002592.pt
+04:41:05 [SPEED] step 2600/4290 windows=165536 rate=1580.1 w/s elapsed=5575s ETA=60.4m
+04:41:16 [eval] step 2604/4290 val_loss=1.0403 val_top1=0.5897 rollout=n/a priv=1.7500 (lr=8.40e-04)
+04:41:46 [eval] step 2618/4290 val_loss=1.0290 val_top1=0.5961 rollout=n/a priv=1.7557 (lr=8.33e-04)
+04:42:16 [eval] step 2632/4290 val_loss=1.0316 val_top1=0.5940 rollout=n/a priv=1.7552 (lr=8.25e-04)
+04:42:46 [eval] step 2646/4290 val_loss=1.0267 val_top1=0.5957 rollout=n/a priv=1.7624 (lr=8.18e-04)
+04:42:53 [SPEED] step 2650/4290 windows=168736 rate=1553.2 w/s elapsed=5684s ETA=58.6m
+04:43:16 [eval] step 2660/4290 val_loss=1.0258 val_top1=0.5956 rollout=n/a priv=1.7488 (lr=8.11e-04)
+04:43:24 [ckpt] outputs/d062_r1/priv/ckpt_step0002664.pt
+04:43:47 [eval] step 2674/4290 val_loss=1.0164 val_top1=0.6003 rollout=n/a priv=1.7526 (lr=8.03e-04)
+04:44:17 [eval] step 2688/4290 val_loss=1.0270 val_top1=0.5946 rollout=n/a priv=1.7557 (lr=7.95e-04)
+04:44:39 [SPEED] step 2700/4290 windows=171936 rate=1633.7 w/s elapsed=5789s ETA=56.8m
+04:44:47 [eval] step 2702/4290 val_loss=1.0109 val_top1=0.6014 rollout=n/a priv=1.7536 (lr=7.88e-04)
+04:45:16 [eval] step 2716/4290 val_loss=1.0082 val_top1=0.6017 rollout=n/a priv=1.7462 (lr=7.80e-04)
+04:45:46 [eval] step 2730/4290 val_loss=1.0067 val_top1=0.6023 rollout=n/a priv=1.7494 (lr=7.72e-04)
+04:45:58 [ckpt] outputs/d062_r1/priv/ckpt_step0002736.pt
+04:46:17 [eval] step 2744/4290 val_loss=1.0030 val_top1=0.6031 rollout=n/a priv=1.7537 (lr=7.64e-04)
+04:46:28 [SPEED] step 2750/4290 windows=175088 rate=1606.0 w/s elapsed=5898s ETA=55.0m
+04:46:47 [eval] step 2758/4290 val_loss=0.9946 val_top1=0.6086 rollout=n/a priv=1.7544 (lr=7.56e-04)
+04:47:17 [eval] step 2772/4290 val_loss=0.9938 val_top1=0.6068 rollout=n/a priv=1.7534 (lr=7.47e-04)
+04:47:46 [eval] step 2786/4290 val_loss=1.0008 val_top1=0.6040 rollout=n/a priv=1.7517 (lr=7.39e-04)
+04:48:12 [SPEED] step 2800/4290 windows=178288 rate=1706.2 w/s elapsed=6002s ETA=53.2m
+04:48:16 [eval] step 2800/4290 val_loss=0.9881 val_top1=0.6083 rollout=n/a priv=1.7497 (lr=7.31e-04)
+04:48:32 [ckpt] outputs/d062_r1/priv/ckpt_step0002808.pt
+04:48:47 [eval] step 2814/4290 val_loss=0.9913 val_top1=0.6077 rollout=n/a priv=1.7485 (lr=7.22e-04)
+04:49:17 [eval] step 2828/4290 val_loss=0.9816 val_top1=0.6116 rollout=n/a priv=1.7509 (lr=7.14e-04)
+04:49:47 [eval] step 2842/4290 val_loss=0.9823 val_top1=0.6101 rollout=n/a priv=1.7483 (lr=7.05e-04)
+04:50:02 [SPEED] step 2850/4290 windows=181488 rate=1658.9 w/s elapsed=6112s ETA=51.5m
+04:50:17 [eval] step 2856/4290 val_loss=0.9753 val_top1=0.6135 rollout=n/a priv=1.7510 (lr=6.96e-04)
+04:50:46 [eval] step 2870/4290 val_loss=0.9736 val_top1=0.6165 rollout=n/a priv=1.7474 (lr=6.87e-04)
+04:51:06 [ckpt] outputs/d062_r1/priv/ckpt_step0002880.pt
+04:51:17 [eval] step 2884/4290 val_loss=0.9686 val_top1=0.6167 rollout=n/a priv=1.7517 (lr=6.78e-04)
+04:51:47 [eval] step 2898/4290 val_loss=0.9729 val_top1=0.6129 rollout=n/a priv=1.7536 (lr=6.70e-04)
+04:51:51 [SPEED] step 2900/4290 windows=184640 rate=1693.8 w/s elapsed=6221s ETA=49.7m
+04:52:17 [eval] step 2912/4290 val_loss=0.9636 val_top1=0.6183 rollout=n/a priv=1.7532 (lr=6.61e-04)
+04:52:47 [eval] step 2926/4290 val_loss=0.9632 val_top1=0.6176 rollout=n/a priv=1.7433 (lr=6.51e-04)
+04:53:17 [eval] step 2940/4290 val_loss=0.9554 val_top1=0.6210 rollout=n/a priv=1.7476 (lr=6.42e-04)
+04:53:35 [SPEED] step 2950/4290 windows=187840 rate=1799.6 w/s elapsed=6325s ETA=47.9m
+04:53:39 [ckpt] outputs/d062_r1/priv/ckpt_step0002952.pt
+04:53:47 [eval] step 2954/4290 val_loss=0.9567 val_top1=0.6213 rollout=n/a priv=1.7501 (lr=6.33e-04)
+04:54:17 [eval] step 2968/4290 val_loss=0.9557 val_top1=0.6198 rollout=n/a priv=1.7509 (lr=6.24e-04)
+04:54:47 [eval] step 2982/4290 val_loss=0.9472 val_top1=0.6234 rollout=n/a priv=1.7478 (lr=6.15e-04)
+04:55:17 [eval] step 2996/4290 val_loss=0.9462 val_top1=0.6246 rollout=n/a priv=1.7488 (lr=6.05e-04)
+04:55:24 [SPEED] step 3000/4290 windows=191040 rate=1746.0 w/s elapsed=6435s ETA=46.1m
+04:55:47 [eval] step 3010/4290 val_loss=0.9456 val_top1=0.6236 rollout=n/a priv=1.7478 (lr=5.96e-04)
+04:56:16 [eval] step 3024/4290 val_loss=0.9421 val_top1=0.6268 rollout=n/a priv=1.7439 (lr=5.87e-04)
+04:56:17 [ckpt] outputs/d062_r1/priv/ckpt_step0003024.pt
+04:56:47 [eval] step 3038/4290 val_loss=0.9459 val_top1=0.6252 rollout=n/a priv=1.7459 (lr=5.77e-04)
+04:57:09 [SPEED] step 3050/4290 windows=194192 rate=1853.2 w/s elapsed=6539s ETA=44.3m
+04:57:17 [eval] step 3052/4290 val_loss=0.9352 val_top1=0.6292 rollout=n/a priv=1.7472 (lr=5.68e-04)
+04:57:47 [eval] step 3066/4290 val_loss=0.9298 val_top1=0.6308 rollout=n/a priv=1.7474 (lr=5.59e-04)
+04:58:17 [eval] step 3080/4290 val_loss=0.9298 val_top1=0.6312 rollout=n/a priv=1.7473 (lr=5.49e-04)
+04:58:47 [eval] step 3094/4290 val_loss=0.9294 val_top1=0.6307 rollout=n/a priv=1.7436 (lr=5.40e-04)
+04:58:51 [ckpt] outputs/d062_r1/priv/ckpt_step0003096.pt
+04:58:59 [SPEED] step 3100/4290 windows=197392 rate=1804.3 w/s elapsed=6649s ETA=42.5m
+04:59:17 [eval] step 3108/4290 val_loss=0.9282 val_top1=0.6315 rollout=n/a priv=1.7454 (lr=5.30e-04)
+04:59:47 [eval] step 3122/4290 val_loss=0.9231 val_top1=0.6333 rollout=n/a priv=1.7485 (lr=5.21e-04)
+05:00:17 [eval] step 3136/4290 val_loss=0.9257 val_top1=0.6313 rollout=n/a priv=1.7479 (lr=5.11e-04)
+05:00:43 [SPEED] step 3150/4290 windows=200544 rate=1927.6 w/s elapsed=6753s ETA=40.7m
+05:00:47 [eval] step 3150/4290 val_loss=0.9195 val_top1=0.6343 rollout=n/a priv=1.7524 (lr=5.02e-04)
+05:01:17 [eval] step 3164/4290 val_loss=0.9200 val_top1=0.6335 rollout=n/a priv=1.7499 (lr=4.92e-04)
+05:01:25 [ckpt] outputs/d062_r1/priv/ckpt_step0003168.pt
+05:01:47 [eval] step 3178/4290 val_loss=0.9168 val_top1=0.6350 rollout=n/a priv=1.7469 (lr=4.83e-04)
+05:02:17 [eval] step 3192/4290 val_loss=0.9134 val_top1=0.6361 rollout=n/a priv=1.7493 (lr=4.73e-04)
+05:02:32 [SPEED] step 3200/4290 windows=203744 rate=1864.0 w/s elapsed=6862s ETA=39.0m
+05:02:47 [eval] step 3206/4290 val_loss=0.9091 val_top1=0.6383 rollout=n/a priv=1.7469 (lr=4.64e-04)
+05:03:17 [eval] step 3220/4290 val_loss=0.9088 val_top1=0.6377 rollout=n/a priv=1.7485 (lr=4.54e-04)
+05:03:47 [eval] step 3234/4290 val_loss=0.9060 val_top1=0.6390 rollout=n/a priv=1.7471 (lr=4.45e-04)
+05:03:59 [ckpt] outputs/d062_r1/priv/ckpt_step0003240.pt
+05:04:18 [eval] step 3248/4290 val_loss=0.9037 val_top1=0.6403 rollout=n/a priv=1.7453 (lr=4.35e-04)
+05:04:21 [SPEED] step 3250/4290 windows=206944 rate=1890.4 w/s elapsed=6972s ETA=37.2m
+05:04:48 [eval] step 3262/4290 val_loss=0.9015 val_top1=0.6417 rollout=n/a priv=1.7437 (lr=4.26e-04)
+05:05:17 [eval] step 3276/4290 val_loss=0.8996 val_top1=0.6424 rollout=n/a priv=1.7468 (lr=4.17e-04)
+05:05:47 [eval] step 3290/4290 val_loss=0.8993 val_top1=0.6411 rollout=n/a priv=1.7460 (lr=4.07e-04)
+05:06:05 [SPEED] step 3300/4290 windows=210096 rate=2019.8 w/s elapsed=7076s ETA=35.4m
+05:06:17 [eval] step 3304/4290 val_loss=0.8956 val_top1=0.6428 rollout=n/a priv=1.7501 (lr=3.98e-04)
+05:06:32 [ckpt] outputs/d062_r1/priv/ckpt_step0003312.pt
+05:06:48 [eval] step 3318/4290 val_loss=0.8959 val_top1=0.6426 rollout=n/a priv=1.7485 (lr=3.89e-04)
+05:07:18 [eval] step 3332/4290 val_loss=0.8933 val_top1=0.6434 rollout=n/a priv=1.7466 (lr=3.79e-04)
+05:07:47 [eval] step 3346/4290 val_loss=0.8906 val_top1=0.6450 rollout=n/a priv=1.7459 (lr=3.70e-04)
+05:07:55 [SPEED] step 3350/4290 windows=213296 rate=1950.2 w/s elapsed=7185s ETA=33.6m
+05:08:17 [eval] step 3360/4290 val_loss=0.8892 val_top1=0.6454 rollout=n/a priv=1.7436 (lr=3.61e-04)
+05:08:47 [eval] step 3374/4290 val_loss=0.8871 val_top1=0.6461 rollout=n/a priv=1.7434 (lr=3.52e-04)
+05:09:06 [ckpt] outputs/d062_r1/priv/ckpt_step0003384.pt
+05:09:18 [eval] step 3388/4290 val_loss=0.8859 val_top1=0.6473 rollout=n/a priv=1.7433 (lr=3.43e-04)
+05:09:40 [SPEED] step 3400/4290 windows=216496 rate=2056.7 w/s elapsed=7290s ETA=31.8m
+05:09:48 [eval] step 3402/4290 val_loss=0.8812 val_top1=0.6485 rollout=n/a priv=1.7445 (lr=3.34e-04)
+05:10:18 [eval] step 3416/4290 val_loss=0.8817 val_top1=0.6490 rollout=n/a priv=1.7439 (lr=3.25e-04)
+05:10:48 [eval] step 3430/4290 val_loss=0.8798 val_top1=0.6493 rollout=n/a priv=1.7452 (lr=3.16e-04)
+05:11:17 [eval] step 3444/4290 val_loss=0.8806 val_top1=0.6493 rollout=n/a priv=1.7471 (lr=3.08e-04)
+05:11:28 [SPEED] step 3450/4290 windows=219648 rate=2028.6 w/s elapsed=7398s ETA=30.0m
+05:11:40 [ckpt] outputs/d062_r1/priv/ckpt_step0003456.pt
+05:11:48 [eval] step 3458/4290 val_loss=0.8781 val_top1=0.6499 rollout=n/a priv=1.7457 (lr=2.99e-04)
+05:12:18 [eval] step 3472/4290 val_loss=0.8755 val_top1=0.6512 rollout=n/a priv=1.7460 (lr=2.90e-04)
+05:12:48 [eval] step 3486/4290 val_loss=0.8747 val_top1=0.6514 rollout=n/a priv=1.7450 (lr=2.82e-04)
+05:13:14 [SPEED] step 3500/4290 windows=222848 rate=2117.6 w/s elapsed=7504s ETA=28.2m
+05:13:18 [eval] step 3500/4290 val_loss=0.8726 val_top1=0.6518 rollout=n/a priv=1.7491 (lr=2.73e-04)
+05:13:48 [eval] step 3514/4290 val_loss=0.8717 val_top1=0.6524 rollout=n/a priv=1.7453 (lr=2.65e-04)
+05:14:18 [eval] step 3528/4290 val_loss=0.8696 val_top1=0.6535 rollout=n/a priv=1.7433 (lr=2.57e-04)
+05:14:18 [ckpt] outputs/d062_r1/priv/ckpt_step0003528.pt
+05:14:48 [eval] step 3542/4290 val_loss=0.8692 val_top1=0.6534 rollout=n/a priv=1.7438 (lr=2.49e-04)
+05:15:03 [SPEED] step 3550/4290 windows=226048 rate=2065.4 w/s elapsed=7613s ETA=26.4m
+05:15:18 [eval] step 3556/4290 val_loss=0.8670 val_top1=0.6546 rollout=n/a priv=1.7449 (lr=2.40e-04)
+05:15:48 [eval] step 3570/4290 val_loss=0.8663 val_top1=0.6547 rollout=n/a priv=1.7464 (lr=2.32e-04)
+05:16:18 [eval] step 3584/4290 val_loss=0.8647 val_top1=0.6552 rollout=n/a priv=1.7463 (lr=2.25e-04)
+05:16:48 [eval] step 3598/4290 val_loss=0.8639 val_top1=0.6553 rollout=n/a priv=1.7450 (lr=2.17e-04)
+05:16:51 [SPEED] step 3600/4290 windows=229200 rate=2118.8 w/s elapsed=7721s ETA=24.7m
+05:16:52 [ckpt] outputs/d062_r1/priv/ckpt_step0003600.pt
+05:17:18 [eval] step 3612/4290 val_loss=0.8626 val_top1=0.6561 rollout=n/a priv=1.7444 (lr=2.09e-04)
+05:17:48 [eval] step 3626/4290 val_loss=0.8621 val_top1=0.6561 rollout=n/a priv=1.7430 (lr=2.02e-04)
+05:18:18 [eval] step 3640/4290 val_loss=0.8615 val_top1=0.6562 rollout=n/a priv=1.7459 (lr=1.94e-04)
+05:18:36 [SPEED] step 3650/4290 windows=232400 rate=2208.7 w/s elapsed=7827s ETA=22.9m
+05:18:48 [eval] step 3654/4290 val_loss=0.8597 val_top1=0.6569 rollout=n/a priv=1.7448 (lr=1.87e-04)
+05:19:18 [eval] step 3668/4290 val_loss=0.8591 val_top1=0.6574 rollout=n/a priv=1.7444 (lr=1.80e-04)
+05:19:26 [ckpt] outputs/d062_r1/priv/ckpt_step0003672.pt
+05:19:49 [eval] step 3682/4290 val_loss=0.8585 val_top1=0.6572 rollout=n/a priv=1.7443 (lr=1.72e-04)
+05:20:19 [eval] step 3696/4290 val_loss=0.8574 val_top1=0.6575 rollout=n/a priv=1.7446 (lr=1.65e-04)
+05:20:26 [SPEED] step 3700/4290 windows=235600 rate=2152.7 w/s elapsed=7936s ETA=21.1m
+05:20:48 [eval] step 3710/4290 val_loss=0.8570 val_top1=0.6579 rollout=n/a priv=1.7444 (lr=1.59e-04)
+05:21:18 [eval] step 3724/4290 val_loss=0.8555 val_top1=0.6587 rollout=n/a priv=1.7463 (lr=1.52e-04)
+05:21:48 [eval] step 3738/4290 val_loss=0.8547 val_top1=0.6587 rollout=n/a priv=1.7471 (lr=1.45e-04)
+05:22:00 [ckpt] outputs/d062_r1/priv/ckpt_step0003744.pt
+05:22:11 [SPEED] step 3750/4290 windows=238752 rate=2278.1 w/s elapsed=8041s ETA=19.3m
+05:22:19 [eval] step 3752/4290 val_loss=0.8542 val_top1=0.6591 rollout=n/a priv=1.7455 (lr=1.39e-04)
+05:22:48 [eval] step 3766/4290 val_loss=0.8534 val_top1=0.6593 rollout=n/a priv=1.7453 (lr=1.32e-04)
+05:23:18 [eval] step 3780/4290 val_loss=0.8528 val_top1=0.6594 rollout=n/a priv=1.7457 (lr=1.26e-04)
+05:23:48 [eval] step 3794/4290 val_loss=0.8525 val_top1=0.6597 rollout=n/a priv=1.7443 (lr=1.20e-04)
+05:23:59 [SPEED] step 3800/4290 windows=241952 rate=2229.7 w/s elapsed=8149s ETA=17.5m
+05:24:18 [eval] step 3808/4290 val_loss=0.8518 val_top1=0.6600 rollout=n/a priv=1.7437 (lr=1.14e-04)
+05:24:34 [ckpt] outputs/d062_r1/priv/ckpt_step0003816.pt
+05:24:49 [eval] step 3822/4290 val_loss=0.8508 val_top1=0.6605 rollout=n/a priv=1.7450 (lr=1.09e-04)
+05:25:19 [eval] step 3836/4290 val_loss=0.8501 val_top1=0.6607 rollout=n/a priv=1.7441 (lr=1.03e-04)
+05:25:44 [SPEED] step 3850/4290 windows=245152 rate=2331.6 w/s elapsed=8254s ETA=15.7m
+05:25:49 [eval] step 3850/4290 val_loss=0.8494 val_top1=0.6608 rollout=n/a priv=1.7453 (lr=9.75e-05)
+05:26:18 [eval] step 3864/4290 val_loss=0.8498 val_top1=0.6609 rollout=n/a priv=1.7446 (lr=9.22e-05)
+05:26:48 [eval] step 3878/4290 val_loss=0.8491 val_top1=0.6612 rollout=n/a priv=1.7442 (lr=8.70e-05)
+05:27:07 [ckpt] outputs/d062_r1/priv/ckpt_step0003888.pt
+05:27:19 [eval] step 3892/4290 val_loss=0.8486 val_top1=0.6611 rollout=n/a priv=1.7441 (lr=8.20e-05)
+05:27:33 [SPEED] step 3900/4290 windows=248304 rate=2276.6 w/s elapsed=8364s ETA=13.9m
+05:27:49 [eval] step 3906/4290 val_loss=0.8482 val_top1=0.6615 rollout=n/a priv=1.7443 (lr=7.71e-05)
+05:28:19 [eval] step 3920/4290 val_loss=0.8479 val_top1=0.6615 rollout=n/a priv=1.7445 (lr=7.24e-05)
+05:28:48 [eval] step 3934/4290 val_loss=0.8473 val_top1=0.6617 rollout=n/a priv=1.7443 (lr=6.79e-05)
+05:29:18 [eval] step 3948/4290 val_loss=0.8468 val_top1=0.6620 rollout=n/a priv=1.7441 (lr=6.35e-05)
+05:29:22 [SPEED] step 3950/4290 windows=251504 rate=2313.9 w/s elapsed=8472s ETA=12.2m
+05:29:41 [ckpt] outputs/d062_r1/priv/ckpt_step0003960.pt
+05:29:49 [eval] step 3962/4290 val_loss=0.8464 val_top1=0.6622 rollout=n/a priv=1.7445 (lr=5.93e-05)
+05:30:19 [eval] step 3976/4290 val_loss=0.8460 val_top1=0.6623 rollout=n/a priv=1.7444 (lr=5.52e-05)
+05:30:49 [eval] step 3990/4290 val_loss=0.8458 val_top1=0.6625 rollout=n/a priv=1.7444 (lr=5.13e-05)
+05:31:07 [SPEED] step 4000/4290 windows=254704 rate=2421.5 w/s elapsed=8577s ETA=10.4m
+05:31:17 [eval] step 4004/4290 val_loss=0.8456 val_top1=0.6624 rollout=n/a priv=1.7449 (lr=4.76e-05)
+05:31:48 [eval] step 4018/4290 val_loss=0.8455 val_top1=0.6625 rollout=n/a priv=1.7449 (lr=4.41e-05)
+05:32:18 [eval] step 4032/4290 val_loss=0.8455 val_top1=0.6625 rollout=n/a priv=1.7446 (lr=4.07e-05)
+05:32:19 [ckpt] outputs/d062_r1/priv/ckpt_step0004032.pt
+05:32:49 [eval] step 4046/4290 val_loss=0.8449 val_top1=0.6626 rollout=n/a priv=1.7449 (lr=3.75e-05)
+05:32:56 [SPEED] step 4050/4290 windows=257856 rate=2366.4 w/s elapsed=8686s ETA=8.6m
+05:33:19 [eval] step 4060/4290 val_loss=0.8448 val_top1=0.6627 rollout=n/a priv=1.7450 (lr=3.44e-05)
+05:33:49 [eval] step 4074/4290 val_loss=0.8450 val_top1=0.6627 rollout=n/a priv=1.7451 (lr=3.16e-05)
+05:34:19 [eval] step 4088/4290 val_loss=0.8446 val_top1=0.6627 rollout=n/a priv=1.7444 (lr=2.89e-05)
+05:34:41 [SPEED] step 4100/4290 windows=261056 rate=2496.7 w/s elapsed=8791s ETA=6.8m
+05:34:49 [eval] step 4102/4290 val_loss=0.8443 val_top1=0.6629 rollout=n/a priv=1.7444 (lr=2.64e-05)
+05:34:53 [ckpt] outputs/d062_r1/priv/ckpt_step0004104.pt
+05:35:19 [eval] step 4116/4290 val_loss=0.8442 val_top1=0.6629 rollout=n/a priv=1.7443 (lr=2.40e-05)
+05:35:49 [eval] step 4130/4290 val_loss=0.8441 val_top1=0.6631 rollout=n/a priv=1.7443 (lr=2.19e-05)
+05:36:19 [eval] step 4144/4290 val_loss=0.8439 val_top1=0.6632 rollout=n/a priv=1.7444 (lr=1.99e-05)
+05:36:30 [SPEED] step 4150/4290 windows=264208 rate=2421.9 w/s elapsed=8900s ETA=5.0m
+05:36:49 [eval] step 4158/4290 val_loss=0.8439 val_top1=0.6632 rollout=n/a priv=1.7442 (lr=1.81e-05)
+05:37:19 [eval] step 4172/4290 val_loss=0.8438 val_top1=0.6632 rollout=n/a priv=1.7443 (lr=1.65e-05)
+05:37:27 [ckpt] outputs/d062_r1/priv/ckpt_step0004176.pt
+05:37:49 [eval] step 4186/4290 val_loss=0.8437 val_top1=0.6632 rollout=n/a priv=1.7441 (lr=1.50e-05)
+05:38:15 [SPEED] step 4200/4290 windows=267408 rate=2542.3 w/s elapsed=9005s ETA=3.2m
+05:38:19 [eval] step 4200/4290 val_loss=0.8436 val_top1=0.6633 rollout=n/a priv=1.7442 (lr=1.38e-05)
+05:38:49 [eval] step 4214/4290 val_loss=0.8435 val_top1=0.6633 rollout=n/a priv=1.7444 (lr=1.27e-05)
+05:39:19 [eval] step 4228/4290 val_loss=0.8434 val_top1=0.6633 rollout=n/a priv=1.7443 (lr=1.18e-05)
+05:39:49 [eval] step 4242/4290 val_loss=0.8433 val_top1=0.6633 rollout=n/a priv=1.7442 (lr=1.11e-05)
+05:40:01 [ckpt] outputs/d062_r1/priv/ckpt_step0004248.pt
+05:40:04 [SPEED] step 4250/4290 windows=270608 rate=2472.5 w/s elapsed=9115s ETA=1.4m
+05:40:20 [eval] step 4256/4290 val_loss=0.8432 val_top1=0.6633 rollout=n/a priv=1.7442 (lr=1.05e-05)
+05:40:50 [eval] step 4270/4290 val_loss=0.8433 val_top1=0.6634 rollout=n/a priv=1.7444 (lr=1.02e-05)
+05:41:19 [eval] step 4284/4290 val_loss=0.8433 val_top1=0.6634 rollout=n/a priv=1.7444 (lr=1.00e-05)
+05:41:33 [eval] step 4290/4290 val_loss=0.8433 val_top1=0.6634 rollout=n/a priv=1.7443 (lr=1.00e-05)
+05:41:34 [ckpt] final outputs/d062_r1/priv/ckpt_final.pt（4290 步，9203.7s）
+05:41:34 [gate] D062_GATE_PASS
+05:41:34 [gate]   c1_finite_complete: PASS（无 NaN/Inf 且完成 epoch 预算（或 early_stop / 收敛判据停止））
+05:41:34 [gate]   c2_val_loss_converged: PASS（尾部 5 eval 点 (max-min)/min<0.03 且尾部均值 < 首 eval 点）
+05:41:34 [gate]   c3_val_top1: PASS（val top1 ≥ 0.185（5×均匀基线 1/29 从严））
+05:41:34 [gate]   c4_leak_audit: PASS（leak_audit heldout_entered==0（训练索引 heldout 零进入））
+05:41:35 [d062] 完成：variant=priv D062_GATE_PASS | meta.json/train.log/gate.json/ckpt* → outputs/d062_r1/priv
