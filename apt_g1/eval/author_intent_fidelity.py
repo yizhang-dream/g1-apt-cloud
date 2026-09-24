@@ -53,6 +53,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 # 模块级默认常量（train_author_v0 同名常量不存在时的兜底；实读仍以该模块为准）
 WIN = 200
@@ -162,7 +163,7 @@ def load_v1_module(path=None):
 class _FallbackModel(nn.Module):
     """train_author_v0.AuthorV0Transformer 的等价副本（仅 import 失败时启用）。
 
-    结构必须与上游一致（selftest 里有逐数值 allclose 断言守护），改动请同步上游。
+    结构必须与上游一致（selftest 里有逐数值等价断言守护），改动请同步上游。
     """
 
     def __init__(self, vocab, state_dim=STATE_DIM, d_model=768, n_layer=11,
@@ -186,9 +187,13 @@ class _FallbackModel(nn.Module):
 
     def forward(self, tokens_idx, state, intent_idx, ctx_feat):
         b, t, _k = tokens_idx.shape
+        # 与上游 train_author_v0.AuthorV0Transformer.forward 同步（2026-09-24 起
+        # 均值走 embedding_bag，逐位一致由本 selftest torch.equal 守护）
         x = self.state_proj(state)
-        x = x + self.tok_emb(tokens_idx).mean(dim=2)
-        x = x + self.intent_emb(intent_idx).mean(dim=2)
+        x = x + F.embedding_bag(tokens_idx.reshape(-1, TOKEN_DIM),
+                                self.tok_emb.weight, mode="mean").view(b, t, -1)
+        x = x + F.embedding_bag(intent_idx.reshape(-1, TOKEN_DIM),
+                                self.intent_emb.weight, mode="mean").view(b, t, -1)
         ctx = self.cmd_proj(ctx_feat).unsqueeze(1).expand(b, self.n_ctx, -1)
         x = torch.cat([ctx, x], dim=1) + self.pos[:, :t + self.n_ctx]
         total = t + self.n_ctx

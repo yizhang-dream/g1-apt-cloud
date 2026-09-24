@@ -415,10 +415,17 @@ class AuthorV0Transformer(nn.Module):
 
     def forward(self, tokens_idx, state, intent_idx, ctx_feat):
         b, t, _k = tokens_idx.shape
-        # 帧嵌入 = 状态投影 + 64 个 token 维码嵌入均值（维间共享表）+ intent 同构
+        # 帧嵌入 = 状态投影 + 64 个 token 维码嵌入均值（维间共享表）+ intent 同构。
+        # 均值走 F.embedding_bag(mode="mean")：64 行嵌入取均值 = embedding_bag mean，
+        # 数学恒等、state_dict 零变化（同一 weight、无新参数，ckpt 兼容）；不再物化
+        # (b,t,64,d) 中间张量——满窗 t=200/chunk=1024 时该分配 37.5GiB fp32（三轮
+        # OOM 根因），等效中间内存缩为 1/64。与 .mean(dim=2) 仅浮点求和顺序不同
+        # （实测 768d 初始化尺度 max|Δ|≈6e-7，5 ulp 量级），等价断言用 allclose 非逐位。
         x = self.state_proj(state)
-        x = x + self.tok_emb(tokens_idx).mean(dim=2)
-        x = x + self.intent_emb(intent_idx).mean(dim=2)
+        x = x + F.embedding_bag(tokens_idx.reshape(-1, TOKEN_DIM),
+                                self.tok_emb.weight, mode="mean").view(b, t, -1)
+        x = x + F.embedding_bag(intent_idx.reshape(-1, TOKEN_DIM),
+                                self.intent_emb.weight, mode="mean").view(b, t, -1)
         ctx = self.cmd_proj(ctx_feat).unsqueeze(1).expand(b, self.n_ctx, -1)
         x = torch.cat([ctx, x], dim=1) + self.pos[:, :t + self.n_ctx]
         total = t + self.n_ctx
