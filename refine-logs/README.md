@@ -59,7 +59,10 @@
 |---|---|---|
 | `ds/DS_TERRAIN_ADAPTER_CHARTER.md` | 纲领：冻结底座 × 地形适配 × 未见动作迁移；冲突以它为准 | 活跃 |
 | `ds/DS_TERRAIN_AUTHOR_PLAN.md` | 地形作者计划 v2：端到端命令+地形双口 token 作者（G0=D059 生死判别，D060-D063 承接，09-17 v2 重设计） | 活跃 |
-| `ds/DS_TRACKING_STATUS_2026-09-17.md` | 交接快照：**D059 G0 生死判别全线收束=②PASS/③判甲**（envelope 门重锚/oracle 回放两门全过+4/12 快爬段地形早摔登记）；下一步 D060 数据发动机预注册；**当前接手入口** | 活跃 |
+| `ds/D065_DECODER_LORA_ARM.md` | D065 预注册：冻结 SONIC decoder 上 rank-16 零初始化 LoRA 对照臂——D064「接口代价」能否被低秩适配消掉（G0 对齐冒烟门 + 三臂单变量；依据 ORCS_SURVEY §4 建议 A，09-21 立项） | 活跃 |
+| `ds/DS_TRACKING_STATUS_2026-09-25.md` | 交接快照：owner 09-23 目标改写（最快直行）后全线况——D066 结案/D062-R1 毕（规模转正+行为剧分化）/D067 二臂毕（mfwd 0.449 vs 0.067≈7×）+**residual 八层防御栈**（commits 5d8afe2→773cccb）/**r5 干净重跑在途**（接手命令+判读口径在 §2）；**当前接手入口** | 活跃 |
+| `ds/DS_TRACKING_STATUS_2026-09-18.md` | 交接快照：**特权信息输入结构性缺口**（结构化地形 elevation 静默全零，`apt_flat_env.py` 515–524/1404–1407）＋外部分析器 DSMS 实测（G1 跑通但只作精修器，算力算术否掉量产路线）＋APT 原文口径核正两条＋三条未决 | 冻结 |
+| `ds/DS_TRACKING_STATUS_2026-09-17.md` | 交接快照：**D059 G0 生死判别全线收束=②PASS/③判甲**（envelope 门重锚/oracle 回放两门全过+4/12 快爬段地形早摔登记）；下一步 D060 数据发动机预注册 | 冻结 |
 | `ds/DS_TRACKING_STATUS_2026-09-16.md` | 交接快照：D058 PAUSED/D059 地形线立项+G0-① 甲（tokenizer 四代先例）+G0-② 选料键锁定 | 冻结 |
 | `ds/DS_TRACKING_STATUS_2026-09-15.md` | 交接快照：D057 G3 核验→G4 构建→训练完成；只剩 G5 init 档位图（命令在 §4 仍有效） | 冻结 |
 | `ds/DS_TRACKING_STATUS_2026-09-14.md` | 交接快照：D057 WBT 语料接入（§4 接手指令已执行完前四步） | 冻结 |
@@ -108,6 +111,7 @@
 | `surveys/LITERATURE_SURVEY_FROZEN_DECODER.md` | 冻结解码器 + 位置 RL 地形泛化综述 | 冻结 |
 | `surveys/LITERATURE_SURVEY_DS_MANIFOLD.md` | DS 步态流形近邻地图与创新点评估 | 冻结 |
 | `surveys/RESEARCHCLAWBENCH_SURVEY.md` | RCBench agent 选型 | 冻结 |
+| `surveys/ORCS_SURVEY.md` | ORCS/ViBe（arXiv 2609.09918）调研：冻结 SONIC 基座 + rank-16 LoRA 感知适配——外部同类路线的一手事实、许可链、可借机制与四任务发布权重 | 活跃 |
 
 ## 运行日志与机制专题（`logs/`）
 
