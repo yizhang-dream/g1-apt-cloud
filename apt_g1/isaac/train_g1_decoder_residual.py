@@ -53,7 +53,8 @@
       切片守卫 / **执行-反馈闭环增益恒等** / **旧标量 0.5 反例** / **29 维 scale 形状与来源** /
       **adapter env 维分块 ≡ 全 batch（逐位，含整块部分 reset 与尾块）** / **分块 CLI 默认值** /
       **adapter bf16 autocast 前向（合成 logits + 非近平局 mock argmax 一致）** /
-      **adapter tf32 标志进/出恢复** / **dtype 与 chunk CLI 默认值（bf16/1024）**
+      **adapter tf32 标志进/出恢复** / **dtype 与 chunk CLI 默认值（bf16/1024）** /
+      **rollout 期 obs 消毒器（脏 obs 净化+计数行+首例坐标 / 健康逐位零写 / 透传性）**
   Layer 2（isaac，import 集中在函数内；本机不 import）
     - `_import_heavy`（复用 train_g1_decoder._import_heavy，单份组装防漂移）
     - env cfg 构建 + max_forward 奖励覆写 + author_token 观测项注入
@@ -362,6 +363,32 @@ adapter 前向精度档 + 分块默认拉大（2026-09-24，性能补丁：精�
     3. 首步仪器：`residual_token_obs` 装载后首个 adapter step 打一行
        `[adapter-perf] dtype/chunk/首次 step 耗时`（CUDA 侧同步后计时；首步含预热，
        供首跑判读量级，非稳态基准）。
+
+rollout 期观测源消毒器（2026-09-24，第八层 = 第七层 update 侧消毒的上游补全，r4 里程碑实证）：
+  实证（r4 里程碑）：update 侧消毒器 1634 次/1254it（1.30 次/it），其中 `purged_full=411`
+  （33% update 为空学习步）——观测 NaN 在 rollout 期进入 buffer 后，update 侧消毒只能救权重、
+  救不了该次 update（归一化早已放大成全量）；且 rollout 期策略直接消费含 NaN 的 obs → 该 env
+  动作 NaN → 物理更炸的正反馈。事件链 = obs 先 NaN，即 env 传感器侧（激进动作 → 物理压力 →
+  偶发 inf；residual 特有高频暴烈动作风格放大频率，direct 0.055/it 同族）。
+  修法（治本 = obs 进入训练前净化；**不改奖励/网络/超参，update 侧五路消毒器保留为防御纵深**）：
+    1. 新 CLI `--obs-sanitize`（默认开，BooleanOptionalAction）：`_run` 里 env 构造后、runner
+       构造前调 `install_obs_sanitize_wrapper` 给 **env 本体**打「只读+净化」包装——runner 内部
+       rollout 不可侵入，故覆写 `step`/`reset`，返回前对 obs dict 逐 key GPU 侧 `isfinite`
+       归约：健康路径零写回、原 dict/张量原样（每 key 一次标量同步 = 唯一开销）；命中则
+       `nan_to_num(nan=0, posinf=+1e4, neginf=-1e4)`（**±inf 保号映射 ±1e4 有限大值**，供
+       学习信号；与 update 侧第五~七层「置 0」口径不同，语义进信封 `obs_sanitize` 字段登记）。
+    2. 包装手法 = **动态子类 + `__class__` 重赋值**（同一对象、identity 不变）：
+       `type("ObsSanitized_<原类名>", (type(env),), {...})` 只覆写 step/reset 再重分类——
+       isinstance/属性/方法**原生**兼容（比 `__getattr__` 透传更强的兼容性：`isinstance(env, 原类)`
+       恒真，`assert_residual_action_scale` 等既有持有 env 引用的路径零感知，未知属性无需转发）。
+    3. 计数落同一 `std_trajectory.log`（`tag=obs_sanitize`，逐 key 逐命中行：call/step/
+       n_nonfinite/n_nan/n_posinf/n_neginf/n_total/cum/first/first_index/first_coord）；
+       stdout WARN 逐 key 限频一次（命中可能高频，防刷屏）。
+  selftest 断言：`obs_sanitize_dirty`（①脏 obs 净化+计数行+首例坐标）/ `obs_sanitize_
+  healthy_bitwise`（②健康逐位不变+零计数）/ `obs_sanitize_passthrough`（③透传性+幂等）。
+  性能声明：健康路径每 env.step/reset 每 float key 一次 GPU 侧 isfinite 归约 + 单标量同步
+  （obs 通常 policy/critic 两 key，每控制步 ≈2 次同步，相对 rollout 计算与 adapter 前向可忽略）；
+  命中路径另有 nonzero 首索引小拷贝（罕见）。
 """
 
 from __future__ import annotations
@@ -2548,6 +2575,195 @@ def selftest_sanitize_obs_end(seed: int = 0) -> dict:
     }
 
 
+# ------------------------------------------------- rollout 期观测源消毒器 selftest（第八层）
+class _MockObsEnv:
+    """第八层 selftest 用的最小 env 桩（纯 Layer 1，零 isaaclab）。
+
+    step/reset 返回 obs dict（policy/critic 两组张量，可注入非有限值）；step/reset 的调用与
+    参数记进 `calls`（透传断言用）；`extra_attr`/`echo` 是供透传断言用的非 step/reset 成员。
+    注意 `__class__` 重分类要求实例有 `__dict__`（普通类满足；Isaac env 亦然）。
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+        self._step_i = 0
+        self.reset_obs: dict = {}
+        self.step_obs: dict = {}
+        self.extra_attr = 42
+
+    def step(self, action):
+        self.calls.append(("step", action))
+        self._step_i += 1
+        return dict(self.step_obs), float(self._step_i), False, False, {"cost": 0.5}
+
+    def reset(self, seed=None, env_ids=None):
+        self.calls.append(("reset", seed, env_ids))
+        return dict(self.reset_obs), {"seed": seed}
+
+    def echo(self, x):
+        return ("echo", x)
+
+
+def selftest_obs_sanitize_dirty(seed: int = 0) -> dict:
+    """第八层断言 ①：mock env 出 NaN/±inf obs -> 包装后全有限 + obs_sanitize 计数行 + 首例坐标。
+
+    场景：reset 与 step 的 obs 均含非有限值（policy 3x3 含 NaN/+inf/-inf 各一、critic 1 个 NaN）。
+    断言：返回 obs 全有限且逐元素映射正确（NaN->0、±inf->±1e4、有限值逐位不变）；
+    std_trajectory.log 落 tag=obs_sanitize 行（逐 key：call/step/n_nonfinite/n_nan/n_posinf/
+    n_neginf/n_total/cum/first/first_index/first_coord，首例坐标 [0,1]）；第二次命中 cum 逐 key
+    累计；step 返回非 obs 位原样。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        env = _MockObsEnv()
+        dirty_p = torch.tensor([[1.0, float("nan"), 3.0],
+                                [4.0, float("inf"), 6.0],
+                                [float("-inf"), 8.0, 9.0]], dtype=torch.float32)
+        dirty_c = torch.tensor([0.25, float("nan")], dtype=torch.float32)
+        env.reset_obs = {"policy": dirty_p, "critic": dirty_c}
+        env.step_obs = {"policy": dirty_p.clone(), "critic": dirty_c.clone()}
+        base_cls = type(env)
+        info = install_obs_sanitize_wrapper(env, torch, out_dir / STD_TRAJECTORY_LOG)
+        _check(info["installed"] is True, f"包装应成功：{info}")
+        _check(isinstance(env, base_cls), "包装后 isinstance（原类）兼容性丢失")
+        obs, extras = env.reset(seed=7, env_ids=[0, 1])
+        _check(extras == {"seed": 7}, f"reset extras 被改：{extras}")
+        p = obs["policy"]
+        _check(bool(torch.isfinite(p).all()), f"消毒后 policy obs 仍含非有限值：{p.tolist()}")
+        _check(p[0, 1].item() == 0.0, f"NaN 应置 0：{p[0, 1].item()!r}")
+        _check(p[1, 1].item() == OBS_SANITIZE_INF_CLIP, f"+inf 应映射 +1e4：{p[1, 1].item()!r}")
+        _check(p[2, 0].item() == -OBS_SANITIZE_INF_CLIP, f"-inf 应映射 -1e4：{p[2, 0].item()!r}")
+        _check(p[0, 0].item() == 1.0 and p[2, 2].item() == 9.0, "有限元素被误改（应逐位不变）")
+        c = obs["critic"]
+        _check(bool(torch.isfinite(c).all()) and c[1].item() == 0.0 and c[0].item() == 0.25,
+               f"critic obs 消毒错：{c.tolist()}")
+        rows = [json.loads(ln) for ln in
+                (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").splitlines()]
+        san = [r for r in rows if r.get("tag") == OBS_SANITIZE_TAG]
+        _check(len(san) == 2, f"reset 两 key 命中应各落 1 行，实为 {len(san)}：{san}")
+        by_key = {r["key"]: r for r in san}
+        _check(set(by_key) == {"policy", "critic"}, f"计数行 key 应为 policy/critic：{sorted(by_key)}")
+        rp = by_key["policy"]
+        for field in ("call", "step", "n_nonfinite", "n_total", "n_nan", "n_posinf", "n_neginf",
+                      "cum", "first", "first_index", "first_coord"):
+            _check(field in rp, f"obs_sanitize 行缺字段 {field!r}：{rp}")
+        _check(rp["call"] == "reset", f"首行 call 应为 reset：{rp['call']!r}")
+        _check(rp["n_nonfinite"] == 3 and rp["n_total"] == 9, f"policy 计数错：{rp}")
+        _check(rp["n_nan"] == 1 and rp["n_posinf"] == 1 and rp["n_neginf"] == 1,
+               f"nan/inf 分计数错：{rp}")
+        _check(rp["cum"] == 3, f"首拍 cum 应为 3：{rp['cum']}")
+        _check(rp["first_index"] == 1 and math.isnan(rp["first"]), f"首例应为 flat idx 1 的 NaN：{rp}")
+        _check(rp["first_coord"] == [0, 1], f"首例坐标应为 [0, 1]：{rp['first_coord']}")
+        rc = by_key["critic"]
+        _check(rc["n_nonfinite"] == 1 and rc["n_total"] == 2 and rc["cum"] == 1
+               and rc["first_coord"] is None, f"critic 计数行错（1 维张量无坐标）：{rc}")
+        # 第二次调用（step）：计数行继续落、cum 逐 key 累计、step 返回非 obs 位原样
+        out2 = env.step(torch.zeros(2))
+        _check(len(out2) == 5 and isinstance(out2[0], dict), f"step 返回结构被改：{type(out2)}")
+        _check(bool(torch.isfinite(out2[0]["policy"]).all()), "step obs 未消毒")
+        _check(out2[1] == 1.0 and out2[2] is False and out2[3] is False and out2[4] == {"cost": 0.5},
+               f"step 返回非 obs 位被改：{out2[1:]}")
+        rows2 = [json.loads(ln) for ln in
+                 (out_dir / STD_TRAJECTORY_LOG).read_text(encoding="utf-8").splitlines()]
+        san2 = [r for r in rows2 if r.get("tag") == OBS_SANITIZE_TAG]
+        _check(len(san2) == 4, f"step 两 key 应再各落 1 行（共 4），实为 {len(san2)}")
+        rp2 = [r for r in san2 if r["key"] == "policy" and r["call"] == "step"][0]
+        _check(rp2["cum"] == 6, f"cum 应逐 key 累计（3+3=6）：{rp2}")
+        state = env._obs_sanitize_state
+        _check(state["cum"]["policy"] == 6 and state["cum"]["critic"] == 2
+               and state["hits"] == 4 and state["steps"] == 2,
+               f"state 计数错：cum={state['cum']} hits={state['hits']} steps={state['steps']}")
+    return {
+        "dirty_sanitized_finite": True,
+        "count_lines_per_key": True,
+        "first_coord_recorded": True,
+        "cum_accumulates": True,
+        "non_obs_positions_untouched": True,
+    }
+
+
+def selftest_obs_sanitize_healthy_bitwise(seed: int = 0) -> dict:
+    """第八层断言 ②：健康 obs 逐位不变 + 零计数（张量对象引用不变、无 obs_sanitize 行）。
+
+    健康路径（全有限）下净化器完全不动作：返回的张量是**原对象**（零写回）、逐位相等，
+    日志文件甚至不应被创建（无任何 obs_sanitize 行可写）。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        env = _MockObsEnv()
+        p = torch.tensor([[1.25, -2.5, 0.0], [3.75, -4.125, 6.5]], dtype=torch.float32)
+        c = torch.tensor([0.5, -0.75], dtype=torch.float32)
+        env.reset_obs = {"policy": p, "critic": c}
+        env.step_obs = {"policy": p.clone(), "critic": c.clone()}
+        rp, rc = env.step_obs["policy"], env.step_obs["critic"]
+        install_obs_sanitize_wrapper(env, torch, out_dir / STD_TRAJECTORY_LOG)
+        obs, _ = env.reset()
+        _check(obs["policy"] is p, "健康 reset obs 张量对象引用被换（应零写回）")
+        _check(obs["critic"] is c, "健康 reset obs 张量对象引用被换（应零写回）")
+        _check(torch.equal(obs["policy"], p) and torch.equal(obs["critic"], c), "健康 reset obs 逐位被改")
+        out = env.step(torch.zeros(2))
+        _check(out[0]["policy"] is rp and out[0]["critic"] is rc, "健康 step obs 对象引用被换（应零写回）")
+        _check(torch.equal(out[0]["policy"], rp), "健康 step obs 逐位被改")
+        log_file = out_dir / STD_TRAJECTORY_LOG
+        rows = ([json.loads(ln) for ln in log_file.read_text(encoding="utf-8").splitlines()]
+                if log_file.exists() else [])
+        _check(not any(r.get("tag") == OBS_SANITIZE_TAG for r in rows),
+               "健康路径不应有 obs_sanitize 行")
+        state = env._obs_sanitize_state
+        _check(state["hits"] == 0 and not state["cum"] and state["steps"] == 2,
+               f"健康路径计数应全零（steps=2 只计调用数）：{state}")
+    return {
+        "healthy_bitwise_untouched": True,
+        "zero_object_swap": True,
+        "zero_count_lines": True,
+    }
+
+
+def selftest_obs_sanitize_passthrough(seed: int = 0) -> dict:
+    """第八层断言 ③：透传性——isinstance/属性访问/普通方法/step-reset 参数与返回其余位原样 + 幂等。
+
+    重分类包装后：`isinstance(env, 原类)` 恒真、非 step/reset 的属性与方法原生可用、
+    step/reset 的参数按原对象透传到内层实现、返回值除 obs 位外原样；重复安装幂等跳过。
+    """
+    import tempfile  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        env = _MockObsEnv()
+        env.reset_obs = {"policy": torch.zeros(1)}
+        env.step_obs = {"policy": torch.zeros(1)}
+        base_cls = type(env)
+        info = install_obs_sanitize_wrapper(env, torch, out_dir / STD_TRAJECTORY_LOG)
+        _check(info["installed"] is True and type(env) is not base_cls,
+               f"应已重分类到动态子类：{info}")
+        _check(isinstance(env, base_cls), "isinstance（原类）应为真（动态子类关系）")
+        _check(env.extra_attr == 42, "未知属性访问未透传（原生继承失败）")
+        _check(env.echo(3) == ("echo", 3), "普通方法调用未透传")
+        env.reset(seed=11, env_ids=[2])
+        _check(any(call[0] == "reset" and call[1] == 11 and call[2] == [2] for call in env.calls),
+               f"reset 参数未透传：{env.calls}")
+        action = torch.tensor([0.5, -0.5])
+        out = env.step(action)
+        _check(any(call[0] == "step" and call[1] is action for call in env.calls),
+               f"step 参数未透传（action 应原对象）：{env.calls}")
+        _check(len(out) == 5 and out[1] == 1.0 and out[2] is False and out[3] is False
+               and out[4] == {"cost": 0.5}, f"step 返回非 obs 位被改：{out}")
+        # 幂等：重复安装不再二次包装
+        info2 = install_obs_sanitize_wrapper(env, torch, out_dir / "another.log")
+        _check(info2.get("already") is True and info2.get("installed") is False,
+               f"重复安装应幂等跳过：{info2}")
+    return {
+        "isinstance_compat": True,
+        "attr_and_method_passthrough": True,
+        "args_and_rest_of_return_untouched": True,
+        "reinstall_idempotent": True,
+    }
+
+
 def selftest_critic_forward_probe(seed: int = 0) -> dict:
     """第五层新增断言 ②：critic 前向探针（mock evaluate 出 NaN -> 记录行含 critic_obs 幅值）。
 
@@ -3071,6 +3287,10 @@ def run_selftest() -> None:
         "nan_probe_snapshot_guard": selftest_nan_probe_snapshot_guard(),
         # 第七层：消毒器上移到观测端（五路 + 大张量 GPU 侧检测 + dict observations）
         "sanitize_obs_end": selftest_sanitize_obs_end(),
+        # 第八层：rollout 期观测源消毒器（第七层 update 侧消毒的上游补全）
+        "obs_sanitize_dirty": selftest_obs_sanitize_dirty(),
+        "obs_sanitize_healthy_bitwise": selftest_obs_sanitize_healthy_bitwise(),
+        "obs_sanitize_passthrough": selftest_obs_sanitize_passthrough(),
         # residual 臂 author adapter env 维分块前向（iter0 CUDA OOM 修复）
         "adapter_chunk_equivalence": selftest_adapter_chunk_equivalence(),
         "adapter_chunk_cli_default": selftest_adapter_chunk_cli_default(),
@@ -4713,6 +4933,196 @@ def _sanitize_storage_attrs(alg) -> list[dict]:
     return out
 
 
+# ------------------------------------------------- rollout 期观测源消毒器（第八层）
+# 实证（r4 里程碑）：update 侧消毒器 1634 次/1254it，purged_full=411（33% update 空学习步）——
+# obs NaN 在 rollout 期进 buffer 后 update 侧只能救权重、救不了该次 update（归一化已放大成全量），
+# 且策略直接吃 NaN obs -> 动作 NaN -> 物理更炸（正反馈）。治本 = 在 obs 进入训练管线前净化：
+# 本件在 env 出口（step/reset 返回值）逐 key 净化 + 计数，**只统计与净化，不改动作语义**；
+# update 侧五路消毒器（上）保留 = 防御纵深。语义/包装手法/性能见模块 docstring 第八层段。
+OBS_SANITIZE_TAG = "obs_sanitize"   # 计数行 tag（落 std_trajectory.log，与 update 侧各 tag 分离）
+OBS_SANITIZE_INF_CLIP = 1.0e4       # ±inf 映射目标（保号有限大值，供学习信号；信封登记）
+
+
+def install_obs_sanitize_wrapper(env, torch_mod, log_path, *, nan_value: float = 0.0,
+                                 inf_clip: float = OBS_SANITIZE_INF_CLIP,
+                                 phase: str = "rollout") -> dict:
+    """给 env 本体打「只读+净化」包装：step/reset 返回的 obs 在出口逐 key 净化（第八层）。
+
+    包装手法 = **动态子类 + `__class__` 重赋值**（同一对象、零 rebound）：
+      `type("ObsSanitized_<原类名>", (type(env),), {...})` 只覆写 `step`/`reset`，随后
+      `env.__class__ = 子类`。相比 `__getattr__` 透传 wrapper：
+      - **isinstance 强兼容**：`isinstance(env, 原类)` 恒真（子类关系）——任何对 env 做
+        isinstance/属性访问/方法调用的既有路径（`RslRlVecEnvWrapper`、
+        `assert_residual_action_scale`、runner 内部）零感知；
+      - **identity 不变**：env 还是同一个对象，不存在「旧引用绕过包装」的问题；
+      - 未知属性**原生继承**，无需 `__getattr__` 转发（更快、也不会漏）。
+
+    净化语义（与 update 侧第五~七层「置 0」口径**不同**，信封 `obs_sanitize` 字段登记）：
+      - 检测：逐 float key GPU 侧 `isfinite` 归约（单标量同步、零全量拷贝）——**健康路径唯一
+        开销**，零写回、原 dict/张量原样返回；
+      - 命中：`nan_to_num(nan=0, posinf=+inf_clip, neginf=-inf_clip)`（NaN->0；±inf 保号映射
+        ±1e4 有限大值——rollout 出口保号给策略/训练留学习信号）+ 落 `tag=obs_sanitize` 计数行
+        （逐 key 逐命中：n_nonfinite/n_nan/n_posinf/n_neginf/n_total/cum/first/first_index/
+        first_coord）+ stdout WARN（逐 key 限频一次）。
+      - 只统计与净化，不改动作/奖励/terminated/truncated/extras 语义；step/reset 抛出的异常
+        原样冒泡（**不吞**），仅消毒器自身失败时 best-effort（WARN + obs 原样放行，不打断训练，
+        与既有探针/消毒器口径一致）。
+
+    返回 {"log": 路径, "installed": True, "base_class"/"wrapped_class": 类名, nan/posinf/neginf}；
+    已包装时幂等返回 {"installed": False, "already": True}（不二次包装）。
+    """
+    already = getattr(env, "_obs_sanitize_state", None)
+    if already is not None:
+        return {"log": str(already.get("log_path", log_path)), "installed": False, "already": True}
+    th = torch_mod
+    log_path = Path(log_path)
+    state = {
+        "steps": 0,            # 包装后 step/reset 调用总数（日志行 step 字段）
+        "hits": 0,             # 命中次数（某 key 某次调用出非有限 = 1 次）
+        "lines": 0,            # 已落日志行数
+        "cum": {},             # 逐 key 累计非有限元素数
+        "warned": set(),       # 已发过 stdout WARN 的 key（限频；命中可能高频防刷屏）
+        "log_path": str(log_path),
+    }
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:  # 目录建不了等首行写入再暴露（_emit_line 的 OSError 路径兜底）
+        pass
+
+    def _emit_line(rec: dict) -> None:
+        line = json.dumps(
+            {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "phase": phase,
+                "tag": OBS_SANITIZE_TAG,
+                "step": state["steps"],
+                **rec,
+            },
+            ensure_ascii=False,
+        )
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        state["lines"] += 1
+
+    def _sanitize_one(name, t, call: str):
+        """单张量 GPU 侧检测+净化；返回 (净化后张量 | 原张量, 记录 | None)。
+
+        检测 = `(~isfinite).sum()` 单标量同步（健康路径唯一开销、零写回）；命中才 nonzero 找
+        **首个**非有限索引（只拷小片）+ `nan_to_num` 重造（与 `_sanitize_tensor_gpu` 同型，
+        但 ±inf 保号映射 ±inf_clip 而非置 0——rollout 出口语义，见 docstring）。
+        """
+        if not isinstance(t, th.Tensor) or not t.is_floating_point():
+            return t, None
+        with th.no_grad():
+            bad_n = int((~th.isfinite(t)).sum().item())   # 健康路径唯一开销：一次归约 + 单标量同步
+            if bad_n == 0:
+                return t, None
+            flat = t.reshape(-1)
+            idx = int((~th.isfinite(flat)).nonzero(as_tuple=False)[0].item())
+            first_val = float(flat[idx].item())
+            n_nan = int(th.isnan(t).sum().item())
+            n_posinf = int((t == float("inf")).sum().item())
+            n_neginf = int((t == float("-inf")).sum().item())
+            clean = th.nan_to_num(t, nan=nan_value, posinf=inf_clip, neginf=-inf_clip)
+            coords = None
+            if t.dim() > 1:
+                coords = [int(c) for c in th.unravel_index(th.tensor(idx, device=t.device), t.shape)]
+            rec = {
+                "key": str(name),
+                "call": call,
+                "n_nonfinite": bad_n,
+                "n_total": int(t.numel()),
+                "n_nan": n_nan,
+                "n_posinf": n_posinf,
+                "n_neginf": n_neginf,
+                "first": first_val,
+                "first_index": idx,
+                "first_coord": coords,
+                "cum": state["cum"].get(str(name), 0) + bad_n,
+            }
+            return clean, rec
+
+    def _sanitize_obs(obs, call: str):
+        """obs dict 逐 key 净化；健康路径原 dict 原样返回（零写回），命中才换新 dict。"""
+        if not isinstance(obs, dict):
+            return obs
+        new_obs = None
+        for key, val in obs.items():
+            clean, rec = _sanitize_one(key, val, call)
+            if rec is None:
+                if new_obs is not None:
+                    new_obs[key] = val
+                continue
+            state["hits"] += 1
+            state["cum"][rec["key"]] = rec["cum"]
+            try:
+                _emit_line(rec)
+            except OSError as exc:  # 仪器 best-effort：写日志失败只警告，不阻断训练
+                print(f"[WARN] obs_sanitize 写日志失败（key={rec['key']}）: {exc}", flush=True)
+            if rec["key"] not in state["warned"]:
+                state["warned"].add(rec["key"])
+                print(
+                    f"[WARN] obs_sanitize: rollout obs['{rec['key']}'] 非有限 {rec['n_nonfinite']}/"
+                    f"{rec['n_total']}（nan={rec['n_nan']} +inf={rec['n_posinf']} "
+                    f"-inf={rec['n_neginf']}）first={rec['first']} "
+                    f"first_coord={rec['first_coord']} -> nan=0 / ±inf=±{inf_clip:g}"
+                    f"（净化后出口，训练继续；逐次计数见 {log_path.name} tag={OBS_SANITIZE_TAG}）",
+                    flush=True,
+                )
+            if new_obs is None:
+                new_obs = dict(obs)
+            new_obs[key] = clean
+        return obs if new_obs is None else new_obs
+
+    def _wrap_return(out, call: str):
+        """step/reset 返回值只净化第 0 位（obs），其余（reward/terminated/truncated/extras）原样。"""
+        try:
+            if isinstance(out, tuple) and len(out) > 0:
+                clean0 = _sanitize_obs(out[0], call)
+                return out if clean0 is out[0] else (clean0,) + out[1:]
+            if isinstance(out, list) and len(out) > 0:
+                clean0 = _sanitize_obs(out[0], call)
+                return out if clean0 is out[0] else [clean0] + out[1:]
+            return _sanitize_obs(out, call)   # 裸 obs（非序列）也兜住
+        except Exception as exc:  # noqa: BLE001（消毒器 best-effort：绝不打断训练）
+            print(f"[WARN] obs_sanitize 消毒失败（call={call}，obs 原样放行）：{type(exc).__name__}: {exc}", flush=True)
+            return out
+
+    orig_cls = type(env)
+
+    def _wrapped_step(self, action, *args, **kwargs):
+        state["steps"] += 1
+        out = orig_cls.step(self, action, *args, **kwargs)
+        return _wrap_return(out, "step")
+
+    def _wrapped_reset(self, *args, **kwargs):
+        state["steps"] += 1
+        out = orig_cls.reset(self, *args, **kwargs)
+        return _wrap_return(out, "reset")
+
+    wrapped_cls = type(
+        f"ObsSanitized_{orig_cls.__name__}",
+        (orig_cls,),
+        {
+            "step": _wrapped_step,
+            "reset": _wrapped_reset,
+            # 类属性挂 state：selftest/事后审计可经 `env._obs_sanitize_state` 读计数
+            "_obs_sanitize_state": state,
+            "__doc__": f"{orig_cls.__name__} 的第八层 obs 消毒重分类子类（step/reset 出口净化，identity 不变）",
+        },
+    )
+    env.__class__ = wrapped_cls   # 失败即显式异常（fail loud；可 --no-obs-sanitize 关闭本件）
+    return {
+        "log": str(log_path),
+        "installed": True,
+        "base_class": orig_cls.__name__,
+        "wrapped_class": wrapped_cls.__name__,
+        "nan": float(nan_value),
+        "posinf": float(inf_clip),
+        "neginf": float(-inf_clip),
+    }
+
+
 # ------------------------------------------------- critic 前向探针（第五层溯源件）
 def _critic_obs_mag_records(critic_obs) -> list[dict]:
     """critic_obs 逐 key 幅值记录（min/max/abs_max/mean/n_nonfinite）；**只读**，best-effort。
@@ -5230,6 +5640,34 @@ def _run(cli, out_dir: Path, launcher_args) -> None:
         print(f"[WARN] rsl_rl {rsl_ver} 不支持 dict obs，退化单组（丢 critic）", flush=True)
 
     env = hv.ManagerBasedRLEnv(cfg=cfg)
+    # ---- 第八层：rollout 期观测源消毒器（--obs-sanitize 默认开，--no-obs-sanitize 关）----
+    # 位置契约：env 构造后、runner 构造前完成包装（覆盖下方首次 reset 与 runner 内 rollout 的
+    # 全部 step/reset 出口）；重分类 = 同一对象（identity 不变），下方既有 env 引用路径
+    # （assert_residual_action_scale / _build_residual_policy_kwargs / EnvWrapper / smoke）零感知。
+    # 语义声明：NaN->0、±inf->±1e4 保号（与 update 侧置 0 口径不同）；update 侧五路消毒器
+    # 保留（防御纵深）。性能：健康路径每 key 一次 GPU isfinite 归约标量同步（见模块 docstring）。
+    envelope["obs_sanitize"] = {
+        "enabled": bool(getattr(cli, "obs_sanitize", True)),
+        "nan": 0.0,
+        "posinf": OBS_SANITIZE_INF_CLIP,
+        "neginf": -OBS_SANITIZE_INF_CLIP,
+        "declaration": (
+            "rollout 期 obs 消毒（第七层 update 侧消毒的上游补全，r4 里程碑 purged_full=411/1254it "
+            "实证 33% update 空学习步）：env.step/reset 出口逐 key nan_to_num（NaN->0、±inf->±1e4 "
+            "保号供学习信号，与 update 侧置 0 口径不同）+ 计数落 std_trajectory.log"
+            "（tag=obs_sanitize）；健康路径逐位零改动（每 key 一次 GPU 归约标量同步）；"
+            "update 侧五路消毒器保留（防御纵深）。--no-obs-sanitize 关闭。"
+        ),
+    }
+    if getattr(cli, "obs_sanitize", True):
+        obs_san = install_obs_sanitize_wrapper(env, torch_mod, out_dir / STD_TRAJECTORY_LOG)
+        envelope["obs_sanitize"]["log"] = obs_san["log"]
+        envelope["obs_sanitize"]["wrapped_class"] = obs_san.get("wrapped_class")
+        print(f"[d067] obs 消毒器（第八层）已包装 env（{obs_san.get('base_class')} -> "
+              f"{obs_san.get('wrapped_class')}）-> {obs_san['log']}（tag={OBS_SANITIZE_TAG}）", flush=True)
+    else:
+        print("[d067] obs 消毒器（第八层）已关闭（--no-obs-sanitize）", flush=True)
+    (out_dir / "run.json").write_text(json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
     obs, _ = env.reset()
     if not (isinstance(obs, dict) and "policy" in obs):
         raise RuntimeError(f"env obs 应为含 'policy' 的 dict，实际 {type(obs)}")
@@ -5385,6 +5823,10 @@ def build_args() -> argparse.ArgumentParser:
     ap.add_argument("--sigma", type=float, default=None, help="残差臂 σ 值（缺省=init_noise_std=1.0）")
     ap.add_argument("--sigma-trainable", action=argparse.BooleanOptionalAction, default=False,
                     help="残差臂 σ 是否可训（默认关 = PPO 只训 r）")
+    ap.add_argument("--obs-sanitize", action=argparse.BooleanOptionalAction, default=True,
+                    help="rollout 期观测源消毒器（第八层，默认开）：env.step/reset 返回的 obs "
+                         "在出口逐 key 净化（NaN->0、±inf->±1e4 保号）+ 计数落 std_trajectory.log"
+                         "（tag=obs_sanitize）；update 侧五路消毒器保留（防御纵深）")
     ap.add_argument("--headless", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--ckpt", default="")
